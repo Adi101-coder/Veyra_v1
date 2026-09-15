@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import {
   motion,
   useReducedMotion,
@@ -24,7 +25,8 @@ export const stagger = {
   },
 };
 
-type RevealProps = HTMLMotionProps<"div"> & {
+type RevealProps = Omit<HTMLMotionProps<"div">, "children"> & {
+  children?: ReactNode;
   delay?: number;
 };
 
@@ -55,7 +57,9 @@ export function Reveal({
   );
 }
 
-type StaggerProps = HTMLMotionProps<"div">;
+type StaggerProps = Omit<HTMLMotionProps<"div">, "children"> & {
+  children?: ReactNode;
+};
 
 export function Stagger({ children, className, ...props }: StaggerProps) {
   const reduce = useReducedMotion();
@@ -82,7 +86,7 @@ export function Item({
   children,
   className,
   ...props
-}: HTMLMotionProps<"div">) {
+}: Omit<HTMLMotionProps<"div">, "children"> & { children?: ReactNode }) {
   const reduce = useReducedMotion();
 
   if (reduce) {

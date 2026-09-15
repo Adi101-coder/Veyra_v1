@@ -4,7 +4,9 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 import { Reveal } from "@/components/motion";
 import { Shell } from "@/components/Shell";
-import { siteConfig } from "@/lib/site";
+import { siteConfig, type FaqItem } from "@/lib/site";
+
+const faqs: readonly FaqItem[] = siteConfig.faq;
 
 export function FAQ() {
   const [open, setOpen] = useState<number | null>(null);
@@ -19,9 +21,9 @@ export function FAQ() {
             </h2>
           </Reveal>
           <div className="border-b border-[rgba(26,26,26,0.14)]">
-            {siteConfig.faq.map((item, index) => {
+            {faqs.map((item, index) => {
               const isOpen = open === index;
-              const link = "link" in item ? item.link : null;
+              const link = item.link ?? null;
               return (
                 <div
                   key={item.q}

@@ -1,3 +1,12 @@
+export type FaqItem = {
+  q: string;
+  a: string;
+  link?: {
+    href: string;
+    label: string;
+  };
+};
+
 export const siteConfig = {
   name: "Vantage",
   wordmark: "VANTAGE",
