@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Reveal } from "@/components/motion";
 import { Shell } from "@/components/Shell";
 import { siteConfig, type FaqItem } from "@/lib/site";
@@ -10,6 +10,11 @@ const faqs: readonly FaqItem[] = siteConfig.faq;
 
 export function FAQ() {
   const [open, setOpen] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (window.location.hash !== "#faq") return;
+    document.getElementById("faq")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
 
   return (
     <section id="faq" className="scroll-mt-[120px] pt-16 pb-12 sm:pt-20 sm:pb-16">
@@ -64,8 +69,9 @@ export function FAQ() {
                               {" "}
                               <a
                                 href={link.href}
-                                target="_blank"
-                                rel="noreferrer"
+                                {...(link.href.startsWith("http")
+                                  ? { target: "_blank", rel: "noreferrer" }
+                                  : {})}
                                 className="font-semibold text-accent underline-offset-2 hover:underline"
                               >
                                 {link.label}

@@ -10,7 +10,6 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/activity", label: "Activity" },
   { href: "/write", label: "Write" },
-  { href: "/how-it-works", label: "How it works" },
 ] as const;
 
 function NavLinks({ className = "" }: { className?: string }) {

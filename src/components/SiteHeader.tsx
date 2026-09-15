@@ -18,15 +18,21 @@ export function SiteHeader() {
         </Link>
 
         <nav className="order-3 col-span-2 flex items-center justify-self-start gap-4 sm:gap-6 lg:order-none lg:col-span-1 lg:justify-self-center lg:gap-16">
-          {siteConfig.nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="text-xs font-medium text-[#6e6e6e] transition duration-160 hover:translate-x-0.5 hover:text-accent sm:text-[15px]"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {siteConfig.nav.map((item) => {
+            const hash = item.href.includes("#") ? item.href.split("#")[1] : null;
+            const href = hash
+              ? { pathname: item.href.split("#")[0] || "/", hash }
+              : item.href;
+            return (
+              <Link
+                key={item.href}
+                href={href}
+                className="text-xs font-medium text-[#6e6e6e] transition duration-160 hover:translate-x-0.5 hover:text-accent sm:text-[15px]"
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <Link
