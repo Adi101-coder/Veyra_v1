@@ -1,46 +1,62 @@
+"use client";
+
 import Image from "next/image";
+import { Reveal, motion } from "@/components/motion";
 import { Shell } from "@/components/Shell";
 import { siteConfig } from "@/lib/site";
 
 export function Hero() {
+  const { hero } = siteConfig;
+
   return (
     <section>
       <Shell>
-        <div className="hidden flex-col items-center justify-center pt-[1.2rem] pb-8 text-center lg:flex lg:pb-12">
-          <p className="py-4 text-[10px] font-normal uppercase tracking-wider text-[#7b7b7b] opacity-70">
-            Last update 0 mins ago
+        <Reveal className="flex flex-col items-center justify-center pt-6 pb-2 text-center sm:pt-8 lg:pt-10">
+          <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-accent">
+            {hero.kicker}
           </p>
-          <p className="text-base font-medium tracking-[-0.03em] text-[#656565]">
-            {siteConfig.contractCount} Contracts Currently Under Management
+          <p className="mt-3 text-sm font-medium tracking-[-0.03em] text-[#5a5a5a] sm:text-base">
+            {hero.status}
           </p>
+        </Reveal>
+
+        <div className="grid grid-cols-1 gap-10 pt-10 pb-4 sm:gap-12 sm:pt-14 lg:grid-cols-[minmax(0,1fr)_17.5rem] lg:items-start lg:gap-x-20 lg:pt-16">
+          <Reveal className="max-w-[40rem]">
+            <h1 className="font-serif text-[32px] leading-[1.12] tracking-[-0.02em] text-[#1a1a1a] sm:text-[40px] lg:text-[48px]">
+              {hero.headline}
+            </h1>
+            <p className="mt-5 max-w-[34rem] font-sans text-[17px] leading-[1.45] font-medium tracking-[-0.02em] text-[#5a5a5a] sm:mt-6 sm:text-[19px] sm:leading-[1.4]">
+              {hero.subhead}
+            </p>
+            <p className="mt-8 max-w-[36rem] text-[15px] leading-[1.75] text-[#6e6e6e] sm:mt-10 sm:text-base">
+              {hero.body}
+            </p>
+          </Reveal>
+          <Reveal delay={0.08}>
+            <p className="max-w-[280px] text-sm leading-[1.7] text-[#6e6e6e] lg:ml-auto lg:max-w-none lg:pt-2 lg:text-right">
+              {hero.lede}
+            </p>
+          </Reveal>
         </div>
 
-        <div className="flex flex-col justify-between gap-5 py-4 sm:flex-row sm:items-end sm:gap-8 sm:py-6">
-          <h1 className="max-w-[36rem] text-[24px] leading-[1.05] tracking-[-0.03em] sm:text-[28px] lg:text-[32px]">
-            <span className="font-medium text-[#656565]">Welcome aboard,</span>
-            <br />
-            <span className="font-normal tracking-[-0.005em] text-[#222]">
-              to the Solana-native prediction protocol.
-            </span>
-          </h1>
-          <p className="max-w-[280px] text-left text-sm leading-[1.15] text-[#7b7b7b] sm:text-right sm:text-base sm:leading-[1.45]">
-            A composable, on-chain truth machine, where honesty is the only
-            winning strategy. Decentralized, permissionless, and liquid.
-          </p>
-        </div>
-
-        <div className="py-2 sm:py-4">
-          <div className="overflow-hidden rounded-[10px] sm:rounded-2xl">
+        <Reveal delay={0.12} className="pt-8 pb-2 sm:pt-12 sm:pb-4">
+          <motion.div
+            className="relative aspect-[21/8] w-full overflow-hidden rounded-[10px] bg-[#ebe8e2] sm:rounded-2xl"
+            initial={{ scale: 1.03 }}
+            whileInView={{ scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ duration: 1.1, ease: [0.22, 0.61, 0.36, 1] }}
+          >
             <Image
-              src="/images/hero-virginia.png"
-              alt="Halftone riverboat on the water"
-              width={1920}
-              height={720}
+              src="/images/hero-vantage-dither.png"
+              alt="A vantage terrace overlooking the landscape"
+              fill
+              sizes="(min-width: 1024px) 1120px, 100vw"
               priority
-              className="block h-auto w-full object-contain"
+              className="object-cover object-center"
             />
-          </div>
-        </div>
+          </motion.div>
+        </Reveal>
       </Shell>
     </section>
   );

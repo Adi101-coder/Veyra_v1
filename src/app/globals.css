@@ -33,15 +33,18 @@
 }
 
 :root {
-  --color-bg: #ebebeb;
-  --color-primary: #222222;
-  --color-secondary: #656565;
-  --color-tertiary: #7b7b7b;
-  --color-ink: #141414;
-  --color-hairline: rgba(20, 20, 20, 0.18);
-  --color-hairline-light: rgba(20, 20, 20, 0.1);
-  --color-stamp: #b24a47;
-  --color-ticker: #0e0e0c;
+  --color-bg: #ebe8e2;
+  --color-primary: #1a1a1a;
+  --color-secondary: #5a5a5a;
+  --color-tertiary: #6e6e6e;
+  --color-ink: #1a1a1a;
+  --color-hairline: rgba(26, 26, 26, 0.16);
+  --color-hairline-light: rgba(26, 26, 26, 0.1);
+  --color-stamp: #b08d57;
+  --river-accent: #1a1a1a;
+  --river-accent-soft: rgba(26, 26, 26, 0.08);
+  --river-brass: #c4a46a;
+  --color-ticker: #111111;
   --color-ticker-text: #d8d1b8;
   --font-serif: Plantin, "Times New Roman", serif;
   --font-sans: "Geist Local", Geist, system-ui, -apple-system, sans-serif;
@@ -51,6 +54,9 @@
 @theme inline {
   --color-background: var(--color-bg);
   --color-foreground: var(--color-primary);
+  --color-accent: var(--river-accent);
+  --color-accent-soft: var(--river-accent-soft);
+  --color-brass: var(--river-brass);
   --font-sans: var(--font-sans);
   --font-serif: var(--font-serif);
   --font-mono: var(--font-mono);
@@ -66,7 +72,7 @@ body {
   font-family: var(--font-sans);
 }
 
-@keyframes riverboat-pill-sheen {
+@keyframes vantage-pill-sheen {
   0% {
     transform: translateX(-220%) skewX(-18deg);
   }
@@ -74,21 +80,6 @@ body {
   100% {
     transform: translateX(320%) skewX(-18deg);
   }
-}
-
-@keyframes riverboat-hero-rise {
-  from {
-    opacity: 0;
-    transform: translateY(18px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.rb-reveal {
-  animation: riverboat-hero-rise 700ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 .launch-sheen::before {
@@ -99,10 +90,16 @@ body {
   background: linear-gradient(
     110deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.14) 50%,
     transparent 100%
   );
   transform: translateX(-220%) skewX(-18deg);
-  animation: riverboat-pill-sheen 6.5s ease-in-out 2s infinite;
+  animation: vantage-pill-sheen 6.5s ease-in-out 2s infinite;
   pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launch-sheen::before {
+    animation: none;
+  }
 }

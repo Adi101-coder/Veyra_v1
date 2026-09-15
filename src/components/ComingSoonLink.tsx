@@ -15,6 +15,7 @@ export function ComingSoonLink({ label, href, external }: ComingSoonLinkProps) {
 
   const className =
     "inline-block py-1 font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-[#7b7b7b] no-underline transition duration-160 sm:text-[11px]";
+  const hoverClass = "hover:translate-x-0.5 hover:text-accent";
 
   if (isComingSoon) {
     return (
@@ -34,7 +35,7 @@ export function ComingSoonLink({ label, href, external }: ComingSoonLinkProps) {
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        className={`${className} hover:translate-x-0.5 hover:text-[#222]`}
+        className={`${className} ${hoverClass}`}
       >
         {label}
       </a>
@@ -44,7 +45,7 @@ export function ComingSoonLink({ label, href, external }: ComingSoonLinkProps) {
   return (
     <Link
       href={href}
-      className={`${className} hover:translate-x-0.5 hover:text-[#222]`}
+      className={`${className} ${hoverClass}`}
     >
       {label}
     </Link>

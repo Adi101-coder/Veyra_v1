@@ -1,4 +1,8 @@
+"use client";
+
 import Link from "next/link";
+import { BrandLockup } from "@/components/Logo";
+import { motion } from "@/components/motion";
 import { Shell } from "@/components/Shell";
 import { siteConfig } from "@/lib/site";
 
@@ -8,32 +12,37 @@ export function SiteHeader() {
       <Shell className="grid grid-cols-2 items-center gap-x-6 gap-y-2.5 pt-[19px] pb-3.5 lg:grid-cols-[1fr_auto_1fr]">
         <Link
           href="/"
-          className="font-serif text-[32px] font-extralight leading-none tracking-[0.05rem] text-[#222] no-underline sm:text-[46px] lg:text-[52px]"
+          className="text-[#1a1a1a] no-underline"
+          aria-label={siteConfig.name}
         >
-          {siteConfig.name}
+          <BrandLockup />
         </Link>
 
-        <nav className="justify-self-end flex items-center gap-4 sm:gap-6 lg:justify-self-center lg:gap-20">
+        <nav className="flex items-center justify-self-end gap-4 sm:gap-6 lg:justify-self-center lg:gap-16">
           {siteConfig.nav.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="text-xs font-medium text-[#7b7b7b] transition duration-160 hover:translate-x-0.5 hover:text-[#222] sm:text-base"
+              className="text-xs font-medium text-[#6e6e6e] transition duration-160 hover:translate-x-0.5 hover:text-accent sm:text-[15px]"
             >
               {item.label}
             </Link>
           ))}
         </nav>
 
-        <a
-          href={siteConfig.appUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Launch status: Mainnet Alpha Live!"
-          className="launch-sheen relative isolate hidden justify-self-end overflow-hidden rounded-full bg-[#181715] px-14 py-2 text-base font-medium whitespace-nowrap text-white lg:inline-flex lg:items-center"
+        <motion.div
+          whileHover={{ y: -1, scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          className="hidden justify-self-end lg:block"
         >
-          <span className="relative z-1">Launch App &gt;</span>
-        </a>
+          <Link
+            href={siteConfig.ctaHref}
+            aria-label={siteConfig.cta}
+            className="launch-sheen relative isolate inline-flex items-center overflow-hidden rounded-full bg-[#1a1a1a] px-8 py-2 text-[15px] font-medium whitespace-nowrap text-white no-underline"
+          >
+            <span className="relative z-1">{siteConfig.cta}</span>
+          </Link>
+        </motion.div>
       </Shell>
     </header>
   );

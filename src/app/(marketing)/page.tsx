@@ -1,13 +1,13 @@
 import { FAQ } from "@/components/FAQ";
 import { Hero } from "@/components/Hero";
-import { Partners } from "@/components/Partners";
 import { Rules } from "@/components/Rules";
+import { Stats } from "@/components/Stats";
 
 export default function Home() {
   return (
     <>
       <Hero />
-      <Partners />
+      <Stats />
       <Rules />
       <FAQ />
     </>

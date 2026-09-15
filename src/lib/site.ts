@@ -1,135 +1,176 @@
 export const siteConfig = {
-  name: "riverboat",
-  title: "Riverboat",
+  name: "Vantage",
+  wordmark: "VANTAGE",
+  title: "Vantage — where conviction meets capital",
   description:
-    "A composable, on-chain truth machine, where honesty is the only winning strategy. Decentralized, permissionless, and liquid.",
-  epoch: "2026-06-21",
-  contractCount: 43,
-  appUrl: "https://app.riverboat.zone/",
-  social: {
-    twitter: "https://x.com/riverboat_x",
-    twitterHandle: "@riverboat_x",
-    discord: "https://discord.gg/TaCNnJrzz9",
-    discordHandle: "discord.gg/riverboat",
-    telegram: "https://t.me/+FjU-CM3_xF02Zjk5",
-    telegramHandle: "t.me/riverboat",
-    pumpfun:
-      "https://pump.fun/coin/4t1xhKJd6oFGr98oWJoxYjLU74eFe7xiYSRDoX18pump",
-    mint: "4t1xhKJd6oFGr98oWJoxYjLU74eFe7xiYSRDoX18pump",
-  },
-  audit:
-    "https://github.com/SlotZeroSecurity/audits/blob/main/Riverboat-Security-Review-Mainnet-Alpha-v1.0.pdf",
+    "Back your predictions on the events that matter. Vantage is a transparent prediction platform where participants express conviction with capital and earn rewards for being right.",
+  tagline: "Where conviction meets capital.",
   nav: [
-    { href: "/#faq", label: "FAQ" },
-    { href: "/docs", label: "Documentation" },
-    { href: "/social", label: "Social" },
+    { href: "/dashboard", label: "Dashboard" },
+    { href: "/#how-it-works", label: "How it works" },
+    { href: "/docs", label: "Docs" },
+    { href: "/social", label: "Community" },
   ],
-  partners: [
-    {
-      name: "Breakout",
-      href: "https://blog.colosseum.com/announcing-the-winners-of-the-solana-breakout-hackathon/",
-    },
-    { name: "Helius", href: "https://www.helius.dev/" },
-    { name: "Solana", href: "https://solana.com/" },
+  cta: "Take a position",
+  ctaHref: "/dashboard",
+  hero: {
+    kicker: "Prediction markets",
+    status: "Updated live",
+    headline: "Where conviction meets capital.",
+    subhead:
+      "A transparent platform where participants express conviction with capital and earn rewards for being right.",
+    body: "Back your predictions on the events that matter. Markets, sports, technology, politics, culture—if the future is uncertain, there's a position to take.",
+    lede: "The future isn't guessed. It's priced. Every position reflects collective conviction, creating live signals around tomorrow's outcomes.",
+  },
+  stats: [
+    { value: "2,847", label: "Active Markets" },
+    { value: "31,000+", label: "Participants" },
+    { value: "$12.4M", label: "Volume Settled" },
+    { value: "Live", label: "Updated Live", pulse: true },
   ],
+  how: {
+    kicker: "How it works",
+    title: "Four rules from market to settlement.",
+    itemLabel: "Rule",
+  },
   rules: [
     {
       n: "I",
-      icon: "/images/rule-feather.png",
-      alt: "Quill and inkwell",
-      title: "Write a contract about anything.",
-      body: "Will _____ before October? Will _______? Any future-tense statement, in plain prose.",
+      icon: "/images/rule-market.png",
+      alt: "Open market ledger",
+      title: "Create a Market",
+      body: "Will a startup raise funding? Will a team win the championship? Will Bitcoin close above a certain price? Any future event can become a market.",
     },
     {
       n: "II",
-      icon: "/images/rule-balance.png",
-      alt: "Balance scale",
-      title: "Players submit confidence percentages.",
-      body: "Not yes or no. A number between zero and one hundred — your honest belief that the statement will resolve true, and a stake in SOL behind it.",
+      icon: "/images/rule-position.png",
+      alt: "A stake being placed",
+      title: "Take a Position",
+      body: "Participants stake according to their belief. Stronger conviction means greater exposure.",
     },
     {
       n: "III",
-      icon: "/images/rule-sun.png",
-      alt: "Sun face emblem",
-      title: "The algorithm scores predictions against each other.",
-      body: "A logarithmic scoring rule rewards calibration: the better your confidence matches the outcome, the greater your reward. Overconfidence is penalized; accuracy pays.",
+      icon: "/images/rule-discovery.png",
+      alt: "Odds moving with the crowd",
+      title: "Collective Price Discovery",
+      body: "As more positions are placed, market odds evolve. Every participant contributes information to the final signal.",
     },
     {
       n: "IV",
-      icon: "/images/rule-hands.png",
-      alt: "Clasped hands",
-      title: "Escrow releases to honest predictors.",
-      body: "When the Wager resolves, the on-chain program pays each participant in proportion to their proper score. No moderator; no winner-takes-all. The math is the judge.",
+      icon: "/images/rule-settle.png",
+      alt: "Settlement and rewards",
+      title: "Resolution & Rewards",
+      body: "When the outcome becomes known, rewards are distributed according to accuracy and participation. The market settles itself.",
     },
   ],
+  faqTitle: "Questions",
   faq: [
     {
-      q: "What is Riverboat?",
-      a: "Riverboat is a decentralized prediction protocol built on Solana. Instead of relying on order books, market makers, or intermediaries, Riverboat lets participants stake their confidence on future outcomes directly on-chain and settle with any Solana address. Anyone can use or build on it, without permission. Payouts are calibrated to conviction—the more accurate your confidence, the better your reward.",
+      q: "What is Vantage?",
+      a: "Vantage is a prediction and wagering platform where users take positions on future events and earn rewards when their forecasts prove correct.",
     },
     {
-      q: "How does it work?",
-      a: "Riverboat runs entirely across two Solana programs. Every interaction creates or mutates an on-chain account: a Contract defines the market, Terms can be attached to describe the rules, anyone can make a Wager against that Contract, and participants take a Seat to join. Once a Wager fills to capacity and resolves, payouts are calculated automatically based on how well each participant's confidence matched the outcome.",
-    },
-    {
-      q: "Why Solana?",
-      a: "Speed, cost, and composability. Riverboat's model sidesteps the need for order books and market makers — but it does require every Stake, Seat, and Resolution to settle on-chain. Solana makes that practical: transactions are fast and fees are negligible, on infrastructure that anyone can build on.",
+      q: "How are outcomes determined?",
+      a: "Each market contains predefined resolution criteria and settlement rules established before participation begins.",
     },
     {
       q: "Who is it for?",
-      a: "Riverboat is for anyone sees 'prediction' as more than a YES/NO binary: experts with something to say; rationalist outliers; people making high-context calls in domains like business, science, or journalism; builders and developers interested in new types of markets and resolution infrastructure. Welcome aboard!",
+      a: "Traders, analysts, sports fans, researchers, and anyone with a strong view about the future.",
     },
     {
-      q: "When does it launch?",
-      a: "Our Mainnet Alpha MVP was launched on June 21st, 2026 after the completion of our second third-party security audit, and can be safely used by anyone with a Solana wallet. Onward to Mainnet Beta! Follow along on X or Discord for the next boarding call.",
+      q: "What can I predict?",
+      a: "Markets, sports, technology, politics, entertainment, business events, and more.",
+    },
+    {
+      q: "Why participate?",
+      a: "Because information has value, and accurate predictions deserve rewards.",
     },
   ],
+  socialPage: {
+    kicker: "Community",
+    title: "Where the sharpest predictions gather.",
+    sectionKicker: "The floor",
+    sectionTitle: "Analysts, bettors, traders.",
+    sectionBody:
+      "A community of analysts, bettors, traders, forecasters, and curious minds testing their understanding of the future.",
+    footnoteKicker: "Channels",
+    footnote:
+      "X, Discord, and Telegram open with the public floor. Until then, this is where the sharpest views collect.",
+  },
+  channels: [
+    { label: "X", handle: "Opening soon", href: "#x" },
+    { label: "Discord", handle: "Opening soon", href: "#discord" },
+    { label: "Telegram", handle: "Opening soon", href: "#telegram" },
+  ],
+  docs: {
+    kicker: "Documentation",
+    title: "How Vantage Works",
+    body: "A market is a question about the future. Positions price that question. Settlement pays the people who were right.",
+    steps: [
+      {
+        n: "01",
+        title: "Create a Market",
+        body: "Frame a future event as a clear question with predefined resolution criteria.",
+      },
+      {
+        n: "02",
+        title: "Publish the Rules",
+        body: "Settlement terms are locked before anyone can take a position. No moving the goalposts.",
+      },
+      {
+        n: "03",
+        title: "Take a Position",
+        body: "Stake capital according to your belief. Stronger conviction means greater exposure.",
+      },
+      {
+        n: "04",
+        title: "Watch Price Discovery",
+        body: "As more positions land, odds move. The market becomes a live signal of collective conviction.",
+      },
+      {
+        n: "05",
+        title: "Resolve the Outcome",
+        body: "When the event happens, the market resolves against the criteria that were published at open.",
+      },
+      {
+        n: "06",
+        title: "Distribute Rewards",
+        body: "Payouts follow accuracy and participation. The market settles itself.",
+      },
+    ],
+  },
+  notFound: {
+    title: "Market not found.",
+    body: "That contract never opened. Step back to the floor and pick a live market.",
+    cta: "Return to Vantage",
+  },
   footer: [
     {
-      heading: "// About Riverboat",
+      heading: "Product",
       links: [
-        { label: "About", href: "#about" },
-        { label: "Team", href: "#team" },
-        { label: "Partner", href: "#partner" },
+        { label: "About", href: "/#how-it-works" },
+        { label: "Community", href: "/social" },
+        { label: "Markets", href: "/#stats" },
       ],
     },
     {
-      heading: "// Socials",
+      heading: "Channels",
       links: [
-        { label: "Twitter", href: "https://x.com/riverboat_x", external: true },
-        {
-          label: "Pumpfun",
-          href: "https://pump.fun/coin/4t1xhKJd6oFGr98oWJoxYjLU74eFe7xiYSRDoX18pump",
-          external: true,
-        },
-        {
-          label: "Telegram",
-          href: "https://t.me/+FjU-CM3_xF02Zjk5",
-          external: true,
-        },
-        {
-          label: "Discord",
-          href: "https://discord.gg/TaCNnJrzz9",
-          external: true,
-        },
+        { label: "X", href: "#x" },
+        { label: "Discord", href: "#discord" },
+        { label: "Telegram", href: "#telegram" },
       ],
     },
     {
-      heading: "// Resources",
+      heading: "Resources",
       links: [
         { label: "Docs", href: "/docs" },
         { label: "Whitepaper", href: "#whitepaper" },
-        { label: "FAQ", href: "/#faq" },
+        { label: "Questions", href: "/#faq" },
       ],
     },
   ],
 } as const;
-
-export function issueNumber(now = new Date()) {
-  const epoch = new Date(`${siteConfig.epoch}T00:00:00`);
-  const ms = now.getTime() - epoch.getTime();
-  return Math.max(1, Math.floor(ms / 86_400_000));
-}
 
 export function mastheadDate(now = new Date()) {
   return now
