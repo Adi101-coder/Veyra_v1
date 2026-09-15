@@ -18,7 +18,10 @@ function NavLinks({ className = "" }: { className?: string }) {
   return (
     <nav className={className}>
       {links.map((link) => {
-        const active = pathname === link.href;
+        const active =
+          link.href === "/dashboard"
+            ? pathname === "/dashboard" || pathname.startsWith("/contract/")
+            : pathname === link.href;
         return (
           <Link
             key={link.href}

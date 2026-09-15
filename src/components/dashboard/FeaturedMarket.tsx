@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   categoryColor,
   categoryLabel,
@@ -73,16 +74,18 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               {categoryLabel(market.category)}
               <span className="text-[#b0b0b0]">#{market.tag}</span>
             </p>
-            <button
-              type="button"
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a] transition hover:text-accent"
+            <Link
+              href={`/contract/${market.id}`}
+              className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a] no-underline transition hover:text-[#1a1a1a]"
             >
               View contract
-            </button>
+            </Link>
           </div>
 
           <h2 className="max-w-[36rem] font-serif text-[26px] leading-[1.2] tracking-[-0.02em] text-[#1a1a1a] sm:text-[30px]">
-            {market.title}
+            <Link href={`/contract/${market.id}`} className="text-inherit no-underline">
+              {market.title}
+            </Link>
           </h2>
 
           <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[rgba(26,26,26,0.08)] bg-[rgba(26,26,26,0.08)] sm:grid-cols-4">

@@ -388,6 +388,149 @@ export const tabs = [
 
 export type TabId = (typeof tabs)[number]["id"];
 
+export const SOL_USD = 100.24;
+
+const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+const MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+export type WagerRow = {
+  id: string;
+  stake: string;
+  gold: string;
+  lockBy: string;
+  mechanism: "Peer";
+  resolution: "PENDING" | "RESOLVED";
+  expired: boolean;
+  left: { wallet: string; avatar: string; belief: number };
+  right: { wallet: string; avatar: string; belief: number };
+};
+
+export function getMarket(id: string) {
+  return markets.find((market) => market.id === id) ?? null;
+}
+
+export function hashSeed(seed: string) {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function fakePubkey(seed: string, length = 44) {
+  let h = hashSeed(seed);
+  let out = "";
+  for (let i = 0; i < length; i += 1) {
+    h = (Math.imul(h, 1103515245) + 12345) >>> 0;
+    out += BASE58[h % 58];
+  }
+  return out;
+}
+
+export function shortenKey(key: string, left = 4, right = 4) {
+  if (key.length <= left + right + 3) return key;
+  return `${key.slice(0, left)}...${key.slice(-right)}`;
+}
+
+export function marketAddress(market: Market) {
+  return fakePubkey(`addr:${market.id}`);
+}
+
+export function marketCreator(market: Market) {
+  const key = fakePubkey(`creator:${market.id}`);
+  return { wallet: key, avatar: `creator-${market.id}` };
+}
+
+export function marketCreatedLabel(market: Market) {
+  const n = hashSeed(`created:${market.id}`);
+  const month = SHORT_MONTHS[n % 8];
+  const day = 1 + (n % 28);
+  return `${month} ${day}, 2026`;
+}
+
+export function formatResolvesBy(resolvesAt: string) {
+  const match = resolvesAt.match(
+    /^(\d{1,2}):(\d{2})\s*([AP]M)\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/i,
+  );
+  if (!match) return resolvesAt;
+  const [, hour, minute, mer, month, day, year] = match;
+  const full =
+    MONTHS[SHORT_MONTHS.findIndex((item) => item.toLowerCase() === month.toLowerCase())] ??
+    month;
+  return `${full} ${day}, ${year} at ${hour.padStart(2, "0")}:${minute} ${mer.toUpperCase()}`;
+}
+
+export function formatUsd(sol: number) {
+  return `$${(sol * SOL_USD).toFixed(2)}`;
+}
+
+function walletFromSeed(seed: string) {
+  return fakePubkey(seed, 44);
+}
+
+export function marketWagers(market: Market): WagerRow[] {
+  const count = Math.max(market.wagers, 1);
+  return Array.from({ length: count }, (_, index) => {
+    const n = hashSeed(`${market.id}:wager:${index}`);
+    const leftBelief = 52 + (n % 44);
+    const rightBelief = Math.max(4, 100 - leftBelief - (n % 5));
+    const table = market.tableOptions[index % market.tableOptions.length];
+    const filled = table?.full || index % 4 !== 1;
+    const resolved = index % 9 === 3;
+    const expired = index % 8 === 5;
+    const leftKey = index === 0 ? market.seats[0]?.wallet : shortenKey(walletFromSeed(`${market.id}:L:${index}`));
+    const rightKey = index === 0 ? market.seats[1]?.wallet : shortenKey(walletFromSeed(`${market.id}:R:${index}`));
+
+    return {
+      id: `${market.id}-w${index + 1}`,
+      stake: table?.stake ?? "0.10 SOL",
+      gold: filled ? "2/2" : "1/2",
+      lockBy: expired ? "Expired" : filled ? "Locked" : "Open",
+      mechanism: "Peer",
+      resolution: resolved ? "RESOLVED" : "PENDING",
+      expired,
+      left: {
+        wallet: leftKey && leftKey !== "Open seat" ? leftKey : "Open seat",
+        avatar: `${market.id}-L-${index}`,
+        belief: leftBelief,
+      },
+      right: {
+        wallet: rightKey && rightKey !== "Open seat" ? rightKey : "Open seat",
+        avatar: filled ? `${market.id}-R-${index}` : "open",
+        belief: rightBelief,
+      },
+    };
+  });
+}
+
 export function categoryLabel(id: Exclude<CategoryId, "all">) {
   return categories.find((c) => c.id === id)?.label ?? id;
 }

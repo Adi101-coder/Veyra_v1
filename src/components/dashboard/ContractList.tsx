@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { categoryColor, categoryLabel, type Market } from "@/lib/markets";
 import { Identicon } from "@/components/dashboard/Identicon";
 
@@ -37,8 +38,9 @@ export function ContractList({ markets, query, onQuery }: ContractListProps) {
           const color = categoryColor(market.category);
           return (
             <li key={market.id}>
-              <article
-                className="flex flex-col gap-3 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-[#fbfaf7] px-4 py-3.5 sm:flex-row sm:items-center sm:gap-4 sm:px-5"
+              <Link
+                href={`/contract/${market.id}`}
+                className="flex flex-col gap-3 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-[#fbfaf7] px-4 py-3.5 no-underline transition hover:border-[rgba(26,26,26,0.16)] hover:bg-white sm:flex-row sm:items-center sm:gap-4 sm:px-5"
                 style={{ borderLeft: `4px solid ${color}` }}
               >
                 <Identicon seed={market.id} className="h-9 w-9 shrink-0" />
@@ -58,9 +60,6 @@ export function ContractList({ markets, query, onQuery }: ContractListProps) {
                     <span>
                       {market.wagers} {market.wagers === 1 ? "Wager" : "Wagers"}
                     </span>
-                    <button type="button" className="tracking-[0.14em] text-[#b0b0b0]">
-                      Show +
-                    </button>
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center justify-between gap-6 sm:flex-col sm:items-end sm:justify-center">
@@ -72,7 +71,7 @@ export function ContractList({ markets, query, onQuery }: ContractListProps) {
                     {market.resolvesAt}
                   </p>
                 </div>
-              </article>
+              </Link>
             </li>
           );
         })}
