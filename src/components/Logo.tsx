@@ -30,6 +30,16 @@ export function BrandMark({ className = "h-9 w-9" }: BrandMarkProps) {
   );
 }
 
+export function BrandWordmark({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`font-serif font-normal lowercase tracking-[-0.03em] ${className}`.trim()}
+    >
+      {siteConfig.name}
+    </span>
+  );
+}
+
 type BrandLockupProps = {
   className?: string;
   markClassName?: string;

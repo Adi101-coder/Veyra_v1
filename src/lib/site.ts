@@ -6,7 +6,6 @@ export const siteConfig = {
     "Back your predictions on the events that matter. Vantage is a transparent prediction platform where participants express conviction with capital and earn rewards for being right.",
   tagline: "Where conviction meets capital.",
   nav: [
-    { href: "/dashboard", label: "Dashboard" },
     { href: "/#how-it-works", label: "How it works" },
     { href: "/docs", label: "Docs" },
     { href: "/social", label: "Community" },

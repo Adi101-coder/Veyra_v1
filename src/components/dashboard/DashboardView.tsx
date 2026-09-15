@@ -30,9 +30,9 @@ export function DashboardView() {
   }, [visible]);
 
   return (
-    <div className="bg-[#f3f1ec]">
-      <Shell className="pt-6 pb-8 sm:pt-8">
-        <div className="flex flex-wrap items-center gap-2">
+    <div className="bg-[#f4f2ed]">
+      <Shell className="pt-5 pb-8 sm:pt-6">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:gap-x-7">
           {tabs.map((item) => {
             const active = item.id === tab;
             return (
@@ -40,10 +40,10 @@ export function DashboardView() {
                 key={item.id}
                 type="button"
                 onClick={() => setTab(item.id)}
-                className={`rounded-full px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] transition sm:text-[11px] ${
+                className={`font-serif text-[12px] uppercase tracking-[0.14em] transition sm:text-[13px] ${
                   active
-                    ? "bg-[#1a1a1a] text-white"
-                    : "bg-transparent text-[#7a7a7a] hover:text-[#1a1a1a]"
+                    ? "rounded-full bg-[#2a2a2a] px-4 py-1.5 text-white"
+                    : "px-1 py-1.5 text-[#8a8a8a] hover:text-[#1a1a1a]"
                 }`}
               >
                 {item.label}
@@ -52,7 +52,7 @@ export function DashboardView() {
           })}
         </div>
 
-        <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
           {categories.map((item) => {
             const active = item.id === category;
             return (
@@ -60,10 +60,10 @@ export function DashboardView() {
                 key={item.id}
                 type="button"
                 onClick={() => setCategory(item.id)}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] whitespace-nowrap transition ${
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 font-serif text-[13px] whitespace-nowrap transition ${
                   active
-                    ? "border-[#1a1a1a] bg-[#1a1a1a] text-white"
-                    : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a] hover:border-[rgba(26,26,26,0.2)]"
+                    ? "border-[#2a2a2a] bg-[#2a2a2a] text-white"
+                    : "border-[rgba(26,26,26,0.12)] bg-[#fbfaf6] text-[#4a4a4a] hover:border-[rgba(26,26,26,0.22)]"
                 }`}
               >
                 {item.id !== "all" ? (
