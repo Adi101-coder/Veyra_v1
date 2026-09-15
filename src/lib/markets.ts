@@ -420,6 +420,8 @@ const SHORT_MONTHS = [
   "Dec",
 ] as const;
 
+export type SeatNote = "LOCKED" | "OPEN" | "LANDED" | "MISSED" | "PUSH";
+
 export type WagerRow = {
   id: string;
   stake: string;
@@ -428,12 +430,56 @@ export type WagerRow = {
   mechanism: "Peer";
   resolution: "PENDING" | "RESOLVED";
   expired: boolean;
-  left: { wallet: string; avatar: string; belief: number };
-  right: { wallet: string; avatar: string; belief: number };
+  left: { wallet: string; avatar: string; belief: number; note: SeatNote };
+  right: { wallet: string; avatar: string; belief: number; note: SeatNote };
 };
 
 export function getMarket(id: string) {
   return markets.find((market) => market.id === id) ?? null;
+}
+
+export function getWager(marketId: string, wagerId: string) {
+  const market = getMarket(marketId);
+  if (!market) return null;
+  const wager = marketWagers(market).find((row) => row.id === wagerId);
+  if (!wager) return null;
+  return { market, wager };
+}
+
+export function wagerAddress(wagerId: string) {
+  return fakePubkey(`wager:${wagerId}`);
+}
+
+export function parseStakeSol(stake: string) {
+  const value = Number.parseFloat(stake);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function formatResolvesParts(resolvesAt: string) {
+  const match = resolvesAt.match(
+    /^(\d{1,2}):(\d{2})\s*([AP]M)\s+([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/i,
+  );
+  if (!match) {
+    return { date: resolvesAt, time: "" };
+  }
+  const [, hour, minute, mer, month, day, year] = match;
+  return {
+    date: `${month} ${day}, ${year}`,
+    time: `${hour.padStart(2, "0")}:${minute} ${mer.toUpperCase()}`,
+  };
+}
+
+export function wagerCreatedParts(wagerId: string) {
+  const n = hashSeed(`wager-created:${wagerId}`);
+  const month = SHORT_MONTHS[n % 8];
+  const day = 1 + (n % 28);
+  const hour = 1 + (n % 11);
+  const minute = (n % 6) * 10;
+  const mer = n % 2 === 0 ? "AM" : "PM";
+  return {
+    date: `${month} ${day}, 2026`,
+    time: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${mer}`,
+  };
 }
 
 export function hashSeed(seed: string) {
@@ -500,8 +546,12 @@ export function marketWagers(market: Market): WagerRow[] {
   const count = Math.max(market.wagers, 1);
   return Array.from({ length: count }, (_, index) => {
     const n = hashSeed(`${market.id}:wager:${index}`);
-    const leftBelief = 52 + (n % 44);
-    const rightBelief = Math.max(4, 100 - leftBelief - (n % 5));
+    const leftBelief =
+      index === 0 ? (market.seats[0]?.chance ?? 52 + (n % 44)) : 52 + (n % 44);
+    const rightBelief =
+      index === 0
+        ? (market.seats[1]?.chance ?? Math.max(4, 100 - leftBelief - (n % 5)))
+        : Math.max(4, 100 - leftBelief - (n % 5));
     const table = market.tableOptions[index % market.tableOptions.length];
     const filled = table?.full || index % 4 !== 1;
     const resolved = index % 9 === 3;
@@ -521,11 +571,13 @@ export function marketWagers(market: Market): WagerRow[] {
         wallet: leftKey && leftKey !== "Open seat" ? leftKey : "Open seat",
         avatar: `${market.id}-L-${index}`,
         belief: leftBelief,
+        note: filled ? "LOCKED" : "OPEN",
       },
       right: {
         wallet: rightKey && rightKey !== "Open seat" ? rightKey : "Open seat",
         avatar: filled ? `${market.id}-R-${index}` : "open",
         belief: rightBelief,
+        note: filled ? (index === 0 ? "LANDED" : "LOCKED") : "OPEN",
       },
     };
   });

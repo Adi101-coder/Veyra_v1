@@ -121,8 +121,12 @@ export function getBinanceProvider(): InjectedEthereumProvider | null {
   return list.find((item) => item.isBinance || item.isBinanceWallet) ?? null;
 }
 
-function isEvmWallet(id: WalletId) {
+export function isEvmWallet(id: WalletId) {
   return id === "metamask" || id === "binance";
+}
+
+export function walletChain(id: WalletId): "solana" | "evm" {
+  return isEvmWallet(id) ? "evm" : "solana";
 }
 
 export function getInjectedProvider(id: WalletId): ConnectedProvider | null {

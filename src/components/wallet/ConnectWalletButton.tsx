@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { WalletIcon } from "@/components/wallet/WalletIcons";
+import { TransactionRows } from "@/components/wallet/TransactionRows";
 import {
   WALLET_OPTIONS,
   shortenAddress,
@@ -10,10 +12,19 @@ import {
 } from "@/lib/solana-wallet";
 
 export function ConnectWalletButton() {
-  const { address, connecting, error, connect, disconnect, clearError } = useWallet();
+  const {
+    address,
+    activity,
+    connecting,
+    error,
+    connect,
+    disconnect,
+    clearError,
+  } = useWallet();
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
   const [pending, setPending] = useState<WalletId | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -23,6 +34,22 @@ export function ConnectWalletButton() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const onDoc = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenu(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenu(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   const pick = async (id: WalletId) => {
     setPending(id);
@@ -37,8 +64,9 @@ export function ConnectWalletButton() {
   };
 
   if (address) {
+    const preview = activity.data?.transactions.slice(0, 4) ?? [];
     return (
-      <div className="relative justify-self-end">
+      <div className="relative justify-self-end" ref={menuRef}>
         <button
           type="button"
           onClick={() => setMenu((value) => !value)}
@@ -48,7 +76,38 @@ export function ConnectWalletButton() {
           {shortenAddress(address)}
         </button>
         {menu ? (
-          <div className="absolute right-0 z-50 mt-2 w-48 overflow-hidden rounded-xl border border-[rgba(26,26,26,0.12)] bg-white shadow-[0_12px_40px_-20px_rgba(26,26,26,0.45)]">
+          <div className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[rgba(26,26,26,0.12)] bg-white shadow-[0_12px_40px_-20px_rgba(26,26,26,0.45)]">
+            <div className="border-b border-[rgba(26,26,26,0.08)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                Connected
+              </p>
+              <p className="mt-1 font-serif text-[16px] text-[#1a1a1a]">
+                {shortenAddress(address, 5)}
+              </p>
+              <p className="mt-0.5 text-[12px] text-[#6e6e6e]">
+                {activity.data?.balanceLabel ?? (activity.status === "loading" ? "Reading balance…" : "—")}
+              </p>
+            </div>
+            <div className="max-h-64 overflow-y-auto">
+              {activity.status === "error" ? (
+                <p className="px-4 py-3 text-[12px] text-[#c45c6a]">{activity.error}</p>
+              ) : activity.status === "loading" && !activity.data ? (
+                <p className="px-4 py-3 text-[12px] italic text-[#8a8a8a]">Reading transactions…</p>
+              ) : (
+                <TransactionRows
+                  compact
+                  transactions={preview}
+                  empty="No recent transactions on this address."
+                />
+              )}
+            </div>
+            <Link
+              href="/activity"
+              onClick={() => setMenu(false)}
+              className="block border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-[13px] text-[#1a1a1a] no-underline hover:bg-[#f6f4ef]"
+            >
+              View all activity
+            </Link>
             <button
               type="button"
               onClick={async () => {

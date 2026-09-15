@@ -24,7 +24,6 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const [index, setIndex] = useState(0);
   const market = slides[index] ?? slides[0];
   const [tableId, setTableId] = useState(market?.tableOptions[0]?.id ?? "");
-  const [watching, setWatching] = useState(false);
 
   const table = useMemo(() => {
     if (!market) return undefined;
@@ -55,7 +54,6 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
     const next = (index + dir + slides.length) % slides.length;
     setIndex(next);
     setTableId(slides[next].tableOptions[0]?.id ?? "");
-    setWatching(false);
   };
 
   return (
@@ -256,13 +254,12 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setWatching((value) => !value)}
-            className="mt-5 w-full rounded-full bg-[#111111] px-4 py-3 text-[14px] font-medium text-white transition hover:bg-black"
+          <Link
+            href={`/contract/${market.id}/wager/${market.id}-w1`}
+            className="mt-5 block w-full rounded-full bg-[#111111] px-4 py-3 text-center text-[14px] font-medium text-white no-underline transition hover:bg-black"
           >
-            {watching ? "Watching this wager" : "Watch this wager →"}
-          </button>
+            Watch this wager →
+          </Link>
           <p className="mt-3 text-[12px] leading-5 text-[#8a8a8a]">
             Pick another table above, or follow this one to the finish.
           </p>

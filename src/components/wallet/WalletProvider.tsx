@@ -12,24 +12,40 @@ import {
   connectWallet,
   disconnectWallet,
   isEthereumProvider,
+  walletChain,
   restoreWalletSession,
   type ConnectedProvider,
   type WalletId,
 } from "@/lib/solana-wallet";
+import {
+  fetchWalletActivity,
+  type WalletActivity,
+  type WalletChain,
+} from "@/lib/wallet-activity";
+
+type ActivityState = {
+  status: "idle" | "loading" | "ready" | "error";
+  data: WalletActivity | null;
+  error: string | null;
+};
 
 type WalletContextValue = {
   address: string | null;
   walletId: WalletId | null;
+  chain: WalletChain | null;
   connecting: boolean;
   error: string | null;
+  activity: ActivityState;
   connect: (id: WalletId) => Promise<void>;
   disconnect: () => Promise<void>;
+  refreshActivity: () => Promise<void>;
   clearError: () => void;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
 const STORAGE_KEY = "vantage.wallet";
+const idleActivity: ActivityState = { status: "idle", data: null, error: null };
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [address, setAddress] = useState<string | null>(null);
@@ -37,6 +53,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [provider, setProvider] = useState<ConnectedProvider | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<ActivityState>(idleActivity);
+
+  const chain = walletId ? walletChain(walletId) : null;
 
   const attach = useCallback((id: WalletId, next: ConnectedProvider, key: string) => {
     setWalletId(id);
@@ -69,8 +88,31 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     setAddress(null);
     setWalletId(null);
     setProvider(null);
+    setActivity(idleActivity);
     window.localStorage.removeItem(STORAGE_KEY);
   }, [provider]);
+
+  const refreshActivity = useCallback(async () => {
+    if (!address || !chain) {
+      setActivity(idleActivity);
+      return;
+    }
+    setActivity((prev) => ({
+      status: "loading",
+      data: prev.data,
+      error: null,
+    }));
+    try {
+      const data = await fetchWalletActivity(address, chain);
+      setActivity({ status: "ready", data, error: null });
+    } catch (err) {
+      setActivity({
+        status: "error",
+        data: null,
+        error: err instanceof Error ? err.message : "Could not load transactions",
+      });
+    }
+  }, [address, chain]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY) as WalletId | null;
@@ -95,6 +137,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setAddress(null);
       setWalletId(null);
       setProvider(null);
+      setActivity(idleActivity);
       window.localStorage.removeItem(STORAGE_KEY);
     };
 
@@ -131,17 +174,34 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     };
   }, [provider, walletId]);
 
+  useEffect(() => {
+    void refreshActivity();
+  }, [refreshActivity]);
+
   const value = useMemo(
     () => ({
       address,
       walletId,
+      chain,
       connecting,
       error,
+      activity,
       connect,
       disconnect,
+      refreshActivity,
       clearError: () => setError(null),
     }),
-    [address, walletId, connecting, error, connect, disconnect],
+    [
+      address,
+      walletId,
+      chain,
+      connecting,
+      error,
+      activity,
+      connect,
+      disconnect,
+      refreshActivity,
+    ],
   );
 
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;

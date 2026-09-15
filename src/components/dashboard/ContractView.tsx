@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { Shell } from "@/components/Shell";
@@ -20,6 +21,41 @@ import { shortenAddress } from "@/lib/solana-wallet";
 
 const STAKE_PRESETS = [0, 0.1, 0.5, 1, 2, 5];
 const LOCK_PRESETS = [3, 12, 24];
+
+function Clause({
+  n,
+  label,
+  prompt,
+}: {
+  n: string;
+  label: string;
+  prompt: string;
+}) {
+  return (
+    <div>
+      <p className="flex items-baseline font-serif text-[22px] leading-none tracking-[-0.03em] text-[#1a1a1a]">
+        <SectionMark />
+        {n}
+      </p>
+      <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+        {label}
+      </p>
+      <p className="mt-2 max-w-[7.5rem] text-[12px] leading-4 italic text-[#9a9a9a]">{prompt}</p>
+    </div>
+  );
+}
+
+function SectionMark() {
+  return (
+    <span
+      className="relative mr-0.5 inline-block h-[1em] w-[0.7em] shrink-0"
+      aria-hidden
+    >
+      <span className="absolute top-[-0.08em] left-0 italic leading-none">S</span>
+      <span className="absolute top-[0.26em] left-[0.08em] italic leading-none">S</span>
+    </span>
+  );
+}
 
 function formatLockStamp(now: number, hours: number) {
   const date = new Date(now + hours * 60 * 60 * 1000);
@@ -135,24 +171,12 @@ export function ContractView({ market }: { market: Market }) {
               </div>
 
               <div className="mt-8 grid gap-6 border-t border-[rgba(26,26,26,0.06)] pt-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
-                <div>
-                  <p className="font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">§01</p>
-                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
-                    Terms
-                  </p>
-                  <p className="mt-2 text-[12px] italic text-[#9a9a9a]">How does this resolve?</p>
-                </div>
+                <Clause n="01" label="Terms" prompt="How does this resolve?" />
                 <p className="self-center text-[14px] italic text-[#8a8a8a]">No terms attached.</p>
               </div>
 
               <div className="mt-6 grid gap-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
-                <div>
-                  <p className="font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">§02</p>
-                  <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
-                    Resolution
-                  </p>
-                  <p className="mt-2 text-[12px] italic text-[#9a9a9a]">When is it judged?</p>
-                </div>
+                <Clause n="02" label="Resolution" prompt="When is it judged?" />
                 <div className="self-center">
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
                     Resolves by
@@ -216,7 +240,7 @@ export function ContractView({ market }: { market: Market }) {
                   </thead>
                   <tbody>
                     {visible.map((row) => (
-                      <WagerTableRow key={row.id} row={row} />
+                      <WagerTableRow key={row.id} marketId={market.id} row={row} />
                     ))}
                   </tbody>
                 </table>
@@ -239,9 +263,21 @@ export function ContractView({ market }: { market: Market }) {
   );
 }
 
-function WagerTableRow({ row }: { row: WagerRow }) {
+function WagerTableRow({ marketId, row }: { marketId: string; row: WagerRow }) {
+  const router = useRouter();
+  const href = row.id.includes("-local-")
+    ? null
+    : `/contract/${marketId}/wager/${row.id}`;
+
   return (
-    <tr className="border-t border-[rgba(26,26,26,0.06)]">
+    <tr
+      className={`border-t border-[rgba(26,26,26,0.06)] ${
+        href ? "cursor-pointer hover:bg-white/70" : ""
+      }`}
+      onClick={() => {
+        if (href) router.push(href);
+      }}
+    >
       <td className="py-3 pr-3">
         <Identicon
           seed={row.left.wallet === "Open seat" ? "open" : row.left.avatar}
@@ -320,11 +356,13 @@ function CreateWagerCard({
         wallet: shortenAddress(address),
         avatar: address,
         belief: 50,
+        note: "LOCKED",
       },
       right: {
         wallet: "Open seat",
         avatar: "open",
         belief: 50,
+        note: "OPEN",
       },
     });
     setMessage("Wager posted. The other seat is still open.");
