@@ -2,7 +2,9 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
-import { categories, type CategoryId } from "@/lib/markets";
+import { motion, useReducedMotion } from "framer-motion";
+import { categories, categoryColor, categoryLabel, type CategoryId } from "@/lib/markets";
+import { Identicon } from "@/components/dashboard/Identicon";
 import { Shell } from "@/components/Shell";
 
 const HEADLINE_MAX = 140;
@@ -51,20 +53,12 @@ function parseWall(value: string) {
   };
 }
 
-function formatWallClock(value: string) {
+function formatPreviewStamp(value: string) {
   const parts = parseWall(value);
   if (!parts) return "Set a time";
   const mer = parts.hour >= 12 ? "PM" : "AM";
   const hour = parts.hour % 12 || 12;
-  return `${String(hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")} ${mer} ${MONTHS[parts.month - 1]} ${String(parts.day).padStart(2, "0")}, ${parts.year}`;
-}
-
-function formatPreviewStamp(value: string) {
-  const parts = parseWall(value);
-  if (!parts) return "—";
-  const mer = parts.hour >= 12 ? "PM" : "AM";
-  const hour = parts.hour % 12 || 12;
-  return `${hour}:${String(parts.minute).padStart(2, "0")} ${mer} ${MONTHS[parts.month - 1].toUpperCase()} ${parts.day}, ${parts.year}`;
+  return `${hour}:${String(parts.minute).padStart(2, "0")} ${mer} ${MONTHS[parts.month - 1]} ${parts.day}, ${parts.year}`;
 }
 
 function tzOffsetMs(date: Date, timeZone: string) {
@@ -107,14 +101,14 @@ function formatUtcLine(value: string, timeZone: string, zoneLabel: string) {
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    second: "2-digit",
     hourCycle: "h23",
     timeZone: "UTC",
   });
-  return `Interpreted in ${zoneLabel} — ${stamp.replace(",", "")} UTC`;
+  return `${zoneLabel.split(" / ")[0]} · ${stamp.replace(",", "")} UTC`;
 }
 
 export function WriteView() {
+  const reduce = useReducedMotion();
   const [headline, setHeadline] = useState("");
   const [terms, setTerms] = useState("");
   const [topics, setTopics] = useState<TopicId[]>([]);
@@ -128,12 +122,19 @@ export function WriteView() {
   const [published, setPublished] = useState(false);
 
   const zoneLabel = TIMEZONES.find((item) => item.id === timeZone)?.label ?? timeZone;
-  const blockers = useMemo(() => {
-    const list: string[] = [];
-    if (!headline.trim()) list.push("Add a headline.");
-    return list;
-  }, [headline]);
-  const canPublish = blockers.length === 0 && !published;
+  const checks = useMemo(
+    () => [
+      { id: "headline", label: "Question written", done: headline.trim().length > 8 },
+      { id: "terms", label: "Resolution rules set", done: terms.trim().length > 12 },
+      { id: "topic", label: "Category chosen", done: topics.length > 0 },
+      { id: "time", label: "Judgment time set", done: Boolean(parseWall(resolves)) },
+    ],
+    [headline, terms, topics, resolves],
+  );
+  const ready = checks.every((item) => item.done);
+  const canPublish = ready && !published;
+  const doneCount = checks.filter((item) => item.done).length;
+  const accent = topics[0] ? categoryColor(topics[0]) : "#c4a46a";
 
   const encryptNote = encryptHeadline && encryptTerms
     ? "Headline and terms are encrypted on-chain."
@@ -141,7 +142,7 @@ export function WriteView() {
       ? "Headline is encrypted. Terms go on-chain in clear."
       : encryptTerms
         ? "Terms are encrypted. The question goes on-chain in clear."
-        : "Nothing is encrypted. The question and terms go on-chain in clear";
+        : "Question and terms publish in clear.";
 
   const toggleTopic = (id: TopicId) => {
     setTopics((current) =>
@@ -150,303 +151,333 @@ export function WriteView() {
   };
 
   return (
-    <div className="bg-[#eceae4]">
-      <Shell className="pt-4 pb-20 sm:pt-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <p className="flex flex-wrap items-center gap-2 font-serif text-[13px] text-[#8a8a8a]">
+    <div className="bg-[#f4f2ed]">
+      <Shell className="pt-5 pb-24 sm:pt-7">
+        <div className="mb-7 flex flex-wrap items-center justify-between gap-3">
+          <p className="flex flex-wrap items-center gap-2 text-[13px] text-[#8a8a8a]">
             <Link href="/dashboard" className="text-[#5a5a5a] no-underline hover:text-[#1a1a1a]">
-              ← Dashboard
+              Dashboard
             </Link>
-            <span>/</span>
-            <span className="text-[#1a1a1a]">Write a Contract</span>
+            <span className="text-[#c8c4bc]">/</span>
+            <span className="text-[#1a1a1a]">Write a contract</span>
           </p>
-          <button
-            type="button"
-            onClick={() => setPreview((value) => !value)}
-            className="rounded-full border border-[rgba(26,26,26,0.14)] bg-white px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#5a5a5a]"
-          >
-            {preview ? "× Close preview" : "Show preview"}
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-[rgba(26,26,26,0.1)] bg-white px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+              Draft · {doneCount}/{checks.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPreview((value) => !value)}
+              className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#5a5a5a] lg:hidden"
+            >
+              {preview ? "Hide preview" : "Show preview"}
+            </button>
+          </div>
         </div>
 
         <div
-          className={`grid items-start gap-10 lg:gap-14 ${
-            preview ? "lg:grid-cols-[minmax(0,1fr)_20.5rem] xl:grid-cols-[minmax(0,1fr)_22rem]" : ""
+          className={`grid items-start gap-6 lg:gap-8 ${
+            preview ? "xl:grid-cols-[minmax(0,1fr)_22.5rem]" : ""
           }`}
         >
           <form
             id="write-contract"
-            className="min-w-0"
+            className="min-w-0 overflow-hidden rounded-[24px] border border-[rgba(26,26,26,0.08)] bg-[#fbfaf7] shadow-[0_18px_50px_-36px_rgba(26,26,26,0.35)]"
             onSubmit={(event) => {
               event.preventDefault();
               if (!canPublish) return;
               setPublished(true);
             }}
           >
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">
-              New contract <span className="text-[#b0b0b0]">·</span> Draft
-            </p>
-            <h1 className="mt-3 font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
-              Write a Contract.
-            </h1>
-            <p className="mt-4 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
-              Set your Terms and Resolution criteria. Others will be able to make Wagers using your
-              Contract.
-            </p>
+            <div className="border-b border-[rgba(26,26,26,0.08)] px-5 py-7 sm:px-8">
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c4a46a]">
+                New contract
+              </p>
+              <h1 className="mt-2 font-serif text-[34px] leading-[0.95] tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+                Write a Contract.
+              </h1>
+              <p className="mt-3 max-w-[36rem] text-[15px] leading-6 text-[#6e6e6e]">
+                Frame a question, lock the resolution rules, then list it. Others wager against those
+                terms — not against a moving goalpost.
+              </p>
+              <ol className="mt-6 flex flex-wrap gap-2">
+                {[
+                  { n: "01", label: "Question", done: checks[0].done },
+                  { n: "02", label: "Resolution", done: checks[1].done && checks[3].done },
+                  { n: "03", label: "Listing", done: checks[2].done },
+                ].map((step) => (
+                  <li
+                    key={step.n}
+                    className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.16em] ${
+                      step.done
+                        ? "bg-[#1a1a1a] text-white"
+                        : "border border-[rgba(26,26,26,0.1)] bg-white text-[#8a8a8a]"
+                    }`}
+                  >
+                    <span>{step.n}</span>
+                    {step.label}
+                  </li>
+                ))}
+              </ol>
+            </div>
 
-            <div className="mt-8 border-t border-[rgba(26,26,26,0.12)]">
-              <Clause roman="I" title="Headline" prompt="What is the question?">
-                <input
+            <Field
+              n="01"
+              title="The question"
+              hint="One sentence. State exactly what is being wagered on."
+            >
+              <div className="rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-4 py-3.5 focus-within:border-[#1a1a1a]">
+                <textarea
                   value={headline}
                   maxLength={HEADLINE_MAX}
+                  rows={3}
                   onChange={(event) => setHeadline(event.target.value)}
-                  placeholder="e.g., 'Energy PM's become a top 3 vertical by volume within 5 years'"
-                  className="w-full bg-transparent font-serif text-[18px] leading-7 text-[#1a1a1a] outline-none placeholder:italic placeholder:text-[#c8c4bc]"
+                  placeholder="Will energy PMs become a top-3 vertical by volume within 5 years?"
+                  className="w-full resize-none bg-transparent font-serif text-[20px] leading-8 text-[#1a1a1a] outline-none placeholder:text-[#c8c4bc]"
                 />
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-[12px] italic text-[#8a8a8a]">
-                    One sentence. State exactly what is being wagered on.
-                  </p>
-                  <p className="shrink-0 font-mono text-[10px] text-[#b0b0b0]">
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <p className="text-[12px] text-[#9a9a9a]">Public headline unless you encrypt it.</p>
+                  <p className="font-mono text-[10px] text-[#b0b0b0]">
                     {headline.length} / {HEADLINE_MAX}
                   </p>
                 </div>
-                <Switch
-                  on={encryptHeadline}
-                  onChange={setEncryptHeadline}
-                  label="Encrypt Headline"
-                  hint="Stored as ciphertext on-chain. People see that you committed to something, and when — not what."
-                />
-              </Clause>
+              </div>
+              <Switch
+                on={encryptHeadline}
+                onChange={setEncryptHeadline}
+                label="Encrypt headline"
+                hint="People see that you committed to something, and when — not the wording."
+              />
+            </Field>
 
-              <Clause roman="II" title="Terms" prompt="How does this resolve?">
+            <Field
+              n="02"
+              title="Resolution rules"
+              hint="Cite a source, an exact time, and the tie-breaker. This is the contract."
+            >
+              <div className="rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-4 py-3.5 focus-within:border-[#1a1a1a]">
                 <textarea
                   value={terms}
                   maxLength={TERMS_MAX}
-                  rows={3}
+                  rows={8}
                   onChange={(event) => setTerms(event.target.value)}
-                  placeholder="Describe how this Contract resolves, and under what conditions."
-                  className="w-full resize-none bg-transparent font-serif text-[18px] leading-7 text-[#1a1a1a] outline-none placeholder:italic placeholder:text-[#c8c4bc]"
+                  placeholder="Resolves YES if… Source: … Timestamp in UTC: … If the source is unavailable or the print is a tie, then…"
+                  className="w-full resize-y bg-transparent text-[15px] leading-7 text-[#1a1a1a] outline-none placeholder:text-[#c8c4bc]"
                 />
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-[12px] italic text-[#8a8a8a]">
-                    Specify sources and exact times (e.g. UTC); account for tie-breakers and edge
-                    cases.
-                  </p>
-                  <p className="shrink-0 font-mono text-[10px] text-[#b0b0b0]">
-                    {terms.length} / {TERMS_MAX.toLocaleString("en-US")}
-                  </p>
-                </div>
-                <Switch
-                  on={encryptTerms}
-                  onChange={setEncryptTerms}
-                  label="Encrypt Terms"
-                  hint="Turn this on to hide the resolution criteria too — same password, separate salt on-chain."
-                />
-              </Clause>
+                <p className="mt-2 text-right font-mono text-[10px] text-[#b0b0b0]">
+                  {terms.length.toLocaleString("en-US")} / {TERMS_MAX.toLocaleString("en-US")}
+                </p>
+              </div>
+              <Switch
+                on={encryptTerms}
+                onChange={setEncryptTerms}
+                label="Encrypt terms"
+                hint="Hide the criteria until resolution. Same password, separate salt on-chain."
+              />
 
-              <Clause roman="III" title="Categories" prompt="Pick one or more:">
-                <div className="flex flex-wrap gap-x-5 gap-y-3">
-                  {TOPIC_CATEGORIES.map((item) => {
-                    const active = topics.includes(item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => toggleTopic(item.id)}
-                        className="inline-flex items-center gap-2 text-[14px] text-[#1a1a1a]"
-                      >
-                        <span
-                          className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-                            active ? "border-[#1a1a1a]" : "border-[#b8b4ac]"
-                          }`}
-                        >
-                          {active ? <span className="h-1.5 w-1.5 rounded-full bg-[#1a1a1a]" /> : null}
-                        </span>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <label className="block rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-4 py-3 focus-within:border-[#1a1a1a]">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                    Resolves by
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={resolves}
+                    onChange={(event) => setResolves(event.target.value)}
+                    className="mt-2 w-full bg-transparent font-serif text-[16px] text-[#1a1a1a] outline-none"
+                  />
+                </label>
+                <label className="block rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-4 py-3 focus-within:border-[#1a1a1a]">
+                  <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                    Timezone
+                  </span>
+                  <select
+                    value={timeZone}
+                    onChange={(event) => setTimeZone(event.target.value)}
+                    className="mt-2 w-full appearance-none bg-transparent font-serif text-[16px] text-[#1a1a1a] outline-none"
+                  >
+                    {TIMEZONES.map((item) => (
+                      <option key={item.id} value={item.id}>
                         {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </Clause>
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="mt-2 text-[12px] text-[#8a8a8a]">
+                {formatUtcLine(resolves, timeZone, zoneLabel)}
+              </p>
+            </Field>
 
-              <Clause roman="IV" title="Hashtag" prompt="How is it tagged?">
-                <label className="flex items-baseline gap-2 border-b border-dashed border-[rgba(26,26,26,0.28)] pb-1">
-                  <span className="font-serif text-[22px] text-[#1a1a1a]">#</span>
+            <Field
+              n="03"
+              title="Listing"
+              hint="How this contract shows on the floor."
+              last
+            >
+              <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                Categories
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {TOPIC_CATEGORIES.map((item) => {
+                  const active = topics.includes(item.id);
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => toggleTopic(item.id)}
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] transition ${
+                        active
+                          ? "border-[#1a1a1a] bg-[#1a1a1a] text-white"
+                          : "border-[rgba(26,26,26,0.12)] bg-white text-[#4a4a4a] hover:border-[rgba(26,26,26,0.28)]"
+                      }`}
+                    >
+                      <span
+                        className="h-1.5 w-1.5 rounded-full"
+                        style={{ background: active ? "#fff" : item.color }}
+                      />
+                      {item.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <label className="flex items-center gap-2 rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-4 py-3 focus-within:border-[#1a1a1a]">
+                  <span className="font-serif text-[20px] text-[#8a8a8a]">#</span>
                   <input
                     value={tag}
                     maxLength={TAG_MAX}
                     onChange={(event) =>
                       setTag(event.target.value.replace(/[^a-zA-Z0-9-]/g, "").toLowerCase())
                     }
-                    placeholder="----------------"
-                    className="w-full bg-transparent font-mono text-[15px] tracking-[0.18em] text-[#1a1a1a] outline-none placeholder:text-[#d0ccc4]"
+                    placeholder="election-2028"
+                    className="w-full bg-transparent font-mono text-[14px] tracking-[0.04em] text-[#1a1a1a] outline-none placeholder:text-[#c8c4bc]"
                   />
+                  <span className="shrink-0 font-mono text-[10px] text-[#b0b0b0]">
+                    {tag.length}/{TAG_MAX}
+                  </span>
                 </label>
-                <div className="mt-3 flex items-end justify-between gap-4">
-                  <p className="text-[12px] italic text-[#8a8a8a]">
-                    A short tag to group related contracts — e.g. ufc-400, btc, election-2028.
-                  </p>
-                  <p className="shrink-0 font-mono text-[10px] text-[#b0b0b0]">
-                    {tag.length} / {TAG_MAX}
-                  </p>
-                </div>
-              </Clause>
-
-              <Clause roman="V" title="Resolution" prompt="When is it judged?">
-                <div className="grid gap-6 sm:grid-cols-2">
-                  <label className="relative block cursor-pointer">
-                    <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[#9a9a9a]">
-                      Resolves by
-                    </span>
-                    <span className="mt-2 flex items-center gap-2 font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a]">
-                      {formatWallClock(resolves)}
-                      <svg viewBox="0 0 16 16" className="h-4 w-4 text-[#8a8a8a]" aria-hidden>
-                        <rect x="2" y="3.5" width="12" height="10.5" rx="1.2" fill="none" stroke="currentColor" />
-                        <path d="M2 6.5h12M5 2v3M11 2v3" stroke="currentColor" fill="none" />
-                      </svg>
-                    </span>
-                    <input
-                      type="datetime-local"
-                      value={resolves}
-                      onChange={(event) => setResolves(event.target.value)}
-                      className="absolute inset-0 cursor-pointer opacity-0"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="font-mono text-[9px] uppercase tracking-[0.18em] text-[#9a9a9a]">
-                      Timezone
-                    </span>
-                    <select
-                      value={timeZone}
-                      onChange={(event) => setTimeZone(event.target.value)}
-                      className="mt-2 w-full appearance-none border-0 bg-transparent font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a] outline-none"
+                <div className="flex rounded-full border border-[rgba(26,26,26,0.1)] bg-white p-1">
+                  {(
+                    [
+                      ["public", "Public"],
+                      ["private", "Private"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setVisibility(id)}
+                      className={`rounded-full px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] ${
+                        visibility === id ? "bg-[#1a1a1a] text-white" : "text-[#8a8a8a]"
+                      }`}
                     >
-                      {TIMEZONES.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <p className="mt-3 text-[12px] italic text-[#8a8a8a]">
-                  {formatUtcLine(resolves, timeZone, zoneLabel.split(" / ")[0] ?? zoneLabel)}
-                </p>
-              </Clause>
-
-              <Clause roman="VI" title="Visibility" prompt="Who can see it?" last>
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <div className="flex items-center gap-6">
-                    {(
-                      [
-                        ["public", "Public"],
-                        ["private", "Private"],
-                      ] as const
-                    ).map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setVisibility(id)}
-                        className="inline-flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.16em] text-[#1a1a1a]"
-                      >
-                        <span
-                          className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${
-                            visibility === id ? "border-[#1a1a1a]" : "border-[#b8b4ac]"
-                          }`}
-                        >
-                          {visibility === id ? (
-                            <span className="h-1.5 w-1.5 rounded-full bg-[#1a1a1a]" />
-                          ) : null}
-                        </span>
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[12px] italic text-[#8a8a8a]">
-                    {visibility === "public"
-                      ? "Anyone can see this contract on the dashboard."
-                      : "Only people with the link can find this contract."}
-                  </p>
-                </div>
-              </Clause>
-            </div>
+              </div>
+              <p className="mt-2 text-[12px] text-[#8a8a8a]">
+                {visibility === "public"
+                  ? "Anyone can find this contract on the dashboard."
+                  : "Only people with the link can open this contract."}
+              </p>
+            </Field>
           </form>
 
           {preview ? (
-            <aside className="lg:sticky lg:top-6">
-              <p className="mb-4 font-mono text-[11px] uppercase tracking-[0.18em] text-[#1a1a1a]">
-                Preview & confirmation
+            <aside className="xl:sticky xl:top-6">
+              <p className="mb-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+                Live preview
               </p>
-              <div className="rounded-[18px] border border-dashed border-[rgba(196,164,106,0.55)] bg-[#f3ead8]/40 px-5 py-5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#c4a46a]">
-                  Contract <span className="text-[#b0b0b0]">·</span> Draft
+              <motion.article
+                layout={!reduce}
+                className="rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-[#fbfaf7] p-5 shadow-[0_18px_50px_-36px_rgba(26,26,26,0.4)]"
+                style={{ borderLeft: `4px solid ${accent}` }}
+              >
+                <div className="flex items-start gap-3">
+                  <Identicon seed={headline.trim() || "open"} className="h-10 w-10 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#c4a46a]">
+                      Contract · Draft
+                    </p>
+                    <h2 className="mt-1 font-serif text-[22px] leading-snug tracking-[-0.03em] text-[#1a1a1a]">
+                      {headline.trim() || "Your question appears here"}
+                    </h2>
+                  </div>
+                </div>
+                <p className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+                  {topics.length ? (
+                    topics.map((id) => (
+                      <span key={id} className="inline-flex items-center gap-1.5">
+                        <span
+                          className="h-1.5 w-1.5 rounded-full"
+                          style={{ background: categoryColor(id) }}
+                        />
+                        {categoryLabel(id)}
+                      </span>
+                    ))
+                  ) : (
+                    <span>No category yet</span>
+                  )}
+                  <span>#{tag || "untagged"}</span>
+                  <span>{visibility === "public" ? "Public" : "Private"}</span>
                 </p>
-                <h2 className="mt-3 font-serif text-[22px] leading-snug tracking-[-0.03em] text-[#1a1a1a]">
-                  {headline.trim() || "Your headline will appear here"}
-                </h2>
-                <p className="mt-3 text-[13px] italic text-[#8a8a8a]">
-                  {visibility === "public" ? "Public · readable by anyone" : "Private · link only"}
+                <p className="mt-3 line-clamp-4 text-[13px] leading-5 text-[#6e6e6e]">
+                  {terms.trim() ||
+                    "Resolution rules will show here so bettors know exactly how this settles."}
                 </p>
-                <p className="mt-3 text-[13px] italic text-[#8a8a8a]">
-                  {encryptTerms
-                    ? "Terms stay hidden until resolution."
-                    : "Terms will be shown to bettors before they place a wager."}
-                </p>
-                <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-[#8a8a8a]">
                   Resolves {formatPreviewStamp(resolves)}
                 </p>
-              </div>
+              </motion.article>
+
+              <ul className="mt-4 space-y-2 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-4 py-4">
+                {checks.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2.5 text-[13px]">
+                    <span
+                      className={`flex h-4 w-4 items-center justify-center rounded-full text-[10px] ${
+                        item.done ? "bg-[#1a1a1a] text-white" : "border border-[#d0ccc4] text-transparent"
+                      }`}
+                    >
+                      ✓
+                    </span>
+                    <span className={item.done ? "text-[#1a1a1a]" : "text-[#8a8a8a]"}>
+                      {item.label}
+                    </span>
+                  </li>
+                ))}
+              </ul>
 
               {published ? (
-                <p className="mt-4 rounded-lg bg-[#e7f4ec] px-4 py-3 text-[13px] text-[#2f9e6e]">
+                <p className="mt-4 rounded-2xl bg-[#e7f4ec] px-4 py-3 text-[13px] text-[#2f9e6e]">
                   Contract queued. It will show under New on the dashboard.
                 </p>
-              ) : blockers.length ? (
-                <div className="mt-4 rounded-lg bg-[#f8e8ea] px-4 py-3">
-                  <p className="text-[13px] font-medium text-[#c45c5c]">Before you can publish:</p>
-                  {blockers.map((item) => (
-                    <p key={item} className="mt-1 text-[13px] text-[#c45c5c]">
-                      {item}
-                    </p>
-                  ))}
-                </div>
               ) : null}
 
               <button
                 type="submit"
                 form="write-contract"
                 disabled={!canPublish}
-                className={`mt-4 w-full rounded-md py-3.5 text-[12px] font-semibold tracking-[0.18em] uppercase ${
+                className={`mt-4 w-full rounded-full py-3.5 text-[12px] font-semibold tracking-[0.16em] uppercase transition ${
                   canPublish
                     ? "bg-[#111111] text-white hover:bg-black"
-                    : "cursor-not-allowed bg-[#c8c4bc] text-white"
+                    : "cursor-not-allowed bg-[#dedad3] text-[#9a9a9a]"
                 }`}
               >
-                {published ? "Published" : "Publish Contract"}
+                {published ? "Published" : "Publish contract"}
               </button>
               <p className="mt-3 text-center text-[12px] leading-5 text-[#8a8a8a]">{encryptNote}</p>
 
-              <div className="mt-10">
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#1a1a1a]">
+              <div className="mt-8">
+                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
                   Writing tips
                 </p>
-                <ul className="mt-4 space-y-3 text-[13px] leading-5 text-[#6e6e6e]">
-                  <li>
-                    — Name a single, verifiable outcome — avoid bundling multiple questions.
-                  </li>
-                  <li>
-                    — Cite a specific source (CoinGecko, ESPN, official press release) and an exact
-                    time in UTC.
-                  </li>
-                  <li>
-                    — Spell out the tie-breaker. What happens if the source is unavailable or
-                    ambiguous?
-                  </li>
-                  <li>
-                    — Pick a resolution date that gives bettors time and you a clear judgment
-                    moment.
-                  </li>
+                <ul className="mt-3 space-y-2.5 text-[13px] leading-5 text-[#6e6e6e]">
+                  <li>Name one verifiable outcome. Do not bundle two questions.</li>
+                  <li>Cite a specific source and an exact UTC time.</li>
+                  <li>Spell out the tie-breaker if the source is missing or ambiguous.</li>
                 </ul>
               </div>
             </aside>
@@ -457,36 +488,32 @@ export function WriteView() {
   );
 }
 
-function Clause({
-  roman,
+function Field({
+  n,
   title,
-  prompt,
+  hint,
   last = false,
   children,
 }: {
-  roman: string;
+  n: string;
   title: string;
-  prompt: string;
+  hint: string;
   last?: boolean;
   children: ReactNode;
 }) {
   return (
-    <div
-      className={`grid gap-4 py-8 sm:grid-cols-[8.75rem_minmax(0,1fr)] sm:gap-10 ${
-        last ? "" : "border-b border-[rgba(26,26,26,0.12)]"
-      }`}
+    <section
+      className={`px-5 py-7 sm:px-8 ${last ? "" : "border-b border-[rgba(26,26,26,0.08)]"}`}
     >
-      <div>
-        <p className="font-serif text-[40px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
-          {roman}
-        </p>
-        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.18em] text-[#6e6e6e]">
-          {title}
-        </p>
-        <p className="mt-2 max-w-[8rem] text-[13px] leading-4 italic text-[#8a8a8a]">{prompt}</p>
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#c4a46a]">{n}</p>
+          <h2 className="mt-1 font-serif text-[24px] tracking-[-0.03em] text-[#1a1a1a]">{title}</h2>
+        </div>
       </div>
-      <div className="min-w-0 pt-1">{children}</div>
-    </div>
+      <p className="mb-4 max-w-[40rem] text-[13px] leading-5 text-[#8a8a8a]">{hint}</p>
+      {children}
+    </section>
   );
 }
 
@@ -502,7 +529,11 @@ function Switch({
   hint: string;
 }) {
   return (
-    <button type="button" onClick={() => onChange(!on)} className="mt-5 flex items-start gap-3 text-left">
+    <button
+      type="button"
+      onClick={() => onChange(!on)}
+      className="mt-4 flex w-full items-start gap-3 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-white/70 px-3.5 py-3 text-left"
+    >
       <span
         className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition ${
           on ? "bg-[#1a1a1a]" : "bg-[#d5d1c9]"
@@ -515,10 +546,8 @@ function Switch({
         />
       </span>
       <span>
-        <span className="block font-mono text-[10px] uppercase tracking-[0.16em] text-[#1a1a1a]">
-          {label}
-        </span>
-        <span className="mt-1 block text-[12px] leading-5 italic text-[#8a8a8a]">{hint}</span>
+        <span className="block text-[13px] font-medium text-[#1a1a1a]">{label}</span>
+        <span className="mt-0.5 block text-[12px] leading-5 text-[#8a8a8a]">{hint}</span>
       </span>
     </button>
   );

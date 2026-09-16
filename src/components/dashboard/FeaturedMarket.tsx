@@ -2,9 +2,11 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   categoryColor,
   categoryLabel,
+  formatUsdCompact,
   type Market,
 } from "@/lib/markets";
 import { Identicon } from "@/components/dashboard/Identicon";
@@ -35,7 +37,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
 
   if (!market || !table) {
     return (
-      <div className="rounded-2xl border border-[rgba(26,26,26,0.1)] bg-white px-6 py-16 text-center text-sm text-[#6e6e6e]">
+      <div className="rounded-[22px] border border-[rgba(23,22,20,0.1)] bg-[#fffcf7] px-6 py-16 text-center text-sm text-[#7a746a]">
         No live markets in this view.
       </div>
     );
@@ -57,20 +59,24 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   };
 
   return (
-    <article
-      className="overflow-hidden rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-[#fbfaf7] shadow-[0_12px_40px_-28px_rgba(26,26,26,0.35)]"
-      style={{ borderLeft: `4px solid ${color}` }}
-    >
+    <article className="overflow-hidden rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fffcf7] shadow-[0_18px_50px_-32px_rgba(23,22,20,0.55)]">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_20.5rem]">
         <div className="px-5 py-5 sm:px-7 sm:py-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e]">
-              <span
-                className="h-1.5 w-1.5 rounded-full"
-                style={{ background: color }}
-              />
+            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#7a746a]">
+              {market.image ? (
+                <span className="relative h-5 w-5 overflow-hidden rounded-md">
+                  <Image src={market.image} alt="" fill sizes="20px" className="object-cover" />
+                </span>
+              ) : (
+                <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+              )}
               {categoryLabel(market.category)}
-              <span className="text-[#b0b0b0]">#{market.tag}</span>
+              {market.live ? (
+                <span className="rounded-full bg-[#e8f3ec] px-2 py-0.5 text-[#2c7a55]">Live</span>
+              ) : (
+                <span className="text-[#b0a99c]">#{market.tag}</span>
+              )}
             </p>
             <Link
               href={`/contract/${market.id}`}
@@ -80,24 +86,35 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </Link>
           </div>
 
-          <h2 className="max-w-[36rem] font-serif text-[26px] leading-[1.2] tracking-[-0.02em] text-[#1a1a1a] sm:text-[30px]">
+          <h2 className="max-w-[36rem] font-serif text-[26px] leading-[1.2] tracking-[-0.03em] text-[#171614] sm:text-[30px]">
             <Link href={`/contract/${market.id}`} className="text-inherit no-underline">
               {market.title}
             </Link>
           </h2>
 
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-[rgba(26,26,26,0.08)] bg-[rgba(26,26,26,0.08)] sm:grid-cols-4">
-            {[
-              ["Staked", market.staked],
-              ["Tables", String(market.tables)],
-              ["Open seats", String(market.openSeats)],
-              ["Resolves in", market.resolvesIn],
-            ].map(([label, value]) => (
-              <div key={label} className="bg-[#fbfaf7] px-4 py-3">
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[rgba(23,22,20,0.08)] bg-[rgba(23,22,20,0.08)] sm:grid-cols-4">
+            {(market.live
+              ? [
+                  ["Volume", market.volumeUsd ? formatUsdCompact(market.volumeUsd) : market.staked],
+                  ["24h", market.volume24hrUsd ? formatUsdCompact(market.volume24hrUsd) : "—"],
+                  [
+                    "Liquidity",
+                    market.liquidityUsd ? formatUsdCompact(market.liquidityUsd) : String(market.tables),
+                  ],
+                  ["Resolves in", market.resolvesIn],
+                ]
+              : [
+                  ["Staked", market.staked],
+                  ["Tables", String(market.tables)],
+                  ["Open seats", String(market.openSeats)],
+                  ["Resolves in", market.resolvesIn],
+                ]
+            ).map(([label, value]) => (
+              <div key={label} className="bg-[#fffcf7] px-4 py-3">
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a847a]">
                   {label}
                 </p>
-                <p className="mt-1 text-[15px] font-medium tracking-[-0.02em] text-[#1a1a1a]">
+                <p className="mt-1 text-[15px] font-medium tracking-[-0.02em] text-[#171614]">
                   {value}
                 </p>
               </div>
@@ -154,7 +171,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 <Identicon seed={seat.avatar} className="h-9 w-9 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
-                    Seat {seat.id}
+                    Seat {market.live ? (seat.side === "lands" ? "Yes" : "No") : seat.id}
                   </p>
                   <p className="truncate font-mono text-[12px] text-[#1a1a1a]">
                     {seat.wallet}
@@ -163,17 +180,17 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 <div className="text-right">
                   <p
                     className={`text-[18px] font-medium tracking-[-0.03em] ${
-                      seat.side === "lands" ? "text-[#2f9e6e]" : "text-[#c45c6a]"
+                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#b4454a]"
                     }`}
                   >
-                    {seat.chance}%
+                    {seat.chance}¢
                   </p>
                   <p
                     className={`font-mono text-[9px] uppercase tracking-[0.14em] ${
-                      seat.side === "lands" ? "text-[#2f9e6e]" : "text-[#c45c6a]"
+                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#b4454a]"
                     }`}
                   >
-                    {seat.side === "lands" ? "▲ Lands" : "▼ Misses"}
+                    {seat.side === "lands" ? "Yes" : "No"}
                   </p>
                 </div>
               </div>
@@ -185,14 +202,21 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               <span>Certainty on this table</span>
               <span>2 bets</span>
             </div>
-            <div className="relative h-2 overflow-hidden rounded-full bg-[linear-gradient(90deg,#f3c1c8_0%,#efe6d6_48%,#b7e0c6_100%)]">
-              <span className="absolute top-1/2 left-[8%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#c45c6a] ring-2 ring-white" />
-              <span className="absolute top-1/2 left-1/2 h-3 w-px -translate-x-1/2 -translate-y-1/2 bg-[#1a1a1a]" />
-              <span className="absolute top-1/2 right-[10%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#2f9e6e] ring-2 ring-white" />
+            <div className="relative h-2 overflow-hidden rounded-full bg-[#efe8dc]">
+              <span
+                className="absolute inset-y-0 left-0 bg-[#b4454a]/25"
+                style={{ width: `${miss?.chance ?? 50}%` }}
+              />
+              <span
+                className="absolute inset-y-0 right-0 bg-[#2c7a55]/30"
+                style={{ width: `${land.chance}%` }}
+              />
+              <span className="absolute top-1/2 left-[8%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b4454a] ring-2 ring-white" />
+              <span className="absolute top-1/2 right-[10%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#2c7a55] ring-2 ring-white" />
             </div>
             <div className="mt-2 flex justify-between font-mono text-[9px] uppercase tracking-[0.14em]">
-              <span className="text-[#c45c6a]">Missed · 0%</span>
-              <span className="text-[#2f9e6e]">Landed · 100%</span>
+              <span className="text-[#b4454a]">No · {miss?.chance ?? 0}¢</span>
+              <span className="text-[#2c7a55]">Yes · {land.chance}¢</span>
             </div>
             <p className="mt-2 text-[11px] text-[#9a9a9a]">
               Each dot matches a player&apos;s avatar
@@ -200,7 +224,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           </div>
         </div>
 
-        <aside className="border-t border-[rgba(26,26,26,0.08)] bg-[#f4f2ec] px-5 py-5 lg:border-t-0 lg:border-l">
+        <aside className="border-t border-[rgba(23,22,20,0.08)] bg-[#efebe3] px-5 py-5 lg:border-t-0 lg:border-l">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-serif text-[22px] tracking-[-0.02em] text-[#1a1a1a]">
@@ -226,37 +250,37 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             Projected swing
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-lg bg-[#e7f4ec] px-3 py-3">
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#2f9e6e]">
-                If it lands
+            <div className="rounded-xl bg-[#e8f3ec] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#2c7a55]">
+                If yes
               </p>
               <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {land.wallet}
               </p>
-              <p className="text-[12px] text-[#2f9e6e]">+{landSwing} SOL</p>
+              <p className="text-[12px] text-[#2c7a55]">+{landSwing} SOL</p>
               <p className="mt-1 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {miss?.wallet}
               </p>
-              <p className="text-[12px] text-[#c45c6a]">-{landSwing} SOL</p>
+              <p className="text-[12px] text-[#b4454a]">-{landSwing} SOL</p>
             </div>
-            <div className="rounded-lg bg-[#f8e8ea] px-3 py-3">
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#c45c6a]">
-                If it misses
+            <div className="rounded-xl bg-[#f6e9ea] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#b4454a]">
+                If no
               </p>
               <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {land.wallet}
               </p>
-              <p className="text-[12px] text-[#c45c6a]">-{missSwing} SOL</p>
+              <p className="text-[12px] text-[#b4454a]">-{missSwing} SOL</p>
               <p className="mt-1 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {miss?.wallet}
               </p>
-              <p className="text-[12px] text-[#2f9e6e]">+{missSwing} SOL</p>
+              <p className="text-[12px] text-[#2c7a55]">+{missSwing} SOL</p>
             </div>
           </div>
 
           <Link
             href={`/contract/${market.id}/wager/${market.id}-w1`}
-            className="mt-5 block w-full rounded-full bg-[#111111] px-4 py-3 text-center text-[14px] font-medium text-white no-underline transition hover:bg-black"
+            className="mt-5 block w-full rounded-full bg-[#171614] px-4 py-3 text-center text-[14px] font-medium text-[#f4f1ea] no-underline transition hover:bg-black"
           >
             Watch this wager →
           </Link>

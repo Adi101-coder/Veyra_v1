@@ -2,11 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { Bookmark, ChevronRight } from "lucide-react";
 import { oddFromChance, sportLeagues, sportTabs, type SportTab } from "@/lib/market-feed";
 import {
   cardClass,
   CrestMark,
   HorizontalRail,
+  LeagueMark,
   PillTabs,
   SectionHead,
 } from "@/components/markets/primitives";
@@ -27,48 +29,46 @@ export function SportSection() {
         extra={<PillTabs tabs={sportTabs} value={tab} onChange={setTab} />}
       />
       {leagues.length === 0 ? (
-        <p className={`${cardClass} px-5 py-10 text-center text-sm text-[#8a8a8a]`}>
+        <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
           No live {sportTabs.find((item) => item.id === tab)?.label.toLowerCase()} markets right now.
         </p>
       ) : null}
       <div className="flex flex-col gap-8">
         {leagues.map((league) => (
           <div key={league.id}>
-            <p className="mb-3 flex items-center gap-2 text-[14px] font-medium text-[#1a1a1a]">
-              <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#1a1a1a] text-[9px] text-white">
-                {league.name.slice(0, 1)}
-              </span>
+            <p className="mb-3.5 flex items-center gap-2 text-[14px] font-semibold text-[#171717]">
+              <LeagueMark id={league.id} />
               {league.name}
-              <span className="text-[12px] font-normal text-[#9a9a9a]">({league.count} total)</span>
-              <span className="text-[#c8c4bc]">›</span>
+              <span className="text-[12px] font-medium text-[#8b887f]">({league.count})</span>
+              <ChevronRight className="h-4 w-4 text-[#c4c0b6]" />
             </p>
             {league.outrights.length ? (
-              <div className="mb-3 grid gap-3 md:grid-cols-2">
+              <div className="mb-3.5 grid gap-3.5 md:grid-cols-2">
                 {league.outrights.map((card) => (
-                  <article key={card.id} className={`${cardClass} p-4`}>
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#1a2a6c] text-[9px] font-medium text-white">
-                          UCL
-                        </span>
-                        <h3 className="font-serif text-[16px] tracking-[-0.02em]">{card.title}</h3>
+                  <article key={card.id} className={`${cardClass} p-5`}>
+                    <div className="mb-4 flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <LeagueMark id="ucl" />
+                        <h3 className="text-[15px] font-semibold tracking-[-0.02em]">{card.title}</h3>
                       </div>
-                      <span className="text-[#c8c4bc]">🔖</span>
+                      <Bookmark className="h-4 w-4 text-[#c4c0b6]" />
                     </div>
-                    <ul className="flex flex-col gap-2.5">
+                    <ul className="flex flex-col gap-3">
                       {card.runners.map((runner) => (
                         <li key={runner.name} className="flex items-center gap-3">
-                          <p className="min-w-0 flex-1 truncate text-[13px]">{runner.name}</p>
-                          <p className="w-12 text-right text-[13px] font-medium">{runner.chance}%</p>
+                          <p className="min-w-0 flex-1 truncate text-[14px]">{runner.name}</p>
+                          <p className="w-14 text-right text-[14px] font-semibold tabular-nums">
+                            {runner.chance}%
+                          </p>
                           <Link
                             href={`/contract/${runner.marketId}`}
-                            className="rounded-md bg-[#f4f2ed] px-2.5 py-1 text-[11px] text-[#6e6e6e] no-underline"
+                            className="rounded-lg bg-[#f4f2ec] px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.04em] text-[#525252] no-underline hover:bg-[#eceae3]"
                           >
                             YES
                           </Link>
                           <Link
                             href={`/contract/${runner.marketId}`}
-                            className="rounded-md bg-[#f4f2ed] px-2.5 py-1 text-[11px] text-[#6e6e6e] no-underline"
+                            className="rounded-lg bg-[#f4f2ec] px-2.5 py-1.5 text-[11px] font-semibold tracking-[0.04em] text-[#525252] no-underline hover:bg-[#eceae3]"
                           >
                             NO
                           </Link>
@@ -85,41 +85,41 @@ export function SportSection() {
                   <Link
                     key={match.marketId}
                     href={`/contract/${match.marketId}`}
-                    className={`${cardClass} w-[250px] shrink-0 p-4 no-underline`}
+                    className={`${cardClass} w-[260px] shrink-0 p-5 no-underline`}
                   >
-                    <p className="mb-3 text-center text-[11px] text-[#9a9a9a]">{match.when}</p>
+                    <p className="mb-4 text-center text-[12px] font-medium text-[#8b887f]">{match.when}</p>
                     <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
                       <div className="flex flex-col items-center gap-2 text-center">
                         <CrestMark crest={match.home.crest} />
-                        <p className="text-[13px] font-medium">{match.home.name}</p>
+                        <p className="text-[13px] font-semibold">{match.home.name}</p>
                       </div>
                       <div className="text-center">
-                        <p className="font-serif text-[22px] tracking-[-0.04em]">{match.kickoff.split(" ")[0]}</p>
-                        <p className="text-[11px] text-[#9a9a9a]">{match.kickoff.split(" ")[1]}</p>
+                        <p className="text-[22px] font-semibold tracking-[-0.05em]">{match.kickoff.split(" ")[0]}</p>
+                        <p className="text-[11px] font-medium text-[#8b887f]">{match.kickoff.split(" ")[1]}</p>
                       </div>
                       <div className="flex flex-col items-center gap-2 text-center">
                         <CrestMark crest={match.away.crest} />
-                        <p className="text-[13px] font-medium">{match.away.name}</p>
+                        <p className="text-[13px] font-semibold">{match.away.name}</p>
                       </div>
                     </div>
                     <div
-                      className={`mt-4 grid gap-1.5 text-center text-[11px] ${
+                      className={`mt-4 grid gap-1.5 text-center ${
                         match.draw == null ? "grid-cols-2" : "grid-cols-3"
                       }`}
                     >
-                      <div className="rounded-lg bg-[#f4f2ed] px-1 py-2">
-                        <p className="font-medium text-[#1a1a1a]">{match.home.chance}%</p>
-                        <p className="mt-1 text-[#8a8a8a]">{oddFromChance(match.home.chance)}</p>
+                      <div className="rounded-lg bg-[#f4f2ec] px-1 py-2.5">
+                        <p className="text-[13px] font-semibold tabular-nums">{match.home.chance}%</p>
+                        <p className="mt-0.5 text-[11px] text-[#8b887f]">{oddFromChance(match.home.chance)}</p>
                       </div>
                       {match.draw != null ? (
-                        <div className="rounded-lg bg-[#f4f2ed] px-1 py-2">
-                          <p className="font-medium text-[#1a1a1a]">DRAW {match.draw}%</p>
-                          <p className="mt-1 text-[#8a8a8a]">{oddFromChance(match.draw)}</p>
+                        <div className="rounded-lg bg-[#f4f2ec] px-1 py-2.5">
+                          <p className="text-[12px] font-semibold tabular-nums">DRAW {match.draw}%</p>
+                          <p className="mt-0.5 text-[11px] text-[#8b887f]">{oddFromChance(match.draw)}</p>
                         </div>
                       ) : null}
-                      <div className="rounded-lg bg-[#f4f2ed] px-1 py-2">
-                        <p className="font-medium text-[#1a1a1a]">{match.away.chance}%</p>
-                        <p className="mt-1 text-[#8a8a8a]">{oddFromChance(match.away.chance)}</p>
+                      <div className="rounded-lg bg-[#f4f2ec] px-1 py-2.5">
+                        <p className="text-[13px] font-semibold tabular-nums">{match.away.chance}%</p>
+                        <p className="mt-0.5 text-[11px] text-[#8b887f]">{oddFromChance(match.away.chance)}</p>
                       </div>
                     </div>
                   </Link>

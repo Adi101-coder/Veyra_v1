@@ -11,17 +11,29 @@ export async function generateStaticParams() {
   return markets.map((market) => ({ id: market.id }));
 }
 
+export const dynamicParams = true;
+
 export async function generateMetadata({
   params,
 }: ContractPageProps): Promise<Metadata> {
   const { id } = await params;
-  const market = getMarket(id);
-  return { title: market?.title ?? "Contract" };
+  const local = getMarket(id);
+  if (local) return { title: local.title };
+  try {
+    const { fetchPolymarketMarket } = await import("@/lib/polymarket");
+    const live = await fetchPolymarketMarket(id);
+    return { title: live?.title ?? "Contract" };
+  } catch {
+    return { title: "Contract" };
+  }
 }
 
 export default async function ContractPage({ params }: ContractPageProps) {
   const { id } = await params;
-  const market = getMarket(id);
-  if (!market) notFound();
-  return <ContractView market={market} />;
+  const local = getMarket(id);
+  if (local) return <ContractView market={local} />;
+  const { fetchPolymarketMarket } = await import("@/lib/polymarket");
+  const live = await fetchPolymarketMarket(id);
+  if (!live) notFound();
+  return <ContractView market={live} />;
 }

@@ -44,7 +44,7 @@ function NavLinks({ className = "" }: { className?: string }) {
 
 export function DashboardHeader() {
   return (
-    <header className="bg-[#f4f2ed]">
+    <header className="bg-[#f3f0e8]">
       <Shell className="flex items-center justify-between gap-4 pt-5 pb-4">
         <div className="flex min-w-0 items-baseline gap-8 sm:gap-10 lg:gap-12">
           <Link

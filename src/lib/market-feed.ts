@@ -15,7 +15,10 @@ export const feedChannels: { id: FeedChannel; label: string }[] = [
 export type Crest = {
   initials: string;
   color: string;
+  ink?: string;
   flag?: string;
+  image?: string;
+  shape?: "circle" | "shield" | "hex";
 };
 
 export type FeedSide = {
@@ -26,6 +29,7 @@ export type FeedSide = {
 
 export type FeaturedPosition = {
   trader: string;
+  avatar: string;
   side: string;
   chance: number;
   amount: string;
@@ -38,6 +42,7 @@ export type LovedMarket = {
   league: string;
   title: string;
   when: string;
+  photo: string;
 };
 
 export type PackLeg = {
@@ -61,6 +66,7 @@ export type Pack = {
 export type TraderRow = {
   rank: number;
   handle: string;
+  avatar: string;
   pnl: string;
   roi: string;
 };
@@ -69,6 +75,8 @@ export type BiggestPosition = {
   marketId: string;
   title: string;
   trader: string;
+  avatar: string;
+  mark: string;
   side: string;
   sideTone: "yes" | "no";
   amount: string;
@@ -77,10 +85,12 @@ export type BiggestPosition = {
 export type LivePosition = {
   marketId: string;
   trader: string;
+  avatar: string;
   ago: string;
   invested: string;
   payout: string;
   title: string;
+  mark: string;
   side: string;
   chance: number;
   up: boolean;
@@ -137,10 +147,15 @@ export function oddFromChance(chance: number) {
   return `${(1 / implied).toFixed(2)}x`;
 }
 
-const crest = (initials: string, color: string, flag?: string): Crest => ({
+const crest = (
+  initials: string,
+  color: string,
+  extra: Partial<Crest> = {},
+): Crest => ({
   initials,
   color,
-  flag,
+  shape: extra.shape ?? "shield",
+  ...extra,
 });
 
 function series(seed: string, start: number, length = 28) {
@@ -167,13 +182,21 @@ export const featuredEvent = {
   home: {
     name: "Magdalena Frech",
     short: "M. Frech",
-    crest: crest("MF", "#1f6feb", "🇵🇱"),
+    crest: crest("MF", "#1d4ed8", {
+      flag: "PL",
+      shape: "circle",
+      image: "/images/markets/tennis-player-a.png",
+    }),
     chance: 66,
   },
   away: {
     name: "Caroline Dolehide",
     short: "C. Dolehide",
-    crest: crest("CD", "#c45c5c", "🇺🇸"),
+    crest: crest("CD", "#b45309", {
+      flag: "US",
+      shape: "circle",
+      image: "/images/markets/tennis-player-b.png",
+    }),
     chance: 34,
   },
   homeSeries: series("frech-line", 48),
@@ -183,6 +206,7 @@ export const featuredEvent = {
   positions: [
     {
       trader: "FoggyMintyPenguin",
+      avatar: "/images/markets/trader-1.png",
       side: "Magdalena Frech 62.3¢",
       chance: 62.3,
       amount: "$58.06",
@@ -191,14 +215,16 @@ export const featuredEvent = {
     },
     {
       trader: "CrimsonRockyMantis",
+      avatar: "/images/markets/trader-3.png",
       side: "Caroline Dolehide 37.8¢",
       chance: 37.8,
       amount: "$0.31",
-      delta: "$0.05 (14.6%)",
+      delta: "+$0.05 (14.6%)",
       up: true,
     },
     {
-      trader: "CrimsonRockyMantis",
+      trader: "QuietCopperOtter",
+      avatar: "/images/markets/trader-2.png",
       side: "Magdalena Frech 68.8¢",
       chance: 68.8,
       amount: "$0.62",
@@ -207,11 +233,11 @@ export const featuredEvent = {
     },
   ] satisfies FeaturedPosition[],
   loved: [
-    { marketId: "stearns-stephens", league: "GDL Open", title: "Peyton Stearns vs Sloane Stephens", when: "Thu, Sep 17 · 11:40 AM" },
-    { marketId: "sonmez-jovic", league: "GDL Open", title: "Zeynep Sonmez vs Iva Jovic", when: "Thu, Sep 17 · 05:50 AM" },
-    { marketId: "kostyuk-townsend", league: "GDL Open", title: "Marta Kostyuk vs Taylor Townsend", when: "Thu, Sep 17 · 05:30 AM" },
-    { marketId: "day-samsonova", league: "GDL Open", title: "Kayla Day vs Liudmila Samsonova", when: "Thu, Sep 17 · 11:40 AM" },
-    { marketId: "bucsa-sorribes", league: "GDL Open", title: "Cristina Bucsa vs Sara Sorribes Tormo", when: "Thu, Sep 17 · 11:40 AM" },
+    { marketId: "stearns-stephens", league: "GDL Open", title: "Peyton Stearns vs Sloane Stephens", when: "Thu, Sep 17 · 11:40 AM", photo: "/images/markets/tennis-player-c.png" },
+    { marketId: "sonmez-jovic", league: "GDL Open", title: "Zeynep Sonmez vs Iva Jovic", when: "Thu, Sep 17 · 05:50 AM", photo: "/images/markets/tennis-player-d.png" },
+    { marketId: "kostyuk-townsend", league: "GDL Open", title: "Marta Kostyuk vs Taylor Townsend", when: "Thu, Sep 17 · 05:30 AM", photo: "/images/markets/tennis-player-e.png" },
+    { marketId: "day-samsonova", league: "GDL Open", title: "Kayla Day vs Liudmila Samsonova", when: "Thu, Sep 17 · 11:40 AM", photo: "/images/markets/tennis-player-b.png" },
+    { marketId: "bucsa-sorribes", league: "GDL Open", title: "Cristina Bucsa vs Sara Sorribes Tormo", when: "Thu, Sep 17 · 11:40 AM", photo: "/images/markets/tennis-player-a.png" },
   ] satisfies LovedMarket[],
 };
 
@@ -264,23 +290,23 @@ export const packs: Pack[] = [
 ];
 
 export const topTraders: TraderRow[] = [
-  { rank: 1, handle: "pvmhalache", pnl: "+$1,861.2", roi: "21.9% ROI" },
-  { rank: 2, handle: "LushSmallIbis", pnl: "+$1,522.15", roi: "42% ROI" },
-  { rank: 3, handle: "SatinFabledRavine", pnl: "+$1,248.13", roi: "64.4% ROI" },
+  { rank: 1, handle: "pvmhalache", avatar: "/images/markets/trader-5.png", pnl: "+$1,861.20", roi: "21.9% ROI" },
+  { rank: 2, handle: "LushSmallIbis", avatar: "/images/markets/trader-2.png", pnl: "+$1,522.15", roi: "42.0% ROI" },
+  { rank: 3, handle: "SatinFabledRavine", avatar: "/images/markets/trader-7.png", pnl: "+$1,248.13", roi: "64.4% ROI" },
 ];
 
 export const biggestPositions: BiggestPosition[] = [
-  { marketId: "sol-weekend", title: "Will Ostium launch a token by December 31, 2026?", trader: "CaramelAiryMustang", side: "No 50¢", sideTone: "no", amount: "+$135.01" },
-  { marketId: "hype", title: "SpaceX (SPCX) Up or Down · Daily", trader: "SharpLunarNarwhal", side: "Yes 73¢", sideTone: "yes", amount: "+$114.22" },
-  { marketId: "mica", title: "Fed Decision in September?", trader: "FoggyMintyPenguin", side: "No change 69¢", sideTone: "no", amount: "+$108.6" },
+  { marketId: "sol-weekend", title: "Will Ostium launch a token by December 31, 2026?", trader: "CaramelAiryMustang", avatar: "/images/markets/trader-6.png", mark: "ost", side: "No 50¢", sideTone: "no", amount: "+$135.01" },
+  { marketId: "hype", title: "SpaceX (SPCX) Up or Down · Daily", trader: "SharpLunarNarwhal", avatar: "/images/markets/trader-4.png", mark: "spx", side: "Yes 73¢", sideTone: "yes", amount: "+$114.22" },
+  { marketId: "mica", title: "Fed Decision in September?", trader: "FoggyMintyPenguin", avatar: "/images/markets/trader-1.png", mark: "fed", side: "No change 69¢", sideTone: "no", amount: "+$108.60" },
 ];
 
 export const trendingPositions: LivePosition[] = [
-  { marketId: "hype", trader: "MossyScarletFalcon", ago: "1h ago", invested: "$102.91", payout: "$256.62", title: "Amazon (AMZN) Up or Down", side: "Up at 40% probability", chance: 40, up: true },
-  { marketId: "mica", trader: "JollyWinningKite", ago: "1h ago", invested: "$58.01", payout: "$214.85", title: "S&P 500 ETF (SPY) Up or Down", side: "Down at 27% probability", chance: 27, up: false },
-  { marketId: "sol-weekend", trader: "nbvcxwm1kjh.qpol", ago: "1h ago", invested: "$89.9", payout: "$100", title: "US national Bitcoin reserve before 2027", side: "No at 90% probability", chance: 90, up: false },
-  { marketId: "vantage-mcap", trader: "AiryGlossyWildcat", ago: "1h ago", invested: "$42.86", payout: "$291.59", title: "Tesla (TSLA) Up or Down · Daily", side: "Down at 15% probability", chance: 15, up: false },
-  { marketId: "election", trader: "QuietCopperOtter", ago: "2h ago", invested: "$38.40", payout: "$121.10", title: "ETH prints five thousand before year end", side: "Yes at 44% probability", chance: 44, up: true },
+  { marketId: "hype", trader: "MossyScarletFalcon", avatar: "/images/markets/trader-3.png", ago: "1h ago", invested: "$102.91", payout: "$256.62", title: "Amazon (AMZN) Up or Down", mark: "amzn", side: "Up at 40% probability", chance: 40, up: true },
+  { marketId: "mica", trader: "JollyWinningKite", avatar: "/images/markets/trader-4.png", ago: "1h ago", invested: "$58.01", payout: "$214.85", title: "S&P 500 ETF (SPY) Up or Down", mark: "spy", side: "Down at 27% probability", chance: 27, up: false },
+  { marketId: "sol-weekend", trader: "nbvcxwm1kjh", avatar: "/images/markets/trader-5.png", ago: "1h ago", invested: "$89.90", payout: "$100.00", title: "US national Bitcoin reserve before 2027", mark: "btc", side: "No at 90% probability", chance: 90, up: false },
+  { marketId: "vantage-mcap", trader: "AiryGlossyWildcat", avatar: "/images/markets/trader-6.png", ago: "1h ago", invested: "$42.86", payout: "$291.59", title: "Tesla (TSLA) Up or Down · Daily", mark: "tsla", side: "Down at 15% probability", chance: 15, up: false },
+  { marketId: "election", trader: "QuietCopperOtter", avatar: "/images/markets/trader-2.png", ago: "2h ago", invested: "$38.40", payout: "$121.10", title: "ETH prints five thousand before year end", mark: "eth", side: "Yes at 44% probability", chance: 44, up: true },
 ];
 
 export const sportTabs: { id: SportTab; label: string }[] = [
@@ -381,32 +407,32 @@ export const sportLeagues: LeagueBlock[] = [
         league: "GDL Open",
         when: "Thu, Sep 17",
         kickoff: "12:40 AM",
-        home: { name: "M. Frech", crest: crest("MF", "#1f6feb", "🇵🇱"), chance: 66 },
-        away: { name: "C. Dolehide", crest: crest("CD", "#c45c5c", "🇺🇸"), chance: 34 },
+        home: { name: "M. Frech", crest: crest("MF", "#1d4ed8", { flag: "PL", shape: "circle", image: "/images/markets/tennis-player-a.png" }), chance: 66 },
+        away: { name: "C. Dolehide", crest: crest("CD", "#b45309", { flag: "US", shape: "circle", image: "/images/markets/tennis-player-b.png" }), chance: 34 },
       },
       {
         marketId: "stearns-stephens",
         league: "GDL Open",
         when: "Thu, Sep 17",
         kickoff: "11:40 AM",
-        home: { name: "P. Stearns", crest: crest("PS", "#1f6feb", "🇺🇸"), chance: 58 },
-        away: { name: "S. Stephens", crest: crest("SS", "#c45c5c", "🇺🇸"), chance: 42 },
+        home: { name: "P. Stearns", crest: crest("PS", "#1d4ed8", { flag: "US", shape: "circle", image: "/images/markets/tennis-player-c.png" }), chance: 58 },
+        away: { name: "S. Stephens", crest: crest("SS", "#b45309", { flag: "US", shape: "circle", image: "/images/markets/tennis-player-d.png" }), chance: 42 },
       },
       {
         marketId: "kostyuk-townsend",
         league: "GDL Open",
         when: "Thu, Sep 17",
         kickoff: "05:30 AM",
-        home: { name: "M. Kostyuk", crest: crest("MK", "#0057b7", "🇺🇦"), chance: 61 },
-        away: { name: "T. Townsend", crest: crest("TT", "#c45c5c", "🇺🇸"), chance: 39 },
+        home: { name: "M. Kostyuk", crest: crest("MK", "#0057b7", { flag: "UA", shape: "circle", image: "/images/markets/tennis-player-e.png" }), chance: 61 },
+        away: { name: "T. Townsend", crest: crest("TT", "#b45309", { flag: "US", shape: "circle", image: "/images/markets/tennis-player-b.png" }), chance: 39 },
       },
       {
         marketId: "day-samsonova",
         league: "GDL Open",
         when: "Thu, Sep 17",
         kickoff: "11:40 AM",
-        home: { name: "K. Day", crest: crest("KD", "#c45c5c", "🇺🇸"), chance: 39 },
-        away: { name: "L. Samsonova", crest: crest("LS", "#d52b1e", "🇷🇺"), chance: 61 },
+        home: { name: "K. Day", crest: crest("KD", "#b45309", { flag: "US", shape: "circle", image: "/images/markets/tennis-player-c.png" }), chance: 39 },
+        away: { name: "L. Samsonova", crest: crest("LS", "#1f2937", { flag: "RU", shape: "circle", image: "/images/markets/tennis-player-d.png" }), chance: 61 },
       },
     ],
   },

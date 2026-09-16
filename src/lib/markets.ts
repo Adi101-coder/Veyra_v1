@@ -1,12 +1,13 @@
 export const categories = [
   { id: "all", label: "All", color: "#1a1a1a" },
-  { id: "politics", label: "Politics", color: "#c45c5c" },
-  { id: "finance", label: "Finance", color: "#3d9a62" },
-  { id: "sports", label: "Sports", color: "#c4a02a" },
-  { id: "entertainment", label: "Entertainment", color: "#8a5bb5" },
-  { id: "science", label: "Science & Technology", color: "#4a8ec4" },
-  { id: "culture", label: "Culture & Society", color: "#c47a3a" },
-  { id: "weather", label: "Weather & Nature", color: "#3aa38a" },
+  { id: "politics", label: "Politics", color: "#b45a56" },
+  { id: "finance", label: "Finance", color: "#3d7d5c" },
+  { id: "crypto", label: "Crypto", color: "#3f6f8c" },
+  { id: "sports", label: "Sports", color: "#b58a2a" },
+  { id: "entertainment", label: "Entertainment", color: "#7a5b9c" },
+  { id: "science", label: "Science & Technology", color: "#4a7aa8" },
+  { id: "culture", label: "Culture & Society", color: "#b06a3a" },
+  { id: "weather", label: "Weather & Nature", color: "#3a8a76" },
 ] as const;
 
 export type CategoryId = (typeof categories)[number]["id"];
@@ -41,6 +42,14 @@ export type Market = {
   tableOptions: TableOption[];
   seats: Seat[];
   featured?: boolean;
+  image?: string;
+  volumeUsd?: number;
+  volume24hrUsd?: number;
+  liquidityUsd?: number;
+  live?: boolean;
+  source?: "local" | "polymarket";
+  conditionId?: string;
+  clobTokenIds?: string[];
 };
 
 export const coreMarkets: Market[] = [
@@ -539,13 +548,14 @@ function discoveryMarket(
   > = {},
 ): Market {
   const accents: Record<Exclude<CategoryId, "all">, string> = {
-    politics: "#c45c5c",
-    finance: "#3d9a62",
-    sports: "#c4a02a",
-    entertainment: "#8a5bb5",
-    science: "#4a8ec4",
-    culture: "#c47a3a",
-    weather: "#3aa38a",
+    politics: "#b45a56",
+    finance: "#3d7d5c",
+    crypto: "#3f6f8c",
+    sports: "#b58a2a",
+    entertainment: "#7a5b9c",
+    science: "#4a7aa8",
+    culture: "#b06a3a",
+    weather: "#3a8a76",
   };
   const openSeats = extras.openSeats ?? 0;
   return {
@@ -799,6 +809,17 @@ export function categoryLabel(id: Exclude<CategoryId, "all">) {
 
 export function categoryColor(id: Exclude<CategoryId, "all">) {
   return categories.find((c) => c.id === id)?.color ?? "#1a1a1a";
+}
+
+export function yesChance(market: Market) {
+  return market.seats.find((seat) => seat.side === "lands")?.chance ?? 50;
+}
+
+export function formatUsdCompact(value: number) {
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${Math.round(value)}`;
 }
 
 export function filterMarkets(
