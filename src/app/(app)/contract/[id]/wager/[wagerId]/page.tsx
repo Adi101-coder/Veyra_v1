@@ -1,32 +1,49 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { WagerView } from "@/components/dashboard/WagerView";
-import { getWager, marketWagers, markets } from "@/lib/markets";
+import { predictionToWagerRow } from "@/lib/betting";
+import { getMarket, shortenKey } from "@/lib/markets";
 
 type WagerPageProps = {
   params: Promise<{ id: string; wagerId: string }>;
 };
 
+export const dynamic = "force-dynamic";
+export const dynamicParams = true;
+
 export async function generateStaticParams() {
-  return markets.flatMap((market) =>
-    marketWagers(market).map((wager) => ({
-      id: market.id,
-      wagerId: wager.id,
-    })),
-  );
+  return [];
 }
 
 export async function generateMetadata({
   params,
 }: WagerPageProps): Promise<Metadata> {
-  const { id, wagerId } = await params;
-  const found = getWager(id, wagerId);
-  return { title: found ? `Wager · ${found.market.title}` : "Wager" };
+  const { wagerId } = await params;
+  try {
+    const { getPrediction } = await import("@/server/betting/service");
+    const prediction = await getPrediction(wagerId);
+    return { title: prediction ? `Wager · ${prediction.marketTitle}` : "Wager" };
+  } catch {
+    return { title: "Wager" };
+  }
 }
 
 export default async function WagerPage({ params }: WagerPageProps) {
   const { id, wagerId } = await params;
-  const found = getWager(id, wagerId);
-  if (!found) notFound();
-  return <WagerView market={found.market} wager={found.wager} />;
+  const { getPrediction } = await import("@/server/betting/service");
+  const prediction = await getPrediction(wagerId);
+  if (!prediction || prediction.marketId !== id) notFound();
+
+  const local = getMarket(id);
+  const market =
+    local ?? (await (await import("@/lib/polymarket")).fetchPolymarketMarket(id));
+  if (!market) notFound();
+
+  return (
+    <WagerView
+      market={market}
+      wager={predictionToWagerRow(prediction, shortenKey)}
+      prediction={prediction}
+    />
+  );
 }

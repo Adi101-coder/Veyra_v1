@@ -5,6 +5,12 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(process.cwd()),
   },
+  serverExternalPackages: [
+    "@prisma/client",
+    "prisma",
+    "@polymarket/clob-client-v2",
+    "viem",
+  ],
   agentRules: false,
   images: {
     remotePatterns: [

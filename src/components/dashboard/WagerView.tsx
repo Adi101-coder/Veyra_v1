@@ -1,9 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { Shell } from "@/components/Shell";
+import { useWallet } from "@/components/wallet/WalletProvider";
+import {
+  predictionToWagerRow,
+  type ConfidenceHistoryDTO,
+  type EngineQuote,
+  type PredictionDTO,
+} from "@/lib/betting";
+import {
+  changeConfidence,
+  listConfidenceHistory,
+  quotePrediction,
+} from "@/lib/betting-api";
 import {
   categoryColor,
   categoryLabel,
@@ -16,6 +28,8 @@ import {
   type SeatNote,
   type WagerRow,
 } from "@/lib/markets";
+
+const CONFIDENCE_PRESETS = [60, 70, 80, 90];
 
 function clip(value: number) {
   return Math.min(0.99, Math.max(0.01, value));
@@ -42,8 +56,18 @@ function noteClass(note: SeatNote) {
   return "text-[#8a8a8a]";
 }
 
-export function WagerView({ market, wager }: { market: Market; wager: WagerRow }) {
+export function WagerView({
+  market,
+  wager: initialWager,
+  prediction: initialPrediction,
+}: {
+  market: Market;
+  wager: WagerRow;
+  prediction?: PredictionDTO;
+}) {
   const [copied, setCopied] = useState(false);
+  const [prediction, setPrediction] = useState(initialPrediction);
+  const wager = prediction ? predictionToWagerRow(prediction, shortenKey) : initialWager;
   const color = categoryColor(market.category);
   const address = wagerAddress(wager.id);
   const created = wagerCreatedParts(wager.id);
@@ -195,6 +219,10 @@ export function WagerView({ market, wager }: { market: Market; wager: WagerRow }
               </p>
             </div>
           </div>
+
+          {prediction ? (
+            <ChangeMindPanel prediction={prediction} onUpdated={setPrediction} />
+          ) : null}
         </section>
       </Shell>
     </div>
@@ -277,5 +305,230 @@ function ClockIcon() {
       <circle cx="8" cy="8" r="5.5" stroke="currentColor" strokeWidth="1.3" />
       <path d="M8 5.2V8.1l1.8 1.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
     </svg>
+  );
+}
+
+function walletsMatch(a: string | null | undefined, b: string) {
+  if (!a) return false;
+  if (a === b) return true;
+  if (a.startsWith("0x") && b.startsWith("0x")) return a.toLowerCase() === b.toLowerCase();
+  return false;
+}
+
+function ChangeMindPanel({
+  prediction,
+  onUpdated,
+}: {
+  prediction: PredictionDTO;
+  onUpdated: (next: PredictionDTO) => void;
+}) {
+  const { address } = useWallet();
+  const owner = walletsMatch(address, prediction.walletAddress);
+  const [confidence, setConfidence] = useState(Math.round(prediction.confidencePct));
+  const [quote, setQuote] = useState<EngineQuote | null>(null);
+  const [history, setHistory] = useState<ConfidenceHistoryDTO[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    setConfidence(Math.round(prediction.confidencePct));
+  }, [prediction.confidencePct]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void listConfidenceHistory(prediction.id)
+      .then((rows) => {
+        if (!cancelled) setHistory(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prediction.id, prediction.confidencePct, prediction.position?.shares]);
+
+  useEffect(() => {
+    if (!owner || confidence === Math.round(prediction.confidencePct)) {
+      setQuote(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void quotePrediction({
+        marketId: prediction.marketId,
+        outcome: prediction.outcome,
+        confidencePct: confidence,
+        stakeUsd: prediction.stakeUsd,
+      })
+        .then((result) => {
+          if (!cancelled) setQuote(result);
+        })
+        .catch(() => {
+          if (!cancelled) setQuote(null);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    owner,
+    confidence,
+    prediction.confidencePct,
+    prediction.marketId,
+    prediction.outcome,
+    prediction.stakeUsd,
+  ]);
+
+  const submit = async () => {
+    if (!address) {
+      setMessage("Connect the wallet that opened this position.");
+      return;
+    }
+    if (confidence === Math.round(prediction.confidencePct)) {
+      setMessage("Pick a different confidence first.");
+      return;
+    }
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const result = await changeConfidence(
+        prediction.id,
+        {
+          confidencePct: confidence,
+          walletAddress: address,
+          quotedMarketPrice: quote?.position?.marketPrice,
+          expectedConfidencePct: prediction.confidencePct,
+        },
+        crypto.randomUUID(),
+      );
+      onUpdated(result.prediction);
+      setHistory((rows) => [result.history, ...rows.filter((row) => row.id !== result.history.id)]);
+      const fill = result.history.status;
+      setMessage(
+        fill === "filled"
+          ? `Confidence is now ${result.prediction.confidencePct}%. Position ${result.prediction.position?.shares ?? "—"} shares.`
+          : fill === "partial"
+            ? `Partial fill. Confidence stays at ${result.prediction.confidencePct}% until the rest lands.`
+            : fill === "failed"
+              ? `Order failed. Confidence stays at ${result.prediction.confidencePct}%.`
+              : `Recorded ${result.history.previousConfidencePct}% → ${result.history.newConfidencePct}%.`,
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not change confidence.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const currentShares = prediction.position?.shares ?? "—";
+  const desiredShares = quote?.position?.shares;
+  const unchanged = confidence === Math.round(prediction.confidencePct);
+
+  return (
+    <div className="mt-10 border-t border-[rgba(26,26,26,0.08)] pt-8">
+      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+        Change your mind
+      </p>
+      <p className="mt-2 max-w-[36rem] text-[13px] leading-5 text-[#6e6e6e]">
+        Move confidence after the position is open. Previous views stay in history. Only the share
+        delta is sent to the book, and inventory updates after the fill is reconciled.
+      </p>
+
+      <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+        <div>
+          <p className="font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
+            {confidence}
+            <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
+              %
+            </span>
+          </p>
+          <p className="mt-2 font-mono text-[11px] text-[#8a8a8a]">
+            Now {Math.round(prediction.confidencePct)}% · {currentShares} sh
+            {desiredShares && !unchanged ? ` → ${desiredShares} sh` : ""}
+          </p>
+          <input
+            type="range"
+            min={1}
+            max={99}
+            step={1}
+            value={confidence}
+            disabled={!owner || submitting}
+            onChange={(event) => {
+              setConfidence(Number(event.target.value));
+              setMessage(null);
+            }}
+            className="mt-5 w-full accent-[#1a1a1a] disabled:opacity-40"
+          />
+          <div className="mt-4 flex flex-wrap gap-2">
+            {CONFIDENCE_PRESETS.map((value) => {
+              const active = confidence === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={!owner || submitting}
+                  onClick={() => {
+                    setConfidence(value);
+                    setMessage(null);
+                  }}
+                  className={`rounded-full border px-3 py-1.5 font-mono text-[11px] disabled:opacity-40 ${
+                    active
+                      ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
+                      : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
+                  }`}
+                >
+                  {value}%
+                </button>
+              );
+            })}
+          </div>
+          {quote && !quote.accepted && !unchanged ? (
+            <p className="mt-4 text-[13px] text-[#8a6a32]">
+              {quote.rejection?.message ?? "No edge at this confidence. Submitting will flatten the position."}
+            </p>
+          ) : null}
+          <button
+            type="button"
+            disabled={!owner || submitting || unchanged}
+            onClick={() => void submit()}
+            className="mt-6 rounded-full bg-[#1a1a1a] px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white disabled:opacity-40"
+          >
+            {submitting ? "Adjusting…" : owner ? "Update confidence" : "Owner wallet required"}
+          </button>
+          {message ? <p className="mt-3 text-[13px] text-[#5a5a5a]">{message}</p> : null}
+        </div>
+
+        <div>
+          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+            Confidence history
+          </p>
+          {history.length === 0 ? (
+            <p className="mt-3 text-[13px] text-[#8a8a8a]">No changes yet.</p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {history.map((row) => (
+                <li
+                  key={row.id}
+                  className="rounded-2xl border border-[rgba(26,26,26,0.06)] bg-white/70 px-4 py-3"
+                >
+                  <p className="font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+                    {row.previousConfidencePct}% → {row.newConfidencePct}%
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-[#6e6e6e]">
+                    {row.side} {row.deltaShares} sh · {row.previousPosition.shares} →{" "}
+                    {row.desiredPosition.shares} · {row.status}
+                  </p>
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#9a9a9a]">
+                    book {row.marketPrice} · {new Date(row.createdAt).toLocaleString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }

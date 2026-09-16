@@ -1,0 +1,378 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Market {
+  id            String   @id
+  title         String
+  category      String
+  tag           String
+  status        String
+  source        String
+  conditionId   String?
+  clobTokenYes  String?
+  clobTokenNo   String?
+  yesPriceBps   Int      @default(5000)
+  volumeUsd     Float    @default(0)
+  liquidityUsd  Float    @default(0)
+  resolvesAt    String?
+  imageUrl      String?
+  accepting     Boolean  @default(true)
+  resolvedOutcome String?
+  resolvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  predictions   Prediction[]
+  convictionSnapshots ConvictionSnapshot[]
+}
+
+model Prediction {
+  id               String    @id @default(cuid())
+  walletAddress    String
+  marketId         String
+  market           Market    @relation(fields: [marketId], references: [id])
+  outcome          String
+  confidenceBps    Int
+  stakeMicros      BigInt
+  marketPriceBps   Int
+  engineVersion    String
+  engineInputJson  String
+  engineOutputJson String
+  idempotencyKey   String?
+  status           String
+  errorCode        String?
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  lockVersion      Int       @default(0)
+  position         Position?
+  confidenceHistory ConfidenceHistory[]
+  score            PredictionScore?
+
+  @@unique([walletAddress, idempotencyKey])
+  @@index([marketId, createdAt])
+  @@index([walletAddress, createdAt])
+}
+
+model Position {
+  id             String      @id @default(cuid())
+  predictionId   String      @unique
+  prediction     Prediction  @relation(fields: [predictionId], references: [id])
+  marketId       String
+  walletAddress  String
+  outcome        String
+  side           String
+  tokenId        String
+  sharesMicros   BigInt
+  limitPriceBps  Int
+  avgPriceBps    Int
+  notionalMicros BigInt
+  payoutMicros   BigInt
+  edgeBps        Int
+  kellyBps       Int
+  status         String
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  executions     Execution[]
+
+  @@index([walletAddress, createdAt])
+  @@index([marketId])
+}
+
+model Execution {
+  id                String    @id @default(cuid())
+  positionId        String
+  position          Position  @relation(fields: [positionId], references: [id])
+  venue             String    @default("polymarket")
+  mode              String
+  status            String
+  tokenId           String
+  side              String
+  orderType         String
+  limitPriceBps     Int
+  sizeSharesMicros  BigInt
+  notionalMicros    BigInt
+  polymarketOrderId String?
+  requestJson       String
+  responseJson      String?
+  errorMessage      String?
+  submittedAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  fills             Fill[]
+
+  @@index([polymarketOrderId])
+  @@index([positionId])
+}
+
+model Fill {
+  id             String    @id @default(cuid())
+  executionId    String
+  execution      Execution @relation(fields: [executionId], references: [id])
+  venueTradeId   String?
+  priceBps       Int
+  sharesMicros   BigInt
+  notionalMicros BigInt
+  feeMicros      BigInt    @default(0)
+  isSimulated    Boolean   @default(false)
+  filledAt       DateTime  @default(now())
+  rawJson        String?
+
+  @@index([executionId])
+}
+
+model ConfidenceHistory {
+  id                      String    @id @default(cuid())
+  predictionId            String
+  prediction              Prediction @relation(fields: [predictionId], references: [id])
+  previousConfidenceBps   Int
+  newConfidenceBps        Int
+  previousSharesMicros    BigInt
+  previousNotionalMicros  BigInt
+  previousAvgPriceBps     Int
+  previousPositionJson    String
+  desiredSharesMicros     BigInt
+  desiredNotionalMicros   BigInt
+  desiredAvgPriceBps      Int
+  desiredPositionJson     String
+  deltaSharesMicros       BigInt
+  side                    String
+  marketPriceBps          Int
+  bookHash                String?
+  status                  String
+  idempotencyKey          String?
+  executionId             String?
+  previousPositionStatus  String
+  errorCode               String?
+  errorMessage            String?
+  createdAt               DateTime  @default(now())
+  reconciledAt            DateTime?
+
+  @@unique([predictionId, idempotencyKey])
+  @@index([predictionId, createdAt])
+  @@map("confidence_history")
+}
+
+model ExecutionBatch {
+  id                                  String            @id @default(cuid())
+  marketId                            String
+  outcome                             String
+  tokenId                             String
+  netSide                             String
+  status                              String
+  orderType                           String
+  tickSize                            String
+  negRisk                             Boolean           @default(false)
+  bookHash                            String?
+  bookSnapshotJson                    String?
+  strategyJson                        String?
+  requestedSharesMicros               BigInt
+  requestedNotionalMicros             BigInt
+  executedSharesMicros                BigInt            @default(0)
+  executedNotionalMicros              BigInt            @default(0)
+  venueSharesMicros                   BigInt            @default(0)
+  internalSharesMicros                BigInt            @default(0)
+  avgPriceBps                         Int               @default(0)
+  arrivalPriceBps                     Int               @default(0)
+  expectedSlippageBps                 Int               @default(0)
+  actualSlippageBps                   Int               @default(0)
+  independentExpectedSlippageBps      Int               @default(0)
+  measuredAggregationSlippageDeltaBps Int               @default(0)
+  feeMicros                           BigInt            @default(0)
+  latencyMs                           Int               @default(0)
+  attempts                            Int               @default(0)
+  idempotencyKey                      String?           @unique
+  errorCode                           String?
+  errorMessage                        String?
+  queuedAt                            DateTime?
+  submittedAt                         DateTime?
+  reconciledAt                        DateTime?
+  createdAt                           DateTime          @default(now())
+  updatedAt                           DateTime          @updatedAt
+  intents                             ExecutionIntent[]
+  slices                              ExecutionSlice[]
+
+  @@index([tokenId, status])
+  @@index([createdAt])
+  @@map("execution_batches")
+}
+
+model ExecutionIntent {
+  id                     String          @id @default(cuid())
+  batchId                String?
+  batch                  ExecutionBatch? @relation(fields: [batchId], references: [id])
+  executionId            String          @unique
+  positionId             String
+  predictionId           String?
+  marketId               String
+  outcome                String
+  tokenId                String
+  side                   String
+  sharesMicros           BigInt
+  notionalMicros         BigInt
+  limitPriceBps          Int
+  orderType              String
+  tickSize               String
+  negRisk                Boolean         @default(false)
+  quotedPriceBps         Int?
+  bookHash               String?
+  idempotencyKey         String?         @unique
+  status                 String
+  executedSharesMicros   BigInt          @default(0)
+  executedNotionalMicros BigInt          @default(0)
+  avgPriceBps            Int             @default(0)
+  feeMicros              BigInt          @default(0)
+  errorCode              String?
+  errorMessage           String?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  @@index([tokenId, status])
+  @@index([positionId])
+  @@map("execution_intents")
+}
+
+model ExecutionSlice {
+  id                String         @id @default(cuid())
+  batchId           String
+  batch             ExecutionBatch @relation(fields: [batchId], references: [id])
+  side              String
+  sharesMicros      BigInt
+  notionalMicros    BigInt
+  limitPriceBps     Int
+  orderType         String
+  status            String
+  polymarketOrderId String?
+  requestJson       String
+  responseJson      String?
+  errorMessage      String?
+  attempt           Int            @default(1)
+  submittedAt       DateTime?
+  createdAt         DateTime       @default(now())
+
+  @@index([batchId])
+  @@index([polymarketOrderId])
+  @@map("execution_slices")
+}
+
+model UserReputation {
+  walletAddress         String   @id
+  totalPredictions      Int      @default(0)
+  resolvedPredictions   Int      @default(0)
+  correctPredictions    Int      @default(0)
+  confidenceSumBps      BigInt   @default(0)
+  brierSumMicros        BigInt   @default(0)
+  notionalSumMicros     BigInt   @default(0)
+  pnlSumMicros          BigInt   @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  categories            UserReputationCategory[]
+  bins                  CalibrationBin[]
+  scores                PredictionScore[]
+
+  @@map("user_reputation")
+}
+
+model UserReputationCategory {
+  id                    String   @id @default(cuid())
+  walletAddress         String
+  reputation            UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  category              String
+  totalPredictions      Int      @default(0)
+  resolvedPredictions   Int      @default(0)
+  correctPredictions    Int      @default(0)
+  confidenceSumBps      BigInt   @default(0)
+  brierSumMicros        BigInt   @default(0)
+  notionalSumMicros     BigInt   @default(0)
+  pnlSumMicros          BigInt   @default(0)
+  updatedAt             DateTime @updatedAt
+
+  @@unique([walletAddress, category])
+  @@index([walletAddress])
+  @@map("user_reputation_category")
+}
+
+model CalibrationBin {
+  id                 String   @id @default(cuid())
+  walletAddress      String
+  reputation         UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  binIndex           Int
+  sampleCount        Int      @default(0)
+  sumConfidenceBps   BigInt   @default(0)
+  correctCount       Int      @default(0)
+  updatedAt          DateTime @updatedAt
+
+  @@unique([walletAddress, binIndex])
+  @@index([walletAddress])
+  @@map("calibration_bins")
+}
+
+model PredictionScore {
+  id                String    @id @default(cuid())
+  predictionId      String    @unique
+  prediction        Prediction @relation(fields: [predictionId], references: [id])
+  walletAddress     String
+  reputation        UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  marketId          String
+  category          String
+  predictedOutcome  String
+  resolvedOutcome   String
+  confidenceBps     Int
+  impliedYesBps     Int
+  correct           Boolean
+  brierMicros       BigInt
+  notionalMicros    BigInt
+  payoutMicros      BigInt
+  pnlMicros         BigInt
+  resolvedAt        DateTime
+  createdAt         DateTime  @default(now())
+
+  @@index([walletAddress, resolvedAt])
+  @@index([marketId])
+  @@map("prediction_scores")
+}
+
+model ReputationJob {
+  id               String    @id @default(cuid())
+  marketId         String    @unique
+  resolvedOutcome  String
+  status           String
+  errorMessage     String?
+  createdAt        DateTime  @default(now())
+  processedAt      DateTime?
+
+  @@index([status, createdAt])
+  @@map("reputation_jobs")
+}
+
+model ReputationOpen {
+  predictionId  String   @id
+  walletAddress String
+  category      String
+  createdAt     DateTime @default(now())
+
+  @@map("reputation_opens")
+}
+
+model ConvictionSnapshot {
+  id                             String   @id @default(cuid())
+  marketId                       String
+  market                         Market   @relation(fields: [marketId], references: [id])
+  engineVersion                  String
+  participants                   Int
+  capitalMicros                  BigInt
+  averageConfidenceBps           Int?
+  capitalWeightedConfidenceBps   Int?
+  convictionBps                  Int?
+  polymarketProbabilityBps       Int
+  divergenceBps                  Int?
+  distributionJson               String
+  createdAt                      DateTime @default(now())
+
+  @@index([marketId, createdAt])
+  @@map("conviction_snapshots")
+}

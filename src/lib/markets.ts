@@ -436,7 +436,7 @@ export type WagerRow = {
   stake: string;
   gold: string;
   lockBy: string;
-  mechanism: "Peer";
+  mechanism: "Peer" | "Confidence";
   resolution: "PENDING" | "RESOLVED";
   expired: boolean;
   left: { wallet: string; avatar: string; belief: number; note: SeatNote };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Identicon } from "@/components/dashboard/Identicon";
@@ -8,19 +8,25 @@ import { useWallet } from "@/components/wallet/WalletProvider";
 import { Shell } from "@/components/Shell";
 import {
   formatResolvesBy,
-  formatUsd,
   marketAddress,
   marketCreatedLabel,
   marketCreator,
-  marketWagers,
   shortenKey,
   type Market,
   type WagerRow,
 } from "@/lib/markets";
+import { predictionToWagerRow, type EngineQuote } from "@/lib/betting";
+import { getMarketConviction, listPredictions, placePrediction, quotePrediction } from "@/lib/betting-api";
+import {
+  convictionTrailLabel,
+  formatConvictionPct,
+  formatDivergence,
+  type MarketConviction,
+} from "@/lib/conviction";
 import { shortenAddress } from "@/lib/solana-wallet";
 
-const STAKE_PRESETS = [0, 0.1, 0.5, 1, 2, 5];
-const LOCK_PRESETS = [3, 12, 24];
+const STAKE_PRESETS = [10, 25, 50, 100, 250];
+const CONFIDENCE_PRESETS = [60, 70, 80, 90];
 
 function Clause({
   n,
@@ -57,30 +63,61 @@ function SectionMark() {
   );
 }
 
-function formatLockStamp(now: number, hours: number) {
-  const date = new Date(now + hours * 60 * 60 * 1000);
-  const time = date.toLocaleString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
-  });
-  const day = date.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-  return `${time} ${day}`;
-}
-
 export function ContractView({ market }: { market: Market }) {
   const creator = marketCreator(market);
   const address = marketAddress(market);
   const created = marketCreatedLabel(market);
-  const seeded = useMemo(() => marketWagers(market), [market]);
-  const [rows, setRows] = useState(seeded);
+  const [rows, setRows] = useState<WagerRow[]>([]);
   const [hideExpired, setHideExpired] = useState(false);
   const [hideResolved, setHideResolved] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [loadingRows, setLoadingRows] = useState(true);
+  const [conviction, setConviction] = useState<MarketConviction | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const predictions = await listPredictions(market.id);
+        if (cancelled) return;
+        setRows(predictions.map((item) => predictionToWagerRow(item, shortenKey)));
+      } catch {
+        if (!cancelled) setRows([]);
+      } finally {
+        if (!cancelled) setLoadingRows(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [market.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const apply = (payload: MarketConviction) => {
+      if (!cancelled && payload.marketId) setConviction(payload);
+    };
+    void getMarketConviction(market.id)
+      .then(apply)
+      .catch(() => {
+        if (!cancelled) setConviction(null);
+      });
+
+    const stream = new EventSource(`/api/markets/${encodeURIComponent(market.id)}/conviction/stream`);
+    stream.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data) as MarketConviction & { error?: unknown };
+        if (!payload.error) apply(payload);
+      } catch {
+        // keep the last good snapshot
+      }
+    };
+    return () => {
+      cancelled = true;
+      stream.close();
+    };
+  }, [market.id]);
 
   const visible = rows.filter((row) => {
     if (hideExpired && row.expired) return false;
@@ -170,6 +207,38 @@ export function ContractView({ market }: { market: Market }) {
                 </div>
               </div>
 
+              <div className="mt-6 grid gap-5 sm:grid-cols-3">
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                    Conviction
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                    {formatConvictionPct(conviction?.conviction ?? null)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                    Polymarket
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                    {formatConvictionPct(conviction?.polymarketProbability ?? null)}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                    Divergence
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                    {formatDivergence(conviction?.divergence ?? null)}
+                  </p>
+                </div>
+              </div>
+              {convictionTrailLabel(conviction?.trail ?? []) ? (
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+                  {convictionTrailLabel(conviction?.trail ?? [])}
+                </p>
+              ) : null}
+
               <div className="mt-8 grid gap-6 border-t border-[rgba(26,26,26,0.06)] pt-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
                 <Clause n="01" label="Terms" prompt="How does this resolve?" />
                 <p className="self-center text-[14px] italic text-[#8a8a8a]">No terms attached.</p>
@@ -246,7 +315,9 @@ export function ContractView({ market }: { market: Market }) {
                 </table>
                 {visible.length === 0 ? (
                   <p className="py-8 text-center text-sm text-[#8a8a8a]">
-                    No wagers match those filters.
+                    {loadingRows
+                      ? "Loading positions…"
+                      : "No confidence positions on this contract yet."}
                   </p>
                 ) : null}
               </div>
@@ -325,17 +396,46 @@ function CreateWagerCard({
   onPlace: (row: WagerRow) => void;
 }) {
   const { address } = useWallet();
-  const [stake, setStake] = useState(0.5);
-  const [lockHours, setLockHours] = useState(24);
-  const [now, setNow] = useState<number | null>(null);
+  const yes = market.seats.find((seat) => seat.side === "lands")?.chance ?? 50;
+  const [outcome, setOutcome] = useState<"YES" | "NO">("YES");
+  const [confidence, setConfidence] = useState(Math.min(99, Math.max(1, yes + 15)));
+  const [stake, setStake] = useState(25);
   const [details, setDetails] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [quote, setQuote] = useState<EngineQuote | null>(null);
+  const [quoting, setQuoting] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    setNow(Date.now());
-  }, []);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setQuoting(true);
+      void quotePrediction({
+        marketId: market.id,
+        outcome,
+        confidencePct: confidence,
+        stakeUsd: stake.toFixed(2),
+      })
+        .then((result) => {
+          if (!cancelled) setQuote(result);
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setQuote(null);
+            setMessage(error instanceof Error ? error.message : "Quote failed");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setQuoting(false);
+        });
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [market.id, outcome, confidence, stake]);
 
-  const place = () => {
+  const place = async () => {
     if (!address) {
       setMessage("Connect a wallet to make a wager.");
       return;
@@ -344,29 +444,35 @@ function CreateWagerCard({
       setMessage("Stake has to be greater than 0.");
       return;
     }
-    onPlace({
-      id: `${market.id}-local-${Date.now()}`,
-      stake: `${stake.toFixed(2)} SOL`,
-      gold: "1/2",
-      lockBy: "Open",
-      mechanism: "Peer",
-      resolution: "PENDING",
-      expired: false,
-      left: {
-        wallet: shortenAddress(address),
-        avatar: address,
-        belief: 50,
-        note: "LOCKED",
-      },
-      right: {
-        wallet: "Open seat",
-        avatar: "open",
-        belief: 50,
-        note: "OPEN",
-      },
-    });
-    setMessage("Wager posted. The other seat is still open.");
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const prediction = await placePrediction(
+        {
+          marketId: market.id,
+          outcome,
+          confidencePct: confidence,
+          stakeUsd: stake.toFixed(2),
+          walletAddress: address,
+        },
+        crypto.randomUUID(),
+      );
+      onPlace(predictionToWagerRow(prediction, shortenKey));
+      const fill = prediction.execution?.status ?? prediction.status;
+      setMessage(
+        prediction.position
+          ? `Position ${fill}. ${prediction.position.shares} ${outcome} shares at ${prediction.position.avgPrice}.`
+          : "Prediction stored.",
+      );
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not place prediction.");
+    } finally {
+      setSubmitting(false);
+    }
   };
+
+  const position = quote?.position;
+  const rejected = quote && !quote.accepted ? quote.rejection : null;
 
   return (
     <aside className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-6 lg:sticky lg:top-6">
@@ -375,25 +481,92 @@ function CreateWagerCard({
       </p>
 
       <div className="mt-6">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Stake</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Outcome</p>
+        <div className="mt-3 flex rounded-full border border-[rgba(26,26,26,0.1)] bg-white p-1">
+          {(["YES", "NO"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => {
+                setOutcome(value);
+                setMessage(null);
+              }}
+              className={`flex-1 rounded-full px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${
+                outcome === value ? "bg-[#1a1a1a] text-white" : "text-[#5a5a5a]"
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          Confidence
+        </p>
         <p className="mt-2 text-[13px] leading-5 text-[#6e6e6e]">
-          The base cost of a Seat in this Wager. Both parties put up the same amount — the winner
-          claims from the loser&apos;s Stake.
+          Your probability that {outcome} is the correct resolution. The engine only sizes a
+          position when you have edge versus the live book.
         </p>
         <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
-          {stake.toFixed(2)}{" "}
+          {confidence}
           <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
-            SOL
-          </span>{" "}
-          <span className="align-middle font-sans text-[13px] text-[#b0b0b0]">
-            ≈ {formatUsd(stake)}
+            %
           </span>
         </p>
         <input
           type="range"
-          min={0}
-          max={5}
-          step={0.01}
+          min={1}
+          max={99}
+          step={1}
+          value={confidence}
+          onChange={(event) => {
+            setConfidence(Number(event.target.value));
+            setMessage(null);
+          }}
+          className="mt-5 w-full accent-[#1a1a1a]"
+        />
+        <div className="mt-4 flex flex-wrap gap-2">
+          {CONFIDENCE_PRESETS.map((value) => {
+            const active = confidence === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => {
+                  setConfidence(value);
+                  setMessage(null);
+                }}
+                className={`rounded-full border px-3 py-1.5 font-mono text-[11px] ${
+                  active
+                    ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
+                    : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
+                }`}
+              >
+                {value}%
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mt-8">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Stake</p>
+        <p className="mt-2 text-[13px] leading-5 text-[#6e6e6e]">
+          Maximum USDC you are willing to deploy. Kelly sizing may use less than this.
+        </p>
+        <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
+          {stake.toFixed(2)}{" "}
+          <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
+            USDC
+          </span>
+        </p>
+        <input
+          type="range"
+          min={1}
+          max={500}
+          step={1}
           value={stake}
           onChange={(event) => {
             setStake(Number(event.target.value));
@@ -403,7 +576,7 @@ function CreateWagerCard({
         />
         <div className="mt-4 flex flex-wrap gap-2">
           {STAKE_PRESETS.map((value) => {
-            const active = Math.abs(stake - value) < 0.001;
+            const active = stake === value;
             return (
               <button
                 key={value}
@@ -418,51 +591,39 @@ function CreateWagerCard({
                     : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
                 }`}
               >
-                {value} SOL
+                ${value}
               </button>
             );
           })}
         </div>
       </div>
 
-      <div className="mt-8">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Lock by</p>
-        <p className="mt-2 text-[13px] leading-5 text-[#6e6e6e]">
-          The deadline by which both parties must Lock their beliefs.
+      <div className="mt-6 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-white px-4 py-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          {quoting ? "Pricing…" : "Engine quote"}
         </p>
-        <p className="mt-4 flex flex-wrap items-center gap-2 font-serif text-[15px] text-[#1a1a1a]">
-          {now ? formatLockStamp(now, lockHours) : "—"}
-          <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
-            ◷ {lockHours}h window
-          </span>
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {LOCK_PRESETS.map((value) => {
-            const active = lockHours === value;
-            return (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setLockHours(value)}
-                className={`rounded-full border px-3 py-1.5 font-mono text-[11px] ${
-                  active
-                    ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
-                    : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
-                }`}
-              >
-                +{value} hrs
-              </button>
-            );
-          })}
-        </div>
+        {rejected ? (
+          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{rejected.message}</p>
+        ) : position ? (
+          <div className="mt-2 space-y-1 font-mono text-[11px] text-[#5a5a5a]">
+            <p>
+              Buy {position.shares} {position.outcome} @ {position.limitPrice}
+            </p>
+            <p>Notional ${position.notionalUsd} · edge {position.edgeBps} bps</p>
+            <p>If right, payout ${position.payoutUsd}</p>
+          </div>
+        ) : (
+          <p className="mt-2 text-[13px] text-[#8a8a8a]">Waiting for a valid quote.</p>
+        )}
       </div>
 
       <button
         type="button"
-        onClick={place}
-        className="mt-8 w-full rounded-2xl bg-[#111111] py-3.5 text-[13px] font-semibold tracking-[0.16em] text-white uppercase hover:bg-black"
+        onClick={() => void place()}
+        disabled={submitting || !quote?.accepted}
+        className="mt-8 w-full rounded-2xl bg-[#111111] py-3.5 text-[13px] font-semibold tracking-[0.16em] text-white uppercase hover:bg-black disabled:cursor-not-allowed disabled:bg-[#c8c4bc]"
       >
-        Make wager
+        {submitting ? "Placing…" : "Make wager"}
       </button>
       {message ? (
         <p className="mt-3 text-[12px] leading-5 text-[#6e6e6e]">{message}</p>
@@ -477,8 +638,9 @@ function CreateWagerCard({
       </button>
       {details ? (
         <p className="mt-2 text-[12px] leading-5 text-[#6e6e6e]">
-          This is a peer table on {market.title}. Wagers settle 1:1. Resolution follows the
-          contract clock ({market.resolvesIn} left).
+          ConfidenceEngine {quote?.engineVersion ?? "v1"} converts your view into a Polymarket
+          {address ? ` order for ${shortenAddress(address)}` : " order"}. Credentials stay on the
+          server. {market.title} resolves in {market.resolvesIn}.
         </p>
       ) : null}
     </aside>

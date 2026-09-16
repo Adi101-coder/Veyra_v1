@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -10,6 +10,8 @@ import {
   type Market,
 } from "@/lib/markets";
 import { Identicon } from "@/components/dashboard/Identicon";
+import { getMarketConviction } from "@/lib/betting-api";
+import { formatDivergence, type MarketConviction } from "@/lib/conviction";
 
 type FeaturedMarketProps = {
   markets: Market[];
@@ -26,6 +28,26 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const [index, setIndex] = useState(0);
   const market = slides[index] ?? slides[0];
   const [tableId, setTableId] = useState(market?.tableOptions[0]?.id ?? "");
+  const [conviction, setConviction] = useState<MarketConviction | null>(null);
+
+  useEffect(() => {
+    if (!market) {
+      setConviction(null);
+      return;
+    }
+    let cancelled = false;
+    setConviction(null);
+    void getMarketConviction(market.id)
+      .then((payload) => {
+        if (!cancelled) setConviction(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setConviction(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [market?.id]);
 
   const table = useMemo(() => {
     if (!market) return undefined;
@@ -200,7 +222,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           <div className="mt-6">
             <div className="mb-2 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
               <span>Certainty on this table</span>
-              <span>2 bets</span>
+              <span>
+                {conviction
+                  ? `${conviction.participants} ${conviction.participants === 1 ? "bet" : "bets"}`
+                  : "2 bets"}
+              </span>
             </div>
             <div className="relative h-2 overflow-hidden rounded-full bg-[#efe8dc]">
               <span
@@ -211,15 +237,34 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 className="absolute inset-y-0 right-0 bg-[#2c7a55]/30"
                 style={{ width: `${land.chance}%` }}
               />
-              <span className="absolute top-1/2 left-[8%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b4454a] ring-2 ring-white" />
-              <span className="absolute top-1/2 right-[10%] h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#2c7a55] ring-2 ring-white" />
+              <span
+                className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b4454a] ring-2 ring-white"
+                style={{
+                  left:
+                    conviction?.conviction != null
+                      ? `${Math.max(2, Math.min(96, 100 - conviction.conviction))}%`
+                      : "8%",
+                }}
+              />
+              <span
+                className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#2c7a55] ring-2 ring-white"
+                style={{
+                  left:
+                    conviction?.conviction != null
+                      ? `${Math.max(2, Math.min(96, conviction.conviction))}%`
+                      : undefined,
+                  right: conviction?.conviction != null ? undefined : "10%",
+                }}
+              />
             </div>
             <div className="mt-2 flex justify-between font-mono text-[9px] uppercase tracking-[0.14em]">
               <span className="text-[#b4454a]">No · {miss?.chance ?? 0}¢</span>
               <span className="text-[#2c7a55]">Yes · {land.chance}¢</span>
             </div>
             <p className="mt-2 text-[11px] text-[#9a9a9a]">
-              Each dot matches a player&apos;s avatar
+              {conviction?.conviction != null
+                ? `Veyra ${Math.round(conviction.conviction)}% · Polymarket ${Math.round(conviction.polymarketProbability)}% · ${formatDivergence(conviction.divergence)} divergence`
+                : "Each dot matches a player's avatar"}
             </p>
           </div>
         </div>
