@@ -1,10 +1,5 @@
-import type { Metadata } from "next";
-import { SocialView } from "@/components/SocialView";
-
-export const metadata: Metadata = {
-  title: "Community",
-};
+import { redirect } from "next/navigation";
 
 export default function SocialPage() {
-  return <SocialView />;
+  redirect("/community");
 }

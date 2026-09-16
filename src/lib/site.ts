@@ -8,16 +8,16 @@ export type FaqItem = {
 };
 
 export const siteConfig = {
-  name: "Vantage",
-  wordmark: "VANTAGE",
-  title: "Vantage — where conviction meets capital",
+  name: "VEYRA",
+  wordmark: "VEYRA",
+  title: "VEYRA - trade the future on-chain",
   description:
-    "Back your predictions on the events that matter. Vantage is a transparent prediction platform where participants express conviction with capital and earn rewards for being right.",
-  tagline: "Where conviction meets capital.",
+    "Trade real-world outcomes on-chain. VEYRA is a prediction protocol where participants discover markets, take positions, and settle transparently.",
+  tagline: "On-chain markets for the future.",
   nav: [
-    { href: "/#faq", label: "How it works" },
-    { href: "/docs", label: "Docs" },
-    { href: "/social", label: "Community" },
+    { href: "/", label: "Home" },
+    { href: "/docs", label: "How it works" },
+    { href: "/community", label: "Socials" },
   ],
   cta: "Take a position",
   ctaHref: "/dashboard",
@@ -74,8 +74,8 @@ export const siteConfig = {
   faqTitle: "Questions",
   faq: [
     {
-      q: "What is Vantage?",
-      a: "Vantage is a prediction and wagering platform where users take positions on future events and earn rewards when their forecasts prove correct.",
+      q: "What is VEYRA?",
+      a: "VEYRA is a prediction protocol where users trade positions on future outcomes and settle transparently on-chain.",
     },
     {
       q: "How are outcomes determined?",
@@ -117,7 +117,7 @@ export const siteConfig = {
   ],
   docs: {
     kicker: "Documentation",
-    title: "How Vantage Works",
+    title: "How VEYRA Works",
     body: "A market is a question about the future. Positions price that question. Settlement pays the people who were right.",
     steps: [
       {
@@ -155,7 +155,7 @@ export const siteConfig = {
   notFound: {
     title: "Market not found.",
     body: "That contract never opened. Step back to the floor and pick a live market.",
-    cta: "Return to Vantage",
+    cta: "Return to VEYRA",
   },
   footer: [
     {
@@ -163,7 +163,7 @@ export const siteConfig = {
       links: [
         { label: "About", href: "/how-it-works" },
         { label: "Community", href: "/social" },
-        { label: "Markets", href: "/#stats" },
+        { label: "Markets", href: "/markets" },
       ],
     },
     {

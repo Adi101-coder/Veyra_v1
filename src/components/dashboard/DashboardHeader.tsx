@@ -8,6 +8,7 @@ import { Shell } from "@/components/Shell";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/markets", label: "Markets" },
   { href: "/activity", label: "Activity" },
   { href: "/write", label: "Write" },
 ] as const;
@@ -49,7 +50,7 @@ export function DashboardHeader() {
           <Link
             href="/"
             className="text-[#1a1a1a] no-underline"
-            aria-label="Vantage home"
+            aria-label="VEYRA home"
           >
             <BrandWordmark className="text-[28px] leading-none sm:text-[32px]" />
           </Link>

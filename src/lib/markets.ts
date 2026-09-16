@@ -43,7 +43,7 @@ export type Market = {
   featured?: boolean;
 };
 
-export const markets: Market[] = [
+export const coreMarkets: Market[] = [
   {
     id: "jimothy",
     title: "Second Jimothy confirmed by end of year?",
@@ -119,7 +119,7 @@ export const markets: Market[] = [
   },
   {
     id: "vantage-mcap",
-    title: "Will Vantage's token hit a $5M market cap within its first week?",
+    title: "Will VEYRA's token hit a $5M market cap within its first week?",
     category: "science",
     tag: "vantage",
     staked: "3.10 SOL",
@@ -505,6 +505,216 @@ export function shortenKey(key: string, left = 4, right = 4) {
   if (key.length <= left + right + 3) return key;
   return `${key.slice(0, left)}...${key.slice(-right)}`;
 }
+
+function seatsFor(id: string, yes: number, leftOpen = false, rightOpen = false): Seat[] {
+  return [
+    {
+      id: "A",
+      wallet: leftOpen ? "Open seat" : shortenKey(fakePubkey(`L:${id}`)),
+      avatar: `${id}-a`,
+      chance: yes,
+      side: "lands",
+    },
+    {
+      id: "B",
+      wallet: rightOpen ? "Open seat" : shortenKey(fakePubkey(`R:${id}`)),
+      avatar: `${id}-b`,
+      chance: Math.max(1, 100 - yes),
+      side: "misses",
+    },
+  ];
+}
+
+function discoveryMarket(
+  id: string,
+  title: string,
+  category: Exclude<CategoryId, "all">,
+  tag: string,
+  yes: number,
+  extras: Partial<
+    Pick<
+      Market,
+      "staked" | "tables" | "openSeats" | "resolvesIn" | "resolvesAt" | "wagers" | "status" | "featured"
+    >
+  > = {},
+): Market {
+  const accents: Record<Exclude<CategoryId, "all">, string> = {
+    politics: "#c45c5c",
+    finance: "#3d9a62",
+    sports: "#c4a02a",
+    entertainment: "#8a5bb5",
+    science: "#4a8ec4",
+    culture: "#c47a3a",
+    weather: "#3aa38a",
+  };
+  const openSeats = extras.openSeats ?? 0;
+  return {
+    id,
+    title,
+    category,
+    tag,
+    staked: extras.staked ?? "0.84 SOL",
+    tables: extras.tables ?? 5,
+    openSeats,
+    resolvesIn: extras.resolvesIn ?? "1d",
+    resolvesAt: extras.resolvesAt ?? "12:30 AM Sep 19, 2026",
+    wagers: extras.wagers ?? 5,
+    status: extras.status ?? "open",
+    accent: accents[category],
+    featured: extras.featured,
+    tableOptions: [{ id: "t1", stake: "0.10 SOL", full: openSeats === 0 }],
+    seats: seatsFor(id, yes, openSeats > 1, openSeats > 0),
+  };
+}
+
+const discoveryMarkets: Market[] = [
+  discoveryMarket(
+    "frech-dolehide",
+    "Magdalena Frech vs Caroline Dolehide",
+    "sports",
+    "gdl-open",
+    66,
+    {
+      staked: "4.20 SOL",
+      tables: 18,
+      openSeats: 0,
+      resolvesIn: "8h",
+      resolvesAt: "12:40 AM Sep 17, 2026",
+      wagers: 18,
+      status: "trending",
+      featured: true,
+    },
+  ),
+  discoveryMarket("everton-wolves", "Everton vs Wolves — Everton to win", "sports", "ffl-cup", 68, {
+    resolvesAt: "12:15 AM Sep 17, 2026",
+    status: "trending",
+  }),
+  discoveryMarket("mcity-brighton", "Manchester United vs Brighton — United to win", "sports", "ffl-cup", 62, {
+    resolvesAt: "12:30 AM Sep 17, 2026",
+  }),
+  discoveryMarket("coventry-villa", "Coventry vs Aston Villa — Coventry to win", "sports", "ffl-cup", 28, {
+    resolvesAt: "12:30 AM Sep 17, 2026",
+    openSeats: 1,
+  }),
+  discoveryMarket("wolves-everton", "Everton vs Wolves — Wolves to win", "sports", "europa", 15, {
+    resolvesAt: "12:15 AM Sep 17, 2026",
+  }),
+  discoveryMarket("mcity-norwich", "Manchester City vs Norwich — City to win", "sports", "europa", 92, {
+    resolvesAt: "12:00 AM Sep 17, 2026",
+    status: "trending",
+  }),
+  discoveryMarket("palace-leech", "Crystal Palace vs Lech Poznan — Palace to win", "sports", "europa", 75, {
+    resolvesAt: "12:30 AM Sep 18, 2026",
+    resolvesIn: "2d",
+  }),
+  discoveryMarket("olympiakos-anderlecht", "Olympiakos vs Anderlecht — Olympiakos to win", "sports", "europa", 77, {
+    resolvesAt: "12:30 AM Sep 17, 2026",
+  }),
+  discoveryMarket("anderlecht-lyon", "Anderlecht vs Lyon — Anderlecht to win", "sports", "europa", 35, {
+    resolvesAt: "12:30 AM Sep 17, 2026",
+  }),
+  discoveryMarket("sunderland-alkmaar", "Sunderland vs AZ Alkmaar — Sunderland to win", "sports", "europa", 69, {
+    resolvesAt: "12:30 AM Sep 17, 2026",
+  }),
+  discoveryMarket("villa-coventry", "Aston Villa vs Coventry — Villa to win", "sports", "ffl-cup", 51, {
+    resolvesAt: "12:15 AM Sep 17, 2026",
+  }),
+  discoveryMarket("hoffenheim-bournemouth", "Hoffenheim vs Bournemouth — Hoffenheim to win", "sports", "europa", 75, {
+    resolvesAt: "10:15 AM Sep 17, 2026",
+  }),
+  discoveryMarket("bournemouth-sociedad", "Bournemouth vs Real Sociedad — Bournemouth to win", "sports", "europa", 31, {
+    resolvesAt: "12:30 AM Sep 18, 2026",
+    resolvesIn: "2d",
+  }),
+  discoveryMarket("union-pizen", "Union St. Gilloise vs Viktoria Plzen — Union to win", "sports", "europa", 41, {
+    resolvesAt: "12:30 AM Sep 18, 2026",
+    resolvesIn: "2d",
+  }),
+  discoveryMarket("cl-golden-boot", "Champions League Golden Boot — Kylian Mbappe", "sports", "ucl", 21, {
+    resolvesIn: "280d",
+    resolvesAt: "8:00 PM Jun 1, 2027",
+    status: "open",
+    tables: 9,
+    wagers: 9,
+  }),
+  discoveryMarket("cl-champion-barca", "UEFA Champions League 2027 Champion — Barcelona", "sports", "ucl", 20, {
+    resolvesIn: "280d",
+    resolvesAt: "8:00 PM Jun 1, 2027",
+    tables: 12,
+    wagers: 12,
+  }),
+  discoveryMarket("brentford-chelsea", "Brentford vs Chelsea", "sports", "epl", 35, {
+    resolvesIn: "3d",
+    resolvesAt: "12:30 AM Sep 19, 2026",
+    status: "trending",
+  }),
+  discoveryMarket("spurs-villa", "Tottenham vs Aston Villa", "sports", "epl", 49, {
+    resolvesIn: "3d",
+    resolvesAt: "5:00 PM Sep 19, 2026",
+  }),
+  discoveryMarket("newcastle-hull", "Newcastle vs Hull City", "sports", "epl", 62, {
+    resolvesIn: "3d",
+    resolvesAt: "7:30 AM Sep 19, 2026",
+  }),
+  discoveryMarket("everton-ipswich", "Everton vs Ipswich", "sports", "epl", 57, {
+    resolvesIn: "3d",
+    resolvesAt: "7:30 PM Sep 19, 2026",
+  }),
+  discoveryMarket("exrustec-nexus-m1", "ex-RUSTEC vs Nexus: Map 1 Winner", "sports", "cs2", 42, {
+    resolvesIn: "2h",
+    resolvesAt: "10:30 PM Sep 16, 2026",
+    status: "trending",
+    featured: true,
+  }),
+  discoveryMarket("exrustec-nexus-m2", "ex-RUSTEC vs Nexus: Map 2 Winner", "sports", "cs2", 53, {
+    resolvesIn: "4h",
+    resolvesAt: "10:30 PM Sep 16, 2026",
+    status: "trending",
+  }),
+  discoveryMarket("b8-metizport", "B8 vs Metizport", "sports", "cs2", 70, {
+    resolvesIn: "1d",
+    resolvesAt: "1:30 PM Sep 17, 2026",
+  }),
+  discoveryMarket("tope-invictus", "Top Esports vs Invictus Gaming", "sports", "dota2", 47, {
+    resolvesIn: "1d",
+    resolvesAt: "2:30 PM Sep 17, 2026",
+  }),
+  discoveryMarket("gamerlegion-luminosity", "GamerLegion vs Luminosity", "sports", "cs2", 57, {
+    resolvesIn: "1d",
+    resolvesAt: "2:30 PM Sep 17, 2026",
+  }),
+  discoveryMarket("nip-m80", "NIP vs M80", "sports", "cs2", 55, {
+    resolvesIn: "1d",
+    resolvesAt: "2:30 PM Sep 17, 2026",
+  }),
+  discoveryMarket("mouz-nrg", "MOUZ vs NRG", "sports", "cs2", 88, {
+    resolvesIn: "1d",
+    resolvesAt: "3:30 PM Sep 17, 2026",
+    status: "trending",
+  }),
+  discoveryMarket("stearns-stephens", "Peyton Stearns vs Sloane Stephens", "sports", "gdl-open", 58, {
+    resolvesAt: "11:40 AM Sep 17, 2026",
+  }),
+  discoveryMarket("sonmez-jovic", "Zeynep Sonmez vs Iva Jovic", "sports", "gdl-open", 47, {
+    resolvesAt: "5:50 AM Sep 17, 2026",
+  }),
+  discoveryMarket("kostyuk-townsend", "Marta Kostyuk vs Taylor Townsend", "sports", "gdl-open", 61, {
+    resolvesAt: "5:30 AM Sep 17, 2026",
+  }),
+  discoveryMarket("day-samsonova", "Kayla Day vs Liudmila Samsonova", "sports", "gdl-open", 39, {
+    resolvesAt: "11:40 AM Sep 17, 2026",
+  }),
+  discoveryMarket("bucsa-sorribes", "Cristina Bucsa vs Sara Sorribes Tormo", "sports", "gdl-open", 44, {
+    resolvesAt: "11:40 AM Sep 17, 2026",
+  }),
+  discoveryMarket("sol-weekend", "Solana closes the week above $180", "finance", "sol", 58, {
+    resolvesIn: "4d",
+    resolvesAt: "5:00 PM Sep 20, 2026",
+    status: "new",
+  }),
+];
+
+export const markets: Market[] = [...coreMarkets, ...discoveryMarkets];
 
 export function marketAddress(market: Market) {
   return fakePubkey(`addr:${market.id}`);

@@ -6,8 +6,8 @@ import { FeaturedMarket } from "@/components/dashboard/FeaturedMarket";
 import { Shell } from "@/components/Shell";
 import {
   categories,
+  coreMarkets,
   filterMarkets,
-  markets,
   tabs,
   type CategoryId,
   type TabId,
@@ -19,7 +19,7 @@ export function DashboardView() {
   const [query, setQuery] = useState("");
 
   const visible = useMemo(
-    () => filterMarkets(markets, tab, category, query),
+    () => filterMarkets(coreMarkets, tab, category, query),
     [tab, category, query],
   );
 

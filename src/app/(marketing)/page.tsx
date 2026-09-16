@@ -1,15 +1,5 @@
-import { FAQ } from "@/components/FAQ";
-import { Hero } from "@/components/Hero";
-import { Rules } from "@/components/Rules";
-import { Stats } from "@/components/Stats";
+import { LandingView } from "@/components/landing/LandingView";
 
 export default function Home() {
-  return (
-    <>
-      <Hero />
-      <Stats />
-      <Rules />
-      <FAQ />
-    </>
-  );
+  return <LandingView />;
 }
