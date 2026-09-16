@@ -1,8 +1,7 @@
 "use client";
 
-import { useRef } from "react";
-import Image from "next/image";
-import { motion, useMotionValue, useSpring, useTransform } from "framer-motion";
+import { motion } from "framer-motion";
+import { GlobeVisual } from "@/components/landing/GlobeVisual";
 
 const nodes = [
   { x: "12%", y: "28%", size: 18, delay: 0 },
@@ -14,30 +13,8 @@ const nodes = [
 ];
 
 export function NetworkVisual() {
-  const ref = useRef<HTMLDivElement>(null);
-  const mx = useMotionValue(0);
-  const my = useMotionValue(0);
-  const x = useSpring(mx, { stiffness: 36, damping: 18 });
-  const y = useSpring(my, { stiffness: 36, damping: 18 });
-  const rotateX = useTransform(y, [-30, 30], [5, -5]);
-  const rotateY = useTransform(x, [-30, 30], [-7, 7]);
-  const shift = useTransform(x, [-30, 30], [-12, 12]);
-
   return (
-    <div
-      ref={ref}
-      className="relative mx-auto -mb-16 mt-6 h-[300px] w-full max-w-[760px] sm:-mb-24 sm:h-[420px] lg:-mb-28 lg:h-[520px]"
-      onMouseMove={(event) => {
-        const box = ref.current?.getBoundingClientRect();
-        if (!box) return;
-        mx.set(((event.clientX - box.left) / box.width - 0.5) * 60);
-        my.set(((event.clientY - box.top) / box.height - 0.5) * 60);
-      }}
-      onMouseLeave={() => {
-        mx.set(0);
-        my.set(0);
-      }}
-    >
+    <div className="relative mx-auto -mb-16 mt-6 h-[300px] w-full max-w-[760px] sm:-mb-24 sm:h-[420px] lg:-mb-28 lg:h-[520px]">
       <div className="absolute inset-x-[10%] top-[20%] h-[62%] rounded-full bg-[radial-gradient(circle,rgba(90,100,120,0.16),transparent_68%)] blur-3xl" />
       <svg className="absolute inset-0 h-full w-full opacity-50" viewBox="0 0 760 520" aria-hidden>
         <ellipse cx="380" cy="260" rx="210" ry="78" fill="none" stroke="#3a4048" strokeWidth="0.8" />
