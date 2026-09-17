@@ -45,7 +45,9 @@ export function parseWalletAddress(value: unknown) {
     throw new BettingError("INVALID_WALLET", "Wallet address is required.");
   }
   const address = value.trim();
-  if (EVM.test(address) || SOLANA.test(address)) return address;
+  // EVM addresses are case-insensitive: store one canonical (lowercase) form.
+  if (EVM.test(address)) return address.toLowerCase();
+  if (SOLANA.test(address)) return address;
   throw new BettingError("INVALID_WALLET", "Wallet address is not a valid EVM or Solana address.");
 }
 
@@ -91,7 +93,8 @@ export function parseQuoteRequest(body: unknown): QuoteRequest {
 
 export function parseChangeConfidenceRequest(
   body: unknown,
-  headerKey?: string | null,
+  headerKey: string | null | undefined,
+  sessionWallet: string,
 ): ChangeConfidenceRequest {
   if (!body || typeof body !== "object") {
     throw new BettingError("INVALID_BODY", "JSON body is required.");
@@ -109,20 +112,45 @@ export function parseChangeConfidenceRequest(
   }
   return {
     confidencePct: parseConfidencePct(raw.confidencePct),
-    walletAddress: parseWalletAddress(raw.walletAddress),
-    idempotencyKey: parseIdempotencyKey(headerKey || raw.idempotencyKey),
+    walletAddress: actingWallet(raw.walletAddress, sessionWallet),
+    idempotencyKey: requireIdempotencyKey(headerKey || raw.idempotencyKey),
     quotedMarketPrice,
     expectedConfidencePct:
       raw.expectedConfidencePct == null ? undefined : parseConfidencePct(raw.expectedConfidencePct),
   };
 }
 
-export function parsePlaceRequest(body: unknown, headerKey?: string | null): PlacePredictionRequest {
+export function parsePlaceRequest(
+  body: unknown,
+  headerKey: string | null | undefined,
+  sessionWallet: string,
+): PlacePredictionRequest {
   const quote = parseQuoteRequest(body);
   const raw = body as Record<string, unknown>;
   return {
     ...quote,
-    walletAddress: parseWalletAddress(raw.walletAddress),
-    idempotencyKey: parseIdempotencyKey(headerKey || raw.idempotencyKey),
+    walletAddress: actingWallet(raw.walletAddress, sessionWallet),
+    idempotencyKey: requireIdempotencyKey(headerKey || raw.idempotencyKey),
   };
+}
+
+/**
+ * The acting wallet always comes from the authenticated session. A body wallet is
+ * tolerated only if it names the same wallet (older clients send it).
+ */
+function actingWallet(bodyWallet: unknown, sessionWallet: string) {
+  const session = parseWalletAddress(sessionWallet);
+  if (bodyWallet != null && bodyWallet !== "" && parseWalletAddress(bodyWallet) !== session) {
+    throw new BettingError("FORBIDDEN", "Requests can only act for the signed-in wallet.", 403);
+  }
+  return session;
+}
+
+/** Money-moving writes must be replay-safe, so the key is mandatory server-side. */
+export function requireIdempotencyKey(value: unknown) {
+  const key = parseIdempotencyKey(value);
+  if (!key) {
+    throw new BettingError("IDEMPOTENCY_KEY_REQUIRED", "An Idempotency-Key header is required.", 400);
+  }
+  return key;
 }

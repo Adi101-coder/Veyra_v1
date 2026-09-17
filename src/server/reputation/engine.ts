@@ -10,7 +10,7 @@ import {
   REPUTATION_DOCUMENTATION,
   scoreForecast,
 } from "@/server/reputation/metrics";
-import type { Forecast, ForecastSource, ReputationStore } from "@/server/reputation/types";
+import type { Forecast, ForecastSource, ReputationStore, ResolutionOutcome } from "@/server/reputation/types";
 
 export class ReputationEngine {
   constructor(
@@ -22,20 +22,24 @@ export class ReputationEngine {
     return this.store.recordOpen(input);
   }
 
-  async enqueueResolution(marketId: string, resolvedOutcome: Outcome) {
-    if (resolvedOutcome !== "YES" && resolvedOutcome !== "NO") {
-      throw new BettingError("INVALID_OUTCOME", "Resolved outcome must be YES or NO.");
+  async enqueueResolution(marketId: string, resolvedOutcome: ResolutionOutcome) {
+    if (resolvedOutcome !== "YES" && resolvedOutcome !== "NO" && resolvedOutcome !== "INVALID") {
+      throw new BettingError("INVALID_OUTCOME", "Resolved outcome must be YES, NO or INVALID.");
     }
-    return this.store.enqueueJob(marketId, resolvedOutcome);
+    const job = await this.store.enqueueJob(marketId, resolvedOutcome);
+    await this.store.markMarketResolved(marketId, resolvedOutcome, job.createdAt);
+    return job;
   }
 
   async processJobs() {
     const processed = [];
     for (;;) {
+      // claimJob skips rows another worker won and reclaims stale PROCESSING rows.
       const job = await this.store.claimJob();
       if (!job) break;
       try {
-        const count = await this.resolveMarket(job.marketId, job.resolvedOutcome);
+        const count =
+          job.resolvedOutcome === "INVALID" ? 0 : await this.resolveMarket(job.marketId, job.resolvedOutcome, job.createdAt);
         await this.store.finishJob(job.id, "DONE");
         processed.push({ jobId: job.id, marketId: job.marketId, scored: count });
       } catch (error) {
@@ -98,10 +102,10 @@ export class ReputationEngine {
     return this.store.listScores(walletAddress);
   }
 
-  private async resolveMarket(marketId: string, resolvedOutcome: Outcome) {
-    const forecasts = await this.source.listByMarket(marketId);
-    const resolvedAt = new Date();
-    await this.store.markMarketResolved(marketId, resolvedOutcome, resolvedAt);
+  private async resolveMarket(marketId: string, resolvedOutcome: Outcome, resolvedAt: Date) {
+    // The market was marked resolved when the job was enqueued, so nothing can be
+    // placed after this cutoff; scoring is limited to predictions made before it.
+    const forecasts = await this.source.listByMarket(marketId, resolvedAt);
     let scored = 0;
     for (const forecast of forecasts) {
       if (await this.store.hasScore(forecast.predictionId)) continue;
@@ -111,8 +115,10 @@ export class ReputationEngine {
         confidenceBps: forecast.confidenceBps,
         notionalMicros: forecast.notionalMicros,
         payoutMicros: forecast.payoutMicros,
+        proceedsMicros: forecast.proceedsMicros,
       });
-      await this.store.applyResolution({
+      try {
+        await this.store.applyResolution({
         predictionId: forecast.predictionId,
         walletAddress: forecast.walletAddress,
         marketId: forecast.marketId,
@@ -127,7 +133,12 @@ export class ReputationEngine {
         payoutMicros: forecast.payoutMicros,
         pnlMicros: scoredRow.pnlMicros,
         resolvedAt,
-      });
+        });
+      } catch (error) {
+        // Already scored by a concurrent worker (unique predictionId): not an error.
+        if ((error as { code?: string })?.code === "P2002") continue;
+        throw error;
+      }
       scored += 1;
     }
     return scored;

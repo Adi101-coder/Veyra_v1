@@ -160,10 +160,19 @@ export type ReconcileAdjustmentInput = {
 
 export type BettingStore = {
   upsertMarket(market: MarketUpsert): Promise<void>;
-  getMarket(id: string): Promise<{ id: string; status: string; resolvedAt: Date | null; resolvedOutcome: string | null } | null>;
+  getMarket(id: string): Promise<{
+    id: string;
+    source: string;
+    status: string;
+    resolvedAt: Date | null;
+    resolvedOutcome: string | null;
+  } | null>;
+  listOpenVenueMarketIds(): Promise<string[]>;
   findByIdempotency(walletAddress: string, key: string): Promise<PredictionBundle | null>;
   getPrediction(id: string): Promise<PredictionBundle | null>;
   findByExecutionId(executionId: string): Promise<PredictionBundle | null>;
+  /** All predictions for a market created at or before the cutoff (no page cap). */
+  listForScoring(marketId: string, createdAtOrBefore: Date): Promise<PredictionBundle[]>;
   listPredictions(filter: {
     marketId?: string;
     walletAddress?: string;
@@ -235,14 +244,30 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
     getMarket(id) {
       return prisma.market.findUnique({
         where: { id },
-        select: { id: true, status: true, resolvedAt: true, resolvedOutcome: true },
+        select: { id: true, source: true, status: true, resolvedAt: true, resolvedOutcome: true },
       });
+    },
+
+    async listOpenVenueMarketIds() {
+      const rows = await prisma.market.findMany({
+        where: { source: "polymarket", resolvedAt: null, predictions: { some: {} } },
+        select: { id: true },
+      });
+      return rows.map((row) => row.id);
     },
 
     findByIdempotency(walletAddress, key) {
       return prisma.prediction.findFirst({
         where: { walletAddress, idempotencyKey: key },
         include: bundleInclude,
+      });
+    },
+
+    listForScoring(marketId, createdAtOrBefore) {
+      return prisma.prediction.findMany({
+        where: { marketId, createdAt: { lte: createdAtOrBefore } },
+        include: bundleInclude,
+        orderBy: { createdAt: "asc" },
       });
     },
 

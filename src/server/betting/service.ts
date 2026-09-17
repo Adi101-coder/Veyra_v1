@@ -43,7 +43,8 @@ import { memoryExecutionStore, prismaExecutionStore, type ExecutionStore } from 
 import type { IntentAllocation, ProcessResult } from "@/server/execution/types";
 import { ReputationEngine } from "@/server/reputation/engine";
 import { memoryReputationStore, prismaReputationStore } from "@/server/reputation/store";
-import type { Forecast, ForecastSource } from "@/server/reputation/types";
+import type { Forecast, ForecastSource, ResolutionOutcome } from "@/server/reputation/types";
+import { fetchVenueResolution, type VenueResolution } from "@/server/polymarket/gamma";
 import { formatBrier } from "@/server/reputation/metrics";
 import { parseOutcome } from "@/server/betting/validation";
 
@@ -114,6 +115,7 @@ export type BettingDeps = {
   getCatalogMarket: (id: string) => CatalogMarket | null;
   getLiveMarket: (id: string) => Promise<CatalogMarket | null>;
   getBook: (tokenId: string) => Promise<OrderBookSnapshot>;
+  getResolution?: (marketId: string) => Promise<VenueResolution | null>;
   client?: PolymarketClient;
   executionStore?: ExecutionStore;
   engine?: ExecutionEngine;
@@ -141,14 +143,24 @@ export function createDefaultDeps(): BettingDeps {
 
 function bettingForecastSource(store: BettingStore): ForecastSource {
   return {
-    async listByMarket(marketId) {
-      const rows = await store.listPredictions({ marketId, limit: 500 });
-      return rows.map(bundleToForecast);
+    async listByMarket(marketId, resolvedAt) {
+      const rows = await store.listForScoring(marketId, resolvedAt);
+      return rows.map(bundleToForecast).filter((row): row is Forecast => row !== null);
     },
   };
 }
 
-function bundleToForecast(bundle: import("@/server/betting/repository").PredictionBundle): Forecast {
+/** Scores only what actually executed: cost, proceeds and held shares come from fills. */
+function bundleToForecast(bundle: PredictionBundle): Forecast | null {
+  let costMicros = 0n;
+  let proceedsMicros = 0n;
+  for (const execution of bundle.position?.executions ?? []) {
+    for (const fill of execution.fills) {
+      if (execution.side === "SELL") proceedsMicros += fill.notionalMicros;
+      else costMicros += fill.notionalMicros;
+    }
+  }
+  if (costMicros <= 0n) return null;
   return {
     predictionId: bundle.id,
     walletAddress: bundle.walletAddress,
@@ -156,8 +168,9 @@ function bundleToForecast(bundle: import("@/server/betting/repository").Predicti
     category: bundle.market.category,
     predictedOutcome: bundle.outcome as Outcome,
     confidenceBps: bundle.confidenceBps,
-    notionalMicros: bundle.position?.notionalMicros ?? 0n,
-    payoutMicros: bundle.position?.payoutMicros ?? 0n,
+    notionalMicros: costMicros,
+    payoutMicros: bundle.position?.sharesMicros ?? 0n,
+    proceedsMicros,
   };
 }
 
@@ -836,18 +849,67 @@ export async function flushExecutions(deps: BettingDeps = createDefaultDeps()) {
   return batches;
 }
 
+export async function getPredictionByExecution(executionId: string, deps: BettingDeps = createDefaultDeps()) {
+  const bundle = await deps.store.findByExecutionId(executionId);
+  return bundle ? { id: bundle.id, walletAddress: bundle.walletAddress } : null;
+}
+
 export async function getExecutionBatch(id: string, deps: BettingDeps = createDefaultDeps()) {
   return getEngine(deps).getBatch(id);
 }
 
+function parseResolutionOutcome(value: unknown): ResolutionOutcome {
+  if (typeof value === "string" && value.trim().toUpperCase() === "INVALID") return "INVALID";
+  return parseOutcome(value);
+}
+
+/**
+ * Operator-triggered resolution. For Polymarket markets the outcome is taken from
+ * Gamma's final resolution state; a supplied outcome must agree with it. Only
+ * catalog-only (non-venue) markets accept a manual outcome.
+ */
 export async function enqueueMarketResolution(
   marketId: string,
-  resolvedOutcome: unknown,
+  requestedOutcome: unknown,
   deps: BettingDeps = createDefaultDeps(),
 ) {
-  const outcome = parseOutcome(resolvedOutcome);
-  const job = await getReputation(deps).enqueueResolution(marketId, outcome);
-  return job;
+  const stored = await deps.store.getMarket(marketId);
+  const catalog = deps.getCatalogMarket(marketId);
+  if (!stored && !catalog) throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
+  const requested = requestedOutcome == null || requestedOutcome === "" ? null : parseResolutionOutcome(requestedOutcome);
+  const isVenueMarket = (stored?.source ?? catalog?.source) === "polymarket";
+  let outcome: ResolutionOutcome;
+  if (isVenueMarket) {
+    const venue = await (deps.getResolution ?? fetchVenueResolution)(marketId);
+    if (!venue?.resolved) {
+      throw new BettingError("NOT_RESOLVED", "Polymarket has not resolved this market yet.", 409);
+    }
+    if (requested && requested !== venue.outcome) {
+      throw new BettingError("RESOLUTION_MISMATCH", `Polymarket resolved this market ${venue.outcome}.`, 409);
+    }
+    outcome = venue.outcome;
+  } else {
+    if (!requested) throw new BettingError("INVALID_OUTCOME", "outcome is required for non-venue markets.");
+    outcome = requested;
+  }
+  return getReputation(deps).enqueueResolution(marketId, outcome);
+}
+
+/** Worker: resolve every open Polymarket market with Veyra predictions once Gamma finalizes it. */
+export async function syncMarketResolutions(deps: BettingDeps = createDefaultDeps()) {
+  const ids = await deps.store.listOpenVenueMarketIds();
+  const results: { marketId: string; outcome?: ResolutionOutcome; error?: string }[] = [];
+  for (const marketId of ids) {
+    try {
+      const venue = await (deps.getResolution ?? fetchVenueResolution)(marketId);
+      if (!venue?.resolved) continue;
+      const job = await getReputation(deps).enqueueResolution(marketId, venue.outcome);
+      results.push({ marketId, outcome: job.resolvedOutcome });
+    } catch (error) {
+      results.push({ marketId, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  return results;
 }
 
 export async function processReputationJobs(deps: BettingDeps = createDefaultDeps()) {

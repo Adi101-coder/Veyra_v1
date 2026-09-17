@@ -26,9 +26,10 @@
  *   ECE = 0 means that when the user says ~p, they are right about p of the time.
  *
  * ROI:
- *   sum(pnl) / sum(notional) over resolved predictions with a position.
- *   pnl = payout - notional if correct, else -notional.
- *   Payout is $1 per winning share (the existing position.payoutMicros).
+ *   sum(pnl) / sum(notional) over resolved predictions that actually filled.
+ *   notional = USDC spent on filled BUYs; proceeds = USDC received from filled SELLs.
+ *   pnl = (held shares x $1 if correct, else 0) + proceeds - notional.
+ *   Only venue/paper fills count; unfilled or failed orders are never scored.
  */
 
 export const BRIER_SCALE = 1_000_000n;
@@ -45,7 +46,7 @@ export const REPUTATION_DOCUMENTATION = {
     "Mean stated confidence at resolution, in percent. Uses the live prediction confidence (after any change-your-mind).",
   calibrationEce:
     "Expected Calibration Error over 10 confidence bins: weighted mean of |empirical accuracy − mean stated confidence|.",
-  roi: "sum(pnl) / sum(notional). pnl is payout − cost on a correct pick, otherwise −cost. Not annualized.",
+  roi: "sum(pnl) / sum(filled cost). pnl = winning shares × $1 + sell proceeds − filled cost. Not annualized.",
 };
 
 export function impliedYesBps(predictedOutcome: "YES" | "NO", confidenceBps: number) {
@@ -133,11 +134,12 @@ export function scoreForecast(input: {
   confidenceBps: number;
   notionalMicros: bigint;
   payoutMicros: bigint;
+  proceedsMicros?: bigint;
 }) {
   const implied = impliedYesBps(input.predictedOutcome, input.confidenceBps);
   const correct = input.predictedOutcome === input.resolvedOutcome;
   const brier = brierMicros(implied, input.resolvedOutcome);
-  const pnl = pnlMicros(correct, input.notionalMicros, input.payoutMicros);
+  const pnl = pnlMicros(correct, input.notionalMicros, input.payoutMicros) + (input.proceedsMicros ?? 0n);
   return {
     impliedYesBps: implied,
     correct,

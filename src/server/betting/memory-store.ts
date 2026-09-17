@@ -39,6 +39,9 @@ export function memoryStore(): BettingStore {
         updatedAt: new Date(),
       } as PredictionBundle["market"]);
     },
+    async listForScoring(marketId, createdAtOrBefore) {
+      return predictions.filter((row) => row.marketId === marketId && row.createdAt <= createdAtOrBefore);
+    },
     async findByExecutionId(executionId) {
       return (
         predictions.find((row) => row.position?.executions.some((execution) => execution.id === executionId)) ??
@@ -48,8 +51,19 @@ export function memoryStore(): BettingStore {
     async getMarket(id) {
       const market = markets.get(id);
       return market
-        ? { id: market.id, status: market.status, resolvedAt: market.resolvedAt ?? null, resolvedOutcome: market.resolvedOutcome ?? null }
+        ? {
+            id: market.id,
+            source: market.source,
+            status: market.status,
+            resolvedAt: market.resolvedAt ?? null,
+            resolvedOutcome: market.resolvedOutcome ?? null,
+          }
         : null;
+    },
+    async listOpenVenueMarketIds() {
+      return [...markets.values()]
+        .filter((row) => row.source === "polymarket" && !row.resolvedAt && predictions.some((p) => p.marketId === row.id))
+        .map((row) => row.id);
     },
     async findByIdempotency(walletAddress, key) {
       return (

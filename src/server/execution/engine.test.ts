@@ -5,7 +5,6 @@ import { memoryExecutionStore } from "@/server/execution/store";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 import { defaultExecutionEngineConfig } from "@/server/execution/config";
 import type { ExecutionIntentInput } from "@/server/execution/types";
-import { BettingError } from "@/server/errors";
 
 const book: OrderBookSnapshot = {
   tokenId: "token-yes",
@@ -199,10 +198,12 @@ describe("ExecutionEngine", () => {
     expect(await engine.reconcileBatch(processed.batch!.id)).toBeNull();
   });
 
-  it("rejects a stale quoted book", async () => {
-    const { engine } = engineWith(async (request) => filledResult(request));
-    await expect(
-      engine.enqueueAndProcess({ ...intent("stale", "BUY", 10_000_000n), quotedPriceBps: 4000 }),
-    ).rejects.toMatchObject({ code: "STALE_PRICE" } satisfies Partial<BettingError>);
+  it("fails (never requeues) intents whose quoted price is stale, without touching the venue", async () => {
+    const { engine, submits } = engineWith(async (request) => filledResult(request));
+    const processed = await engine.enqueueAndProcess({ ...intent("stale", "BUY", 10_000_000n), quotedPriceBps: 4000 });
+    expect(submits).toHaveLength(0);
+    expect(processed.allocation?.status).toBe("failed");
+    expect(processed.allocation?.errorCode).toBe("STALE_PRICE");
+    expect(await engine.processAll()).toEqual([]);
   });
 });

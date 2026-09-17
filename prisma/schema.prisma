@@ -345,6 +345,7 @@ model ReputationJob {
   status           String
   errorMessage     String?
   createdAt        DateTime  @default(now())
+  claimedAt        DateTime?
   processedAt      DateTime?
 
   @@index([status, createdAt])
@@ -377,4 +378,15 @@ model ConvictionSnapshot {
 
   @@index([marketId, createdAt])
   @@map("conviction_snapshots")
+}
+
+model AuthNonce {
+  nonce         String    @id
+  walletAddress String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@map("auth_nonces")
 }

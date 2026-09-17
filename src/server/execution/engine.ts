@@ -171,8 +171,12 @@ export class ExecutionEngine {
     const tokens = await this.store.listQueuedTokenIds();
     const results: ProcessResult[] = [];
     for (const tokenId of tokens) {
-      const result = await this.processToken(tokenId);
-      if (result) results.push(result);
+      try {
+        const result = await this.processToken(tokenId);
+        if (result) results.push(result);
+      } catch (error) {
+        console.error("[execution] token processing failed", { tokenId, error: String(error) });
+      }
     }
     return results;
   }
@@ -394,9 +398,12 @@ export class ExecutionEngine {
           })),
         };
       }
+      // Nothing reached the venue. Fail every claimed intent (never requeue: a stale
+      // quote must not execute later at a price its owner did not see) and return
+      // allocations so each owner's execution is updated.
       await this.store.releaseIntents(
         intents.map((row) => row.id),
-        code === "STALE_BOOK" || code === "STALE_PRICE" ? "QUEUED" : "FAILED",
+        "FAILED",
       );
       const failed = await this.store.updateBatch(batch.id, {
         status: "FAILED",
@@ -420,7 +427,6 @@ export class ExecutionEngine {
           latencyMs: Date.now() - started,
         },
       });
-      if (code === "STALE_BOOK" || code === "STALE_PRICE") throw error;
       const allocations: IntentAllocation[] = intents.map((intent) => ({
         intentId: intent.id,
         executionId: intent.executionId,
