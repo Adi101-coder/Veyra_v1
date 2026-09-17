@@ -115,7 +115,7 @@ model Fill {
   id             String    @id @default(cuid())
   executionId    String
   execution      Execution @relation(fields: [executionId], references: [id])
-  venueTradeId   String?
+  venueTradeId   String
   priceBps       Int
   sharesMicros   BigInt
   notionalMicros BigInt
@@ -228,6 +228,7 @@ model ExecutionIntent {
   idempotencyKey         String?         @unique
   status                 String
   claimToken             String?
+  claimedAt              DateTime?
   executedSharesMicros   BigInt          @default(0)
   executedNotionalMicros BigInt          @default(0)
   avgPriceBps            Int             @default(0)

@@ -4,6 +4,7 @@ import {
   createDefaultDeps,
   flushExecutions,
   processReputationJobs,
+  recoverStuckExecutions,
   reconcileExecutions,
   syncMarketResolutions,
 } from "@/server/betting/service";
@@ -18,6 +19,7 @@ import {
  * A failing step is logged and does not block the others.
  */
 const STEPS = {
+  recover: async () => recoverStuckExecutions(createDefaultDeps()),
   flush: async () => (await flushExecutions(createDefaultDeps())).length,
   reconcile: async () => (await reconcileExecutions(createDefaultDeps())).length,
   resolutions: async () => (await syncMarketResolutions(createDefaultDeps())).length,

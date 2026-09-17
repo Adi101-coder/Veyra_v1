@@ -99,7 +99,7 @@ CREATE TABLE "Execution" (
 CREATE TABLE "Fill" (
     "id" TEXT NOT NULL PRIMARY KEY,
     "executionId" TEXT NOT NULL,
-    "venueTradeId" TEXT,
+    "venueTradeId" TEXT NOT NULL,
     "priceBps" INTEGER NOT NULL,
     "sharesMicros" BIGINT NOT NULL,
     "notionalMicros" BIGINT NOT NULL,
@@ -204,6 +204,7 @@ CREATE TABLE "execution_intents" (
     "idempotencyKey" TEXT,
     "status" TEXT NOT NULL,
     "claimToken" TEXT,
+    "claimedAt" DATETIME,
     "executedSharesMicros" BIGINT NOT NULL DEFAULT 0,
     "executedNotionalMicros" BIGINT NOT NULL DEFAULT 0,
     "avgPriceBps" INTEGER NOT NULL DEFAULT 0,

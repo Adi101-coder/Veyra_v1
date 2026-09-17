@@ -3,7 +3,8 @@ import type { Outcome } from "@/lib/betting";
 import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 
 export type StoredFill = {
-  venueTradeId: string | null;
+  /** Required: fills are deduplicated per execution by this id. */
+  venueTradeId: string;
   priceBps: number;
   sharesMicros: bigint;
   notionalMicros: bigint;

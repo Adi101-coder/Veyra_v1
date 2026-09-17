@@ -69,6 +69,8 @@ export type ExecutionStore = {
   listQueuedTokenIds(): Promise<string[]>;
   listBatchIdsByStatus(status: ExecutionBatchStatus): Promise<string[]>;
   cancelQueued(executionId: string): Promise<boolean>;
+  /** Intents stuck in PROCESSING (claimed by a worker that died) older than the cutoff. */
+  listStaleProcessing(claimedBefore: Date): Promise<ExecutionIntentRow[]>;
   updateSlice(
     id: string,
     patch: { status: string; responseJson: string | null; errorMessage: string | null },
@@ -260,6 +262,9 @@ export function memoryExecutionStore(): ExecutionStore {
     async listQueuedTokenIds() {
       return [...new Set(intents.filter((row) => row.status === "QUEUED").map((row) => row.tokenId))];
     },
+    async listStaleProcessing(claimedBefore) {
+      return intents.filter((row) => row.status === "PROCESSING" && row.updatedAt < claimedBefore);
+    },
     async cancelQueued(executionId) {
       const row = intents.find((item) => item.executionId === executionId && item.status === "QUEUED");
       if (!row) return false;
@@ -430,7 +435,7 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
       const claimToken = randomUUID();
       const { count } = await prisma.executionIntent.updateMany({
         where: { tokenId, status: "QUEUED" },
-        data: { status: "PROCESSING", claimToken },
+        data: { status: "PROCESSING", claimToken, claimedAt: new Date() },
       });
       if (!count) return [];
       const claimed = await prisma.executionIntent.findMany({
@@ -570,6 +575,13 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
         select: { tokenId: true },
       });
       return [...new Set(rows.map((row) => row.tokenId))];
+    },
+    async listStaleProcessing(claimedBefore) {
+      const rows = await prisma.executionIntent.findMany({
+        where: { status: "PROCESSING", claimedAt: { lt: claimedBefore } },
+        take: 500,
+      });
+      return rows.map(toIntent);
     },
     async cancelQueued(executionId) {
       const { count } = await prisma.executionIntent.updateMany({

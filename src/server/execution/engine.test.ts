@@ -206,4 +206,18 @@ describe("ExecutionEngine", () => {
     expect(processed.allocation?.errorCode).toBe("STALE_PRICE");
     expect(await engine.processAll()).toEqual([]);
   });
+
+  it("recovers intents a crashed worker left PROCESSING without re-sending them", async () => {
+    const store = memoryExecutionStore();
+    const client = createPolymarketClient({ mode: "paper", getBook: async () => book, submitOrder: async (r) => filledResult(r) });
+    const engine = new ExecutionEngine(client, store, defaultExecutionEngineConfig);
+    await engine.enqueue(intent("crash", "BUY", 10_000_000n));
+    // Simulate a worker that claimed the intent and died before any batch was submitted.
+    await store.claimQueued("token-yes");
+    const recovered = await engine.recoverStuck(-1_000);
+    expect(recovered.recovered).toBe(1);
+    expect(recovered.allocations[0]).toMatchObject({ executionId: "exec-crash", status: "failed", errorCode: "WORKER_ABORTED" });
+    expect((await store.findIntentByExecutionId("exec-crash"))?.status).toBe("FAILED");
+    expect(await engine.processAll()).toEqual([]);
+  });
 });

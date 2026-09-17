@@ -534,6 +534,13 @@ export async function syncExecution(executionId: string, deps: BettingDeps = cre
   return toPredictionDTO(bundle);
 }
 
+/** Worker entry point: fail or hand to reconciliation intents a crashed worker left PROCESSING. */
+export async function recoverStuckExecutions(deps: BettingDeps = createDefaultDeps()) {
+  const result = await getEngine(deps).recoverStuck();
+  await applyForeignAllocations(deps, { allocations: result.allocations, batch: null });
+  return result.recovered;
+}
+
 /** Worker entry point: reconcile every batch still awaiting venue state. */
 export async function reconcileExecutions(deps: BettingDeps = createDefaultDeps()) {
   const results = await getEngine(deps).reconcileSubmitted();

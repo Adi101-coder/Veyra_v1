@@ -19,8 +19,8 @@ export function unseenFills(existing: { venueTradeId: string | null }[], incomin
   const seen = new Set(existing.map((fill) => fill.venueTradeId).filter(Boolean));
   const fresh: StoredFill[] = [];
   for (const fill of incoming) {
-    if (fill.venueTradeId && seen.has(fill.venueTradeId)) continue;
-    if (fill.venueTradeId) seen.add(fill.venueTradeId);
+    if (seen.has(fill.venueTradeId)) continue;
+    seen.add(fill.venueTradeId);
     fresh.push(fill);
   }
   return fresh;

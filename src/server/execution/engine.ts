@@ -72,6 +72,41 @@ export class ExecutionEngine {
     return { intent, batch: null, allocation: undefined, allocations: [] };
   }
 
+  /**
+   * Recovers intents left PROCESSING by a crashed worker. If their batch reached
+   * SUBMITTED, orders may exist on the venue: hand them to reconciliation. Otherwise
+   * nothing was sent: fail them (never execute later at a price nobody saw).
+   */
+  async recoverStuck(leaseMs = 5 * 60 * 1000) {
+    const stuck = await this.store.listStaleProcessing(new Date(Date.now() - leaseMs));
+    const failed: IntentAllocation[] = [];
+    for (const intent of stuck) {
+      const batch = intent.batchId ? await this.store.getBatch(intent.batchId) : null;
+      if (batch?.status === "SUBMITTED") {
+        await this.store.releaseIntents([intent.id], "SUBMITTED");
+        continue;
+      }
+      await this.store.updateIntent(intent.id, {
+        status: "FAILED",
+        errorCode: "WORKER_ABORTED",
+        errorMessage: "Execution worker stopped before the order was sent.",
+      });
+      failed.push({
+        intentId: intent.id,
+        executionId: intent.executionId,
+        status: "failed",
+        fills: [],
+        executedSharesMicros: 0n,
+        executedNotionalMicros: 0n,
+        avgPriceBps: 0,
+        feeMicros: 0n,
+        errorCode: "WORKER_ABORTED",
+        errorMessage: "Execution worker stopped before the order was sent.",
+      });
+    }
+    return { recovered: stuck.length, allocations: failed };
+  }
+
   /** Marks a still-queued intent failed so a worker can never pick it up later. */
   async cancelQueued(executionId: string) {
     return this.store.cancelQueued(executionId);

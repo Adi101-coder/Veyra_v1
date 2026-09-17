@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 
-const fill = (id: string | null, shares: bigint, notional: bigint) => ({
+const fill = (id: string, shares: bigint, notional: bigint) => ({
   venueTradeId: id,
   priceBps: 5000,
   sharesMicros: shares,
