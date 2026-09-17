@@ -1,279 +1,217 @@
-/**
- * ConvictionEngine methodology (v1).
- *
- * All headline math lives here. Callers must not re-implement blends or implied
- * probability. Change weights in ConvictionEngineConfig / env, not in the UI.
- *
- * Each accepted prediction is a vote. Votes collapse to unique wallets so one
- * person cannot appear as many participants. Latest confidence/outcome wins;
- * capital is the sum of that wallet's committed notional (else stake).
- *
- * Implied P(YES):
- *   YES pick at confidence c → c
- *   NO pick at confidence c → 1 − c
- * This is the quantity comparable to Polymarket's YES probability.
- *
- * Inputs used for the headline:
- *   participants              unique wallets
- *   capitalCommitted          sum of capital
- *   averageConfidence         equal-weight mean implied P(YES)
- *   capitalWeightedConfidence capital-weighted mean implied P(YES)
- *   confidence distribution   10 bins of implied P(YES)
- *
- * Headline conviction:
- *   (1 − capitalBlend) * average + capitalBlend * capitalWeighted
- * Default capitalBlend is 55% so 71.8 and 74.2 become 73.1.
- *
- * Per-outcome blocks use stated confidence among wallets that picked that side.
- *
- * Divergence:
- *   Veyra conviction − Polymarket YES probability
- * Positive means Veyra users are more bullish YES than the venue book.
- *
- * Empty markets return null averages/conviction/divergence, not a fake 50.
- */
-
+import { createHash } from "node:crypto";
 import type { Outcome } from "@/lib/betting";
-import { USDC_SCALE } from "@/server/money";
-import type { ConvictionEngineConfig } from "@/server/conviction/config";
 import type {
   ConvictionBin,
   ConvictionInternals,
-  ConvictionVote,
+  ConvictionPosition,
   OutcomeConviction,
+  PolymarketReference,
 } from "@/server/conviction/types";
 
+/**
+ * Veyra Conviction methodology (v2). All numbers are derived here, server-side, from
+ * persisted filled positions; clients only format them.
+ *
+ * Inputs: one row per prediction whose position currently holds filled shares
+ * (sharesMicros > 0, status not pending/failed). Pending, failed and zero-fill
+ * positions never appear. Capital is the position's cost basis of the shares it
+ * holds (maintained by the fill ledger), in USDC micros.
+ *
+ * 1. Side entries: rows collapse per (wallet, side). Capital is summed; stated
+ *    confidence is the capital-weighted mean of that wallet's predictions on the side.
+ *    A wallet holding YES and NO keeps two entries, each with its own capital.
+ * 2. Implied P(YES) of an entry: YES → confidence, NO → 1 − confidence.
+ * 3. participants: distinct wallets with at least one entry.
+ * 4. totalCapital: sum of entry capital.
+ * 5. averageConfidence: equal weight per wallet. A wallet's implied P(YES) is the
+ *    capital-weighted mean over its entries (a balanced hedger lands between sides).
+ * 6. capitalWeightedConfidence: Σ(implied × capital) / Σ capital over all entries.
+ * 7. conviction: (1 − blend) × average + blend × capitalWeighted, blend from config.
+ * 8. divergence: conviction − Polymarket YES midpoint, when a midpoint exists.
+ *
+ * All intermediate math is integer (bps, micros) with round-half-up division, so the
+ * same inputs always give the same outputs. `inputsHash` fingerprints the exact
+ * sorted inputs and reference price for audit.
+ */
+
 export const BPS = 10_000;
+export const METHODOLOGY_VERSION = "v2";
 
 export const CONVICTION_DOCUMENTATION = {
-  impliedYes:
-    "Stated confidence when the pick is YES, otherwise 1 − confidence. Comparable to Polymarket YES probability.",
-  averageConfidence: "Equal-weight mean implied P(YES) across unique wallets.",
-  capitalWeightedConfidence: "Notional-weighted mean implied P(YES). Stake is used when a position has no fill.",
-  conviction:
-    "Configurable blend of average and capital-weighted implied P(YES). Default 45/55. Change VEYRA_CONVICTION_CAPITAL_BLEND_BPS to retune.",
-  divergence: "Veyra conviction − Polymarket YES probability, in percentage points.",
-  participants: "Unique wallets currently holding filled shares on the market.",
+  inputs:
+    "Only positions currently holding filled shares. Pending, failed, zero-fill and fully sold positions are excluded.",
+  capital: "Cost basis (USDC) of the filled shares each position currently holds, from recorded venue fills.",
+  impliedYes: "YES pick: stated confidence. NO pick: 1 − stated confidence. Comparable to Polymarket's YES price.",
+  participants: "Distinct wallets holding filled shares on either side.",
+  averageConfidence: "Equal weight per wallet; each wallet's implied P(YES) is capital-weighted across its YES and NO holdings.",
+  capitalWeightedConfidence: "Σ(implied P(YES) × capital) / Σ capital across every wallet-side holding.",
+  conviction: "Blend of average and capital-weighted implied P(YES) (VEYRA_CONVICTION_CAPITAL_BLEND_BPS, default 55% capital-weighted).",
+  polymarket: "Polymarket CLOB midpoint for the YES token. After resolution, the resolved YES price. Null when unavailable.",
+  divergence: "Veyra conviction − Polymarket YES probability, in percentage points. Null without both values.",
 };
+
+/** Round-half-up integer division for non-negative bigints. */
+export function divRound(numerator: bigint, denominator: bigint) {
+  if (denominator === 0n) throw new Error("division by zero");
+  return (numerator * 2n + denominator) / (2n * denominator);
+}
 
 export function impliedYesBps(outcome: Outcome, confidenceBps: number) {
   const clamped = Math.min(BPS, Math.max(0, confidenceBps));
   return outcome === "YES" ? clamped : BPS - clamped;
 }
 
-export function bpsToTenthPct(bps: number | null): number | null {
-  if (bps === null) return null;
-  return Math.round(bps / 10) / 10;
+export function bpsToPct(bps: number | null) {
+  return bps == null ? null : bps / 100;
 }
 
-export function bpsToWholePct(bps: number | null): number | null {
-  if (bps === null) return null;
-  return Math.round(bps / 100);
+export function microsToUsd(micros: bigint) {
+  const whole = micros / 1_000_000n;
+  const frac = (micros % 1_000_000n).toString().padStart(6, "0").slice(0, 2);
+  return `${whole}.${frac}`;
 }
 
-export function capitalUsd(micros: bigint) {
-  return Math.round(Number(micros) / Number(USDC_SCALE) * 100) / 100;
+type SideEntry = { wallet: string; outcome: Outcome; capitalMicros: bigint; confidenceBps: number };
+
+function normalizeWallet(address: string) {
+  return address.startsWith("0x") ? address.toLowerCase() : address;
 }
 
-export function meanBps(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const sum = values.reduce((total, value) => total + value, 0);
-  return Math.round(sum / values.length);
+export function eligiblePosition(row: ConvictionPosition) {
+  return row.sharesMicros > 0n && row.capitalMicros > 0n && row.status !== "pending" && row.status !== "failed";
 }
 
-export function capitalWeightedBps(
-  items: { bps: number; capitalMicros: bigint }[],
-): number | null {
-  let cap = 0n;
-  let acc = 0n;
-  for (const item of items) {
-    if (item.capitalMicros <= 0n) continue;
-    cap += item.capitalMicros;
-    acc += BigInt(item.bps) * item.capitalMicros;
+function sideEntries(rows: ConvictionPosition[]): SideEntry[] {
+  const groups = new Map<string, { wallet: string; outcome: Outcome; capital: bigint; weighted: bigint }>();
+  for (const row of rows) {
+    if (!eligiblePosition(row)) continue;
+    const wallet = normalizeWallet(row.walletAddress);
+    const key = `${wallet}|${row.outcome}`;
+    const group = groups.get(key) ?? { wallet, outcome: row.outcome, capital: 0n, weighted: 0n };
+    group.capital += row.capitalMicros;
+    group.weighted += row.capitalMicros * BigInt(row.confidenceBps);
+    groups.set(key, group);
   }
-  if (cap <= 0n) return meanBps(items.map((item) => item.bps));
-  return Number(acc / cap);
+  return [...groups.values()]
+    .map((group) => ({
+      wallet: group.wallet,
+      outcome: group.outcome,
+      capitalMicros: group.capital,
+      confidenceBps: Number(divRound(group.weighted, group.capital)),
+    }))
+    .sort((a, b) => (a.wallet === b.wallet ? a.outcome.localeCompare(b.outcome) : a.wallet < b.wallet ? -1 : 1));
 }
 
-export function blendConvictionBps(
-  averageBps: number | null,
-  weightedBps: number | null,
-  capitalBlendBps: number,
-): number | null {
-  if (averageBps === null && weightedBps === null) return null;
-  if (averageBps === null) return weightedBps;
-  if (weightedBps === null) return averageBps;
-  const weight = Math.min(BPS, Math.max(0, Math.round(capitalBlendBps)));
-  return Math.round((averageBps * (BPS - weight) + weightedBps * weight) / BPS);
-}
-
-export function divergenceBps(
-  convictionBps: number | null,
-  polymarketProbabilityBps: number,
-): number | null {
-  if (convictionBps === null) return null;
-  return convictionBps - polymarketProbabilityBps;
-}
-
-function emptyBins(binCount: number): ConvictionBin[] {
-  const width = 100 / binCount;
-  return Array.from({ length: binCount }, (_, index) => ({
-    minPct: index * width,
-    maxPct: index === binCount - 1 ? 100 : (index + 1) * width,
+function distribution(entries: SideEntry[], binCount: number, confidenceOf: (entry: SideEntry) => number): ConvictionBin[] {
+  const width = BPS / binCount;
+  const bins = Array.from({ length: binCount }, (_, index) => ({
+    minPct: (index * width) / 100,
+    maxPct: ((index + 1) * width) / 100,
     participants: 0,
-    capitalCommitted: 0,
+    capitalMicros: 0n,
+  }));
+  for (const entry of entries) {
+    const index = Math.min(binCount - 1, Math.floor(confidenceOf(entry) / width));
+    bins[index]!.participants += 1;
+    bins[index]!.capitalMicros += entry.capitalMicros;
+  }
+  return bins.map((bin) => ({
+    minPct: bin.minPct,
+    maxPct: bin.maxPct,
+    participants: bin.participants,
+    capitalMicros: bin.capitalMicros.toString(),
+    capitalCommitted: Number(bin.capitalMicros) / 1_000_000,
   }));
 }
 
-export function histogram(
-  items: { bps: number; capitalMicros: bigint }[],
-  binCount: number,
-): ConvictionBin[] {
-  const bins = emptyBins(binCount);
-  const widthBps = BPS / binCount;
-  for (const item of items) {
-    const index =
-      item.bps >= BPS
-        ? binCount - 1
-        : Math.min(binCount - 1, Math.max(0, Math.floor(item.bps / widthBps)));
-    const bin = bins[index];
-    if (!bin) continue;
-    bin.participants += 1;
-    bin.capitalCommitted = Math.round((bin.capitalCommitted + capitalUsd(item.capitalMicros)) * 100) / 100;
-  }
-  return bins;
-}
-
-function normalizeWallet(wallet: string) {
-  return wallet.startsWith("0x") ? wallet.toLowerCase() : wallet;
-}
-
-export function isCountableVote(vote: ConvictionVote) {
-  return vote.status !== "failed";
-}
-
-/**
- * One row per wallet per outcome: latest confidence on that side, capital summed on
- * that side. A wallet holding both YES and NO keeps each side's capital on its own
- * side instead of moving all of it to whichever side it touched last.
- */
-export function collapseParticipants(votes: ConvictionVote[]) {
-  const byWallet = new Map<
-    string,
-    { outcome: Outcome; confidenceBps: number; capitalMicros: bigint; createdAt: number }
-  >();
-
-  for (const vote of votes) {
-    if (!isCountableVote(vote)) continue;
-    const key = `${normalizeWallet(vote.walletAddress)}:${vote.outcome}`;
-    const createdAt = vote.createdAt.getTime();
-    const existing = byWallet.get(key);
-    const capital = vote.capitalMicros > 0n ? vote.capitalMicros : 0n;
-    if (!existing) {
-      byWallet.set(key, {
-        outcome: vote.outcome,
-        confidenceBps: vote.confidenceBps,
-        capitalMicros: capital,
-        createdAt,
-      });
-      continue;
-    }
-    existing.capitalMicros += capital;
-    if (createdAt >= existing.createdAt) {
-      existing.confidenceBps = vote.confidenceBps;
-      existing.createdAt = createdAt;
-    }
-  }
-
-  return [...byWallet.values()];
-}
-
-function outcomeBlock(
-  outcome: Outcome,
-  participants: { outcome: Outcome; confidenceBps: number; capitalMicros: bigint }[],
-  binCount: number,
-): OutcomeConviction {
-  const side = participants.filter((item) => item.outcome === outcome);
-  const stated = side.map((item) => ({ bps: item.confidenceBps, capitalMicros: item.capitalMicros }));
+function outcomeBlock(outcome: Outcome, entries: SideEntry[], binCount: number): OutcomeConviction {
+  const side = entries.filter((entry) => entry.outcome === outcome);
+  const capital = side.reduce((sum, entry) => sum + entry.capitalMicros, 0n);
+  const average = side.length
+    ? Number(divRound(BigInt(side.reduce((sum, entry) => sum + entry.confidenceBps, 0)), BigInt(side.length)))
+    : null;
+  const weighted =
+    capital > 0n ? Number(divRound(side.reduce((sum, entry) => sum + entry.capitalMicros * BigInt(entry.confidenceBps), 0n), capital)) : null;
   return {
     outcome,
     participants: side.length,
-    capitalCommitted: capitalUsd(side.reduce((sum, item) => sum + item.capitalMicros, 0n)),
-    averageConfidence: bpsToTenthPct(meanBps(stated.map((item) => item.bps))),
-    capitalWeightedConfidence: bpsToTenthPct(capitalWeightedBps(stated)),
-    distribution: histogram(stated, binCount),
+    capitalMicros: capital.toString(),
+    capitalCommitted: Number(capital) / 1_000_000,
+    averageConfidenceBps: average,
+    capitalWeightedConfidenceBps: weighted,
+    averageConfidence: bpsToPct(average),
+    capitalWeightedConfidence: bpsToPct(weighted),
+    distribution: distribution(side, binCount, (entry) => entry.confidenceBps),
   };
+}
+
+export function inputsHash(rows: ConvictionPosition[], polymarket: PolymarketReference) {
+  const canonical = rows
+    .filter(eligiblePosition)
+    .map((row) => [row.predictionId, normalizeWallet(row.walletAddress), row.outcome, row.confidenceBps, row.sharesMicros.toString(), row.capitalMicros.toString()])
+    .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return createHash("sha256").update(JSON.stringify({ rows: canonical, polymarket })).digest("hex");
 }
 
 export function computeConviction(input: {
   marketId: string;
-  votes: ConvictionVote[];
-  polymarketProbabilityBps: number;
-  config: ConvictionEngineConfig;
+  positions: ConvictionPosition[];
+  polymarket: PolymarketReference;
+  capitalBlendBps: number;
+  binCount: number;
 }): ConvictionInternals {
-  const participants = collapseParticipants(input.votes);
-  const implied = participants.map((item) => ({
-    bps: impliedYesBps(item.outcome, item.confidenceBps),
-    capitalMicros: item.capitalMicros,
-  }));
-  const capitalMicros = implied.reduce((sum, item) => sum + item.capitalMicros, 0n);
-  const averageConfidenceBps = meanBps(implied.map((item) => item.bps));
-  const capitalWeightedConfidenceBps = capitalWeightedBps(implied);
-  const convictionBps = blendConvictionBps(
-    averageConfidenceBps,
-    capitalWeightedConfidenceBps,
-    input.config.capitalBlendBps,
-  );
-  const polymarketProbabilityBps = Math.min(
-    BPS,
-    Math.max(0, Math.round(input.polymarketProbabilityBps)),
-  );
+  const entries = sideEntries(input.positions);
+  const wallets = new Map<string, { capital: bigint; weighted: bigint }>();
+  let totalCapital = 0n;
+  let weightedImplied = 0n;
+  for (const entry of entries) {
+    const implied = BigInt(impliedYesBps(entry.outcome, entry.confidenceBps));
+    totalCapital += entry.capitalMicros;
+    weightedImplied += implied * entry.capitalMicros;
+    const wallet = wallets.get(entry.wallet) ?? { capital: 0n, weighted: 0n };
+    wallet.capital += entry.capitalMicros;
+    wallet.weighted += implied * entry.capitalMicros;
+    wallets.set(entry.wallet, wallet);
+  }
+
+  const walletImplied = [...wallets.values()].map((wallet) => divRound(wallet.weighted, wallet.capital));
+  const averageConfidenceBps = walletImplied.length
+    ? Number(divRound(walletImplied.reduce((sum, value) => sum + value, 0n), BigInt(walletImplied.length)))
+    : null;
+  const capitalWeightedConfidenceBps = totalCapital > 0n ? Number(divRound(weightedImplied, totalCapital)) : null;
+  const blend = BigInt(Math.min(BPS, Math.max(0, input.capitalBlendBps)));
+  const convictionBps =
+    averageConfidenceBps != null && capitalWeightedConfidenceBps != null
+      ? Number(divRound(BigInt(averageConfidenceBps) * (10_000n - blend) + BigInt(capitalWeightedConfidenceBps) * blend, 10_000n))
+      : null;
+  const polymarketBps = input.polymarket.probabilityBps;
+  const divergenceBps = convictionBps != null && polymarketBps != null ? convictionBps - polymarketBps : null;
 
   return {
     marketId: input.marketId,
-    participants: new Set(
-      input.votes.filter(isCountableVote).map((vote) => normalizeWallet(vote.walletAddress)),
-    ).size,
-    capitalMicros,
+    participants: wallets.size,
+    capitalMicros: totalCapital,
     averageConfidenceBps,
     capitalWeightedConfidenceBps,
     convictionBps,
-    polymarketProbabilityBps,
-    divergenceBps: divergenceBps(convictionBps, polymarketProbabilityBps),
-    distribution: histogram(implied, input.config.binCount),
+    polymarket: input.polymarket,
+    divergenceBps,
     outcomes: {
-      YES: outcomeBlock("YES", participants, input.config.binCount),
-      NO: outcomeBlock("NO", participants, input.config.binCount),
+      YES: outcomeBlock("YES", entries, input.binCount),
+      NO: outcomeBlock("NO", entries, input.binCount),
     },
+    distribution: distribution(entries, input.binCount, (entry) => impliedYesBps(entry.outcome, entry.confidenceBps)),
+    inputsHash: inputsHash(input.positions, input.polymarket),
   };
 }
 
-export function trailFromSnapshots(
-  snapshots: { convictionBps: number | null }[],
-  liveBps: number | null,
-  trailLength: number,
-) {
-  const percents = snapshots
-    .map((row) => bpsToWholePct(row.convictionBps))
-    .filter((value): value is number => value !== null);
-  const live = bpsToWholePct(liveBps);
-  if (live !== null && percents[percents.length - 1] !== live) percents.push(live);
-  return percents.slice(-trailLength);
+/** Snapshot every `intervalMs` bucket; at most one row per market per bucket (DB unique). */
+export function snapshotBucket(at: Date, intervalMs: number) {
+  return new Date(Math.floor(at.getTime() / intervalMs) * intervalMs);
 }
 
-export function shouldPersistSnapshot(input: {
-  previous: { createdAt: Date; convictionBps: number | null } | null;
-  nextConvictionBps: number | null;
-  now: Date;
-  intervalMs: number;
-  minDeltaBps: number;
-}) {
-  if (input.nextConvictionBps === null) return false;
-  if (!input.previous) return true;
-  const age = input.now.getTime() - input.previous.createdAt.getTime();
-  if (age >= input.intervalMs) return true;
-  const previous = input.previous.convictionBps;
-  if (previous === null) return age >= Math.min(input.intervalMs, 60_000);
-  const coolDown = Math.min(input.intervalMs, 30_000);
-  return Math.abs(input.nextConvictionBps - previous) >= input.minDeltaBps && age >= Math.max(1_000, coolDown);
+export function trailFromSnapshots(convictionBpsHistory: (number | null)[], currentBps: number | null, length: number) {
+  const values = [...convictionBpsHistory, currentBps].filter((value): value is number => value != null);
+  const deduped = values.filter((value, index) => index === 0 || value !== values[index - 1]);
+  return deduped.slice(-length).map((bps) => Math.round(bps / 100));
 }

@@ -101,7 +101,8 @@ export function ContractView({ market }: { market: Market }) {
     // Timestamp (ms) of the snapshot currently shown; older snapshots are ignored.
     let latestAt = Number.NEGATIVE_INFINITY;
     const snapshotTime = (payload: MarketConviction) => {
-      const parsed = payload.snapshotAt ? Date.parse(payload.snapshotAt) : Number.NaN;
+      const stamp = payload.asOf ?? payload.snapshotAt;
+      const parsed = stamp ? Date.parse(stamp) : Number.NaN;
       return Number.isFinite(parsed) ? parsed : null;
     };
     const apply = (payload: MarketConviction, fromStream: boolean) => {

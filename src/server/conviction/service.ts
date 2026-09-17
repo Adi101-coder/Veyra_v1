@@ -1,64 +1,51 @@
 import "server-only";
 
-import { getMarket, yesChance } from "@/lib/markets";
+import { getMarket } from "@/lib/markets";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
 import { BettingError } from "@/server/errors";
 import { getPrisma } from "@/server/db";
 import { fetchClobMidpoint } from "@/server/polymarket/clob";
 import { ConvictionEngine } from "@/server/conviction/engine";
-import {
-  defaultConvictionEngineConfig,
-  loadConvictionEngineConfig,
-} from "@/server/conviction/config";
+import { defaultConvictionEngineConfig, loadConvictionEngineConfig } from "@/server/conviction/config";
 import { prismaConvictionStore } from "@/server/conviction/store";
-import type { ConvictionDTO } from "@/server/conviction/types";
+import type { ConvictionDTO, PolymarketReference } from "@/server/conviction/types";
 
-function chanceToBps(chance: number) {
-  return Math.round(chance * 100);
-}
-
-export async function polymarketYesBps(marketId: string) {
+/**
+ * Current Polymarket YES probability: the CLOB midpoint of the YES token only.
+ * Catalog (demo) markets and markets without a two-sided book report "unavailable"
+ * rather than a rounded Gamma price or a static catalog number.
+ */
+export async function polymarketReference(marketId: string): Promise<PolymarketReference> {
   const local = getMarket(marketId);
-  if (local && local.source !== "polymarket") return chanceToBps(yesChance(local));
-  try {
-    const live = await fetchPolymarketMarket(marketId);
-    const yesToken = live?.clobTokenIds?.[0];
-    if (yesToken) {
-      // CLOB midpoint in bps is the precise YES probability (Gamma prices are rounded to 1%).
-      const mid = await fetchClobMidpoint(yesToken).catch(() => null);
-      if (mid != null) return mid;
-    }
-    if (live) return chanceToBps(yesChance(live));
-  } catch {
-    // Fall through to the stored price.
-  }
   const stored = await getPrisma().market.findUnique({
     where: { id: marketId },
-    select: { yesPriceBps: true },
+    select: { source: true, clobTokenYes: true },
   });
-  if (stored) return stored.yesPriceBps;
-  if (local) return chanceToBps(yesChance(local));
-  throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
+  if (local && local.source !== "polymarket" && !stored) return { probabilityBps: null, source: "unavailable" };
+  let yesToken = stored?.clobTokenYes ?? null;
+  if (!yesToken && (!local || local.source === "polymarket")) {
+    const live = await fetchPolymarketMarket(marketId).catch(() => null);
+    if (!live && !local && !stored) throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
+    yesToken = live?.clobTokenIds?.[0] ?? null;
+  }
+  if (!yesToken) return { probabilityBps: null, source: "unavailable" };
+  const mid = await fetchClobMidpoint(yesToken).catch(() => null);
+  return mid == null ? { probabilityBps: null, source: "unavailable" } : { probabilityBps: mid, source: "clob_midpoint" };
 }
 
 export function createConvictionEngine() {
   return new ConvictionEngine(loadConvictionEngineConfig(), prismaConvictionStore(getPrisma()));
 }
 
-export async function getMarketConviction(
-  marketId: string,
-  persist: "auto" | "always" | "never" = "auto",
-): Promise<ConvictionDTO> {
-  const engine = createConvictionEngine();
-  const polymarketProbabilityBps = await polymarketYesBps(marketId);
-  return engine.measure(marketId, polymarketProbabilityBps, { persist });
+export async function getMarketConviction(marketId: string): Promise<ConvictionDTO> {
+  return createConvictionEngine().measure(marketId, await polymarketReference(marketId));
 }
 
 const shared = new Map<string, { at: number; value: Promise<ConvictionDTO> }>();
 
 /**
  * One computation per market per interval, shared by every stream subscriber in
- * this process, so N open tabs cost one Gamma/CLOB call and one snapshot check.
+ * this process, so N open tabs cost one CLOB call and one snapshot write.
  */
 export function getSharedMarketConviction(marketId: string, maxAgeMs: number) {
   const now = Date.now();

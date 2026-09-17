@@ -154,7 +154,7 @@ describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {
 
     const conviction = await new ConvictionEngine(defaultConvictionEngineConfig, prismaConvictionStore(prisma)).measure(
       market.id,
-      5000,
+      { probabilityBps: 5000, source: "clob_midpoint" },
       { persist: "never" },
     );
     expect(conviction.participants).toBe(0);
@@ -245,7 +245,7 @@ describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {
     expect(placed.position?.status).toBe("failed");
     const conviction = await new ConvictionEngine(defaultConvictionEngineConfig, prismaConvictionStore(prisma)).measure(
       market.id,
-      5000,
+      { probabilityBps: 5000, source: "clob_midpoint" },
       { persist: "never" },
     );
     expect(conviction.participants).toBe(1);

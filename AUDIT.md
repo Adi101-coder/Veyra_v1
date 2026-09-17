@@ -183,3 +183,28 @@ Mutation-checked: ignoring fees, dropping the execution cutoff, disabling deferr
 **Migration risk:** `…_reputation_job_retry` is the first SQLite table-rebuild migration. It was safe because `reputation_jobs` has no CHECK constraints (verified: Prediction 3, Position 3, Execution 2, Fill 3 and chain_settlements 4 CHECKs survive a fresh `migrate deploy`). The money CHECK constraints on `Prediction`, `Position`, `Execution` and `Fill` exist only in migration SQL, not in `schema.prisma`. Any future change that makes Prisma rebuild one of those tables will silently drop them unless the generated SQL is edited to re-add them.
 
 **Remaining:** `totalPredictions` counts opened (filled) predictions, including those on markets later voided or still open. Scoring metrics (accuracy, Brier, calibration, ROI) use only resolved, scored predictions. Scores are final once written; a disputed Polymarket re-resolution is not re-scored.
+
+## Veyra Conviction hardening (follow-up, 2026-09-17)
+
+**Methodology v2** (`src/server/conviction/formula.ts`, served verbatim in `methodology.definitions`):
+- **Inputs:** only positions currently holding filled shares (`sharesMicros > 0`, cost basis > 0, status not pending/failed), filtered in the query and again in the formula. Pending, failed, zero-fill and fully sold positions never count.
+- **Capital:** the ledger-maintained cost basis of held shares (from recorded fills), exposed as `totalCapitalUsd` / `capitalMicros`.
+- **Side entries:** rows collapse per (wallet, side), with capital summed and confidence capital-weighted. A wallet holding YES and NO keeps each side's capital on its own side and counts once in `participants`.
+- **Headline numbers:** `averageConfidence` weights each wallet equally (its implied P(YES) is capital-weighted across its sides); `capitalWeightedConfidence` = Σ(implied × capital) / Σ capital; `conviction` = configured blend; `divergence` = conviction − Polymarket YES.
+- **Integer math:** all math is integer (bps/micros, round half up). Outputs are identical regardless of input order or address case. `inputsHash` (sha256 of the sorted inputs and reference price) makes each value auditable.
+- **Polymarket reference:** the CLOB YES midpoint only (`polymarketSource: "clob_midpoint"`). After resolution it is the resolved YES price (`"resolved"`). Otherwise `null` (`"unavailable"`), including demo catalog markets, which previously showed a static catalog number or a 1%-rounded Gamma price.
+
+**Fixed**
+- The capital definition was undocumented, and the doc text still described the old "latest wins / stake fallback" behaviour. The methodology text now matches the code.
+- Snapshot persistence was check-then-insert. A unique (market, time bucket) key (migration `…_conviction_snapshot_bucket`) now keeps concurrent measurements to one snapshot per bucket. Empty markets write no snapshots.
+- Realtime ordering used `snapshotAt`, which is null on non-persisting ticks. Every response now carries `asOf`; the contract view orders by it.
+- `polymarketProbability` is now nullable; `FeaturedMarket` shows "—" instead of `0%` when unavailable.
+
+**Tests:**
+- Unit tests with hand-computed reference numbers: exact headline values, hedger side capital, partial-fill weighting, merging multiple predictions, exclusion of pending/failed/zero rows, empty market, missing midpoint, determinism and hash, and integer rounding.
+- Engine tests: resolved/INVALID reference and one snapshot per bucket under concurrency.
+- Prisma tests where every result is also recomputed from the `Fill` table: empty market; pending, failed and flattened positions excluded with exact partial capital; a hedger; concurrent reconciliation plus a confidence change while measuring (every concurrent read is a valid state, the settled value matches fills, one snapshot); and after resolution (stable `inputsHash`).
+- Mutation-checked: collapsing a hedger across sides, removing the formula eligibility filter, and removing both store and formula filters are each caught.
+- Fresh DB + running app: build succeeds; REST and SSE conviction are correct for the smoke flow (a flattened position gives 0 participants; resolved reference 100%). Full suite: 180 passed, 2 opt-in live skipped.
+
+**Remaining:** conviction reflects current holdings, so a position sold down before resolution contributes only its remaining cost basis. Live CLOB midpoints need network access; tests use injected references.

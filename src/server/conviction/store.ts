@@ -1,82 +1,83 @@
-import type { Outcome } from "@/lib/betting";
 import type { PrismaClient } from "@prisma/client";
 import type {
+  ConvictionPosition,
   ConvictionSnapshotRow,
   ConvictionStore,
-  ConvictionVote,
 } from "@/server/conviction/types";
 
-function asOutcome(value: string): Outcome {
-  return value === "NO" ? "NO" : "YES";
-}
+const ELIGIBLE_EXCLUDED_STATUSES = ["pending", "failed"];
 
-/** Capital is the cost basis of shares actually held (from fills), never the requested stake. */
-function voteCapital(row: { position: { notionalMicros: bigint } | null }) {
-  return row.position?.notionalMicros ?? 0n;
-}
-
-export function memoryConvictionStore(seed: ConvictionVote[] = []): ConvictionStore {
-  const votes = [...seed];
+/** In-memory store for unit tests. */
+export function memoryConvictionStore(
+  positions: (ConvictionPosition & { marketId: string })[] = [],
+  resolutions: Map<string, { outcome: string; resolvedAt: Date }> = new Map(),
+): ConvictionStore & { positions: (ConvictionPosition & { marketId: string })[] } {
   const snapshots: ConvictionSnapshotRow[] = [];
   let seq = 1;
-
   return {
-    async listVotes(marketId) {
-      return votes.filter((vote) => vote.marketId === marketId);
+    positions,
+    async listPositions(marketId) {
+      return positions.filter((row) => row.marketId === marketId);
     },
-    async latestSnapshot(marketId) {
-      const rows = snapshots.filter((row) => row.marketId === marketId);
-      return rows[rows.length - 1] ?? null;
+    async getResolution(marketId) {
+      return resolutions.get(marketId) ?? null;
     },
     async listSnapshots(marketId, limit) {
       return snapshots.filter((row) => row.marketId === marketId).slice(-limit);
     },
-    async insertSnapshot(row) {
-      const saved: ConvictionSnapshotRow = {
-        id: `snap-${seq++}`,
-        createdAt: row.createdAt ?? new Date(),
-        marketId: row.marketId,
-        engineVersion: row.engineVersion,
-        participants: row.participants,
-        capitalMicros: row.capitalMicros,
-        averageConfidenceBps: row.averageConfidenceBps,
-        capitalWeightedConfidenceBps: row.capitalWeightedConfidenceBps,
-        convictionBps: row.convictionBps,
-        polymarketProbabilityBps: row.polymarketProbabilityBps,
-        divergenceBps: row.divergenceBps,
-        distributionJson: row.distributionJson,
-      };
-      snapshots.push(saved);
-      return saved;
+    async upsertSnapshot(row) {
+      const existing = snapshots.find(
+        (item) => item.marketId === row.marketId && item.bucketStart?.getTime() === row.bucketStart?.getTime(),
+      );
+      if (existing) return existing;
+      const created = { ...row, id: `snap_${seq++}`, createdAt: new Date() };
+      snapshots.push(created);
+      return created;
     },
   };
 }
 
 export function prismaConvictionStore(prisma: PrismaClient): ConvictionStore {
   return {
-    async listVotes(marketId) {
-      const rows = await prisma.prediction.findMany({
-        // Only predictions whose position holds filled shares count toward conviction.
-        where: { marketId, position: { sharesMicros: { gt: 0 } } },
-        include: { position: true },
-        orderBy: { createdAt: "asc" },
+    async listPositions(marketId) {
+      // One statement: shares, cost basis and confidence are read from a single
+      // consistent state (the ledger updates them in one transaction).
+      const rows = await prisma.position.findMany({
+        where: {
+          marketId,
+          sharesMicros: { gt: 0 },
+          notionalMicros: { gt: 0 },
+          status: { notIn: ELIGIBLE_EXCLUDED_STATUSES },
+        },
+        select: {
+          predictionId: true,
+          walletAddress: true,
+          outcome: true,
+          sharesMicros: true,
+          notionalMicros: true,
+          status: true,
+          prediction: { select: { confidenceBps: true } },
+        },
+        orderBy: { predictionId: "asc" },
       });
       return rows.map((row) => ({
-        predictionId: row.id,
-        marketId: row.marketId,
+        predictionId: row.predictionId,
         walletAddress: row.walletAddress,
-        outcome: asOutcome(row.outcome),
-        confidenceBps: row.confidenceBps,
-        capitalMicros: voteCapital(row),
-        createdAt: row.createdAt,
-        status: row.position?.status ?? row.status,
+        outcome: row.outcome === "NO" ? "NO" : "YES",
+        confidenceBps: row.prediction.confidenceBps,
+        sharesMicros: row.sharesMicros,
+        capitalMicros: row.notionalMicros,
+        status: row.status,
       }));
     },
-    async latestSnapshot(marketId) {
-      return prisma.convictionSnapshot.findFirst({
-        where: { marketId },
-        orderBy: { createdAt: "desc" },
+    async getResolution(marketId) {
+      const market = await prisma.market.findUnique({
+        where: { id: marketId },
+        select: { resolvedOutcome: true, resolvedAt: true },
       });
+      return market?.resolvedAt && market.resolvedOutcome
+        ? { outcome: market.resolvedOutcome, resolvedAt: market.resolvedAt }
+        : null;
     },
     async listSnapshots(marketId, limit) {
       const rows = await prisma.convictionSnapshot.findMany({
@@ -86,22 +87,16 @@ export function prismaConvictionStore(prisma: PrismaClient): ConvictionStore {
       });
       return rows.reverse();
     },
-    async insertSnapshot(row) {
-      return prisma.convictionSnapshot.create({
-        data: {
-          marketId: row.marketId,
-          engineVersion: row.engineVersion,
-          participants: row.participants,
-          capitalMicros: row.capitalMicros,
-          averageConfidenceBps: row.averageConfidenceBps,
-          capitalWeightedConfidenceBps: row.capitalWeightedConfidenceBps,
-          convictionBps: row.convictionBps,
-          polymarketProbabilityBps: row.polymarketProbabilityBps,
-          divergenceBps: row.divergenceBps,
-          distributionJson: row.distributionJson,
-          createdAt: row.createdAt,
-        },
-      });
+    async upsertSnapshot(row) {
+      try {
+        return await prisma.convictionSnapshot.create({ data: row });
+      } catch (error) {
+        // Another process wrote this market's bucket first: keep that row.
+        if ((error as { code?: string })?.code !== "P2002") throw error;
+        return prisma.convictionSnapshot.findFirstOrThrow({
+          where: { marketId: row.marketId, bucketStart: row.bucketStart },
+        });
+      }
     },
   };
 }

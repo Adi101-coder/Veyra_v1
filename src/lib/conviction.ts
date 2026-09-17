@@ -14,15 +14,21 @@ export type OutcomeConviction = {
   distribution: ConvictionBin[];
 };
 
+/** Mirrors server ConvictionDTO; every number is computed server-side. */
 export type MarketConviction = {
   marketId: string;
   participants: number;
+  totalCapitalUsd: string;
   capitalCommitted: number;
   averageConfidence: number | null;
   capitalWeightedConfidence: number | null;
   conviction: number | null;
-  polymarketProbability: number;
+  /** Polymarket YES CLOB midpoint (or resolved price); null when unavailable. */
+  polymarketProbability: number | null;
+  polymarketSource: "clob_midpoint" | "resolved" | "unavailable";
   divergence: number | null;
+  asOf: string;
+  inputsHash: string;
   trail: number[];
   outcomes: {
     YES: OutcomeConviction;

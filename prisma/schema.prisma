@@ -382,11 +382,14 @@ model ConvictionSnapshot {
   averageConfidenceBps           Int?
   capitalWeightedConfidenceBps   Int?
   convictionBps                  Int?
-  polymarketProbabilityBps       Int
+  polymarketProbabilityBps       Int?
   divergenceBps                  Int?
   distributionJson               String
+  inputsHash                     String?
+  bucketStart                    DateTime?
   createdAt                      DateTime @default(now())
 
+  @@unique([marketId, bucketStart])
   @@index([marketId, createdAt])
   @@map("conviction_snapshots")
 }
