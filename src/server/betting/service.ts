@@ -5,7 +5,7 @@ import { fetchPolymarketMarket } from "@/lib/polymarket";
 import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome } from "@/lib/betting";
 import { ConfidenceEngine } from "@/server/confidence/engine";
 import { loadConfidenceEngineConfig } from "@/server/confidence/config";
-import { snapshotToEngineBook, syntheticBookFromMarket, tokenIdFor } from "@/server/confidence/book";
+import { snapshotToEngineBook, syntheticBookForToken, syntheticBookFromMarket, tokenIdFor } from "@/server/confidence/book";
 import {
   applyFilledDelta,
   isStalePrice,
@@ -34,6 +34,7 @@ import {
 import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server/betting/mapper";
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
+  executionMode,
   type ExecutionRequest,
   type ExecutorPort,
 } from "@/server/polymarket/executor";
@@ -123,7 +124,16 @@ export type BettingDeps = {
 };
 
 export function createDefaultDeps(): BettingDeps {
-  return createPrismaDeps(getPrisma(), { client: createPolymarketClient({ getBook: fetchClobBook }) });
+  const live = executionMode() === "live";
+  const client = createPolymarketClient({
+    // Synthetic (catalog demo) tokens have no CLOB book; they are paper-only and
+    // never reach the live venue (assertExecutable rejects them before this).
+    getBook: async (tokenId) => {
+      const synthetic = live ? null : syntheticBookForToken(tokenId, getMarket);
+      return synthetic ?? fetchClobBook(tokenId);
+    },
+  });
+  return createPrismaDeps(getPrisma(), { client });
 }
 
 /** Production wiring over one Prisma client; tests pass a mocked venue client. */
@@ -308,6 +318,7 @@ async function runEngine(input: QuoteRequest, deps: BettingDeps) {
 
 export async function quotePrediction(input: QuoteRequest, deps: BettingDeps = createDefaultDeps()) {
   const { market, snapshot, output } = await runEngine(input, deps);
+  await assertMarketOpen(market, deps);
   if (!output.accepted) {
     return {
       accepted: false,

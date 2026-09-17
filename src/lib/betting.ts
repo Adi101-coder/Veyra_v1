@@ -140,6 +140,8 @@ export type PredictionDTO = {
   errorMessage: string | null;
   position: PositionDTO | null;
   execution: ExecutionDTO | null;
+  /** Set once the market has resolved (INVALID = voided). */
+  marketResolution: { outcome: "YES" | "NO" | "INVALID"; resolvedAt: string } | null;
 };
 
 export type PositionSnapshotDTO = {
@@ -237,6 +239,18 @@ export function predictionToWagerRow(
   // Only recorded fills lock a seat. Pending and failed orders stay open and
   // unresolved; their state is surfaced through lockBy (execution/position status).
   const locked = hasFilledShares(dto);
+  const resolved = dto.marketResolution?.outcome;
+  const userNote: import("@/lib/markets").SeatNote = resolved
+    ? resolved === "INVALID"
+      ? "PUSH"
+      : resolved === dto.outcome
+        ? "LANDED"
+        : "MISSED"
+    : locked
+      ? "LOCKED"
+      : "OPEN";
+  const marketNote: import("@/lib/markets").SeatNote =
+    userNote === "LANDED" ? "MISSED" : userNote === "MISSED" ? "LANDED" : userNote;
   const marketPct = Math.round(Number.parseFloat(dto.marketPrice) * 100);
   return {
     id: dto.id,
@@ -244,19 +258,19 @@ export function predictionToWagerRow(
     gold: dto.position ? `${dto.position.shares} sh` : "—",
     lockBy: dto.execution?.status ?? dto.position?.status ?? dto.status,
     mechanism: "Confidence",
-    resolution: "PENDING",
+    resolution: dto.marketResolution ? "RESOLVED" : "PENDING",
     expired: false,
     left: {
       wallet: shorten(dto.walletAddress),
       avatar: dto.walletAddress,
       belief: Math.round(dto.confidencePct),
-      note: locked ? "LOCKED" : "OPEN",
+      note: userNote,
     },
     right: {
       wallet: dto.outcome === "YES" ? "Book YES" : "Book NO",
       avatar: `${dto.marketId}-${dto.outcome}`,
       belief: Number.isFinite(marketPct) ? marketPct : 50,
-      note: locked ? "LOCKED" : "OPEN",
+      note: marketNote,
     },
   };
 }

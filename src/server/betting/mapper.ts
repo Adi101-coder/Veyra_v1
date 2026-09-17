@@ -118,6 +118,13 @@ export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
     errorMessage: bundle.errorMessage,
     position,
     execution: executionDto,
+    marketResolution:
+      bundle.market.resolvedAt && bundle.market.resolvedOutcome
+        ? {
+            outcome: bundle.market.resolvedOutcome as "YES" | "NO" | "INVALID",
+            resolvedAt: bundle.market.resolvedAt.toISOString(),
+          }
+        : null,
   };
 }
 
