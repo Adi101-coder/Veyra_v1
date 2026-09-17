@@ -20,6 +20,7 @@ import {
 import type { ExecutionStore } from "@/server/execution/store";
 import type {
   ExecutionIntentInput,
+  ExecutionIntentRow,
   ExecutionMetrics,
   IntentAllocation,
   ProcessResult,
@@ -43,7 +44,21 @@ export class ExecutionEngine {
     private readonly config: ExecutionEngineConfig = loadExecutionEngineConfig(),
   ) {}
 
-  async enqueue(input: ExecutionIntentInput) {
+  async enqueue(input: ExecutionIntentInput): Promise<ExecutionIntentRow> {
+    try {
+      return await this.enqueueOnce(input);
+    } catch (error) {
+      // Concurrent enqueue of the same execution/idempotency key: return the winner.
+      if ((error as { code?: string })?.code !== "P2002") throw error;
+      const existing =
+        (input.idempotencyKey ? await this.store.findIntentByIdempotency(input.idempotencyKey) : null) ??
+        (await this.store.findIntentByExecutionId(input.executionId));
+      if (!existing) throw error;
+      return existing;
+    }
+  }
+
+  private async enqueueOnce(input: ExecutionIntentInput) {
     if (input.idempotencyKey) {
       const existing = await this.store.findIntentByIdempotency(input.idempotencyKey);
       if (existing) return existing;
@@ -81,6 +96,10 @@ export class ExecutionEngine {
     const stuck = await this.store.listStaleProcessing(new Date(Date.now() - leaseMs));
     const failed: IntentAllocation[] = [];
     for (const intent of stuck) {
+      // A run that still holds (and renews) its batch lease is alive: leave it.
+      const lease = intent.batchId ? await this.store.claimReconcile(intent.batchId, this.config.reconcileLeaseMs) : "none";
+      if (!lease) continue;
+      if (lease !== "none") await this.store.releaseReconcile(intent.batchId!, lease);
       const batch = intent.batchId ? await this.store.getBatch(intent.batchId) : null;
       if (batch?.status === "SUBMITTED") {
         await this.store.releaseIntents([intent.id], "SUBMITTED");
@@ -124,15 +143,55 @@ export class ExecutionEngine {
   }
 
   async reconcileBatch(batchId: string): Promise<ProcessResult | null> {
+    // One reconciler per batch across processes: fills from a terminal venue order
+    // must be allocated exactly once.
+    const lease = await this.store.claimReconcile(batchId, this.config.reconcileLeaseMs);
+    if (!lease) return null;
+    try {
+      return await this.reconcileLeased(batchId);
+    } finally {
+      await this.store.releaseReconcile(batchId, lease);
+    }
+  }
+
+  private async reconcileLeased(batchId: string): Promise<ProcessResult | null> {
     const batch = await this.store.getBatch(batchId);
     if (!batch || batch.status !== "SUBMITTED") return null;
+    // Intents still PROCESSING belong to a live (or crashed, not yet recovered) run.
+    // Finalizing slices now would consume fills with nobody to allocate them to.
+    if (batch.intents.some((row) => row.status === "PROCESSING")) return null;
     const unresolved = batch.slices.filter((slice) => slice.status === "open" || slice.status === "unknown");
     const newFills: VenueFill[] = [];
     let stillOpen = false;
     for (const slice of unresolved) {
       if (!slice.polymarketOrderId) {
-        // Outcome unknown and no order id to query: needs operator review.
-        stillOpen = true;
+        // Outcome unknown and no order id (e.g. a timeout). After a grace period, if
+        // the venue shows no open order and no trade we cannot attribute to a known
+        // order, nothing was placed: close the slice with zero fills. Any
+        // unattributed activity keeps it open for operator review.
+        const sentAt = slice.submittedAt ?? slice.createdAt;
+        if (!this.client.findActivity || Date.now() - sentAt.getTime() < this.config.unknownOrderGraceMs) {
+          stillOpen = true;
+          continue;
+        }
+        const since = new Date(sentAt.getTime() - 60_000);
+        const activity = await this.client.findActivity(batch.tokenId, since);
+        const known = new Set(await this.store.listSliceOrderIds(batch.tokenId, since));
+        const unattributed = [...activity.openOrderIds, ...activity.tradeOrderIds].filter((id) => !known.has(id));
+        if (unattributed.length) {
+          stillOpen = true;
+          await this.store.updateSlice(slice.id, {
+            status: "unknown",
+            responseJson: jsonSafe({ unattributedOrderIds: unattributed }),
+            errorMessage: "Unattributed venue activity after an unknown submission; operator review required.",
+          });
+          continue;
+        }
+        await this.store.updateSlice(slice.id, {
+          status: "rejected",
+          responseJson: jsonSafe({ resolvedBy: "no_venue_activity", since: since.toISOString() }),
+          errorMessage: "No venue order or trade found after an unknown submission.",
+        });
         continue;
       }
       const order = await this.client.getOrder(slice.polymarketOrderId);
@@ -231,6 +290,18 @@ export class ExecutionEngine {
   }
 
   private async runToken(tokenId: string): Promise<ProcessResult | null> {
+    const release: { fn: (() => Promise<void>) | null } = { fn: null };
+    try {
+      return await this.runClaimed(tokenId, release);
+    } finally {
+      await release.fn?.();
+    }
+  }
+
+  private async runClaimed(
+    tokenId: string,
+    release: { fn: (() => Promise<void>) | null },
+  ): Promise<ProcessResult | null> {
     const intents = await this.store.claimQueued(tokenId);
     if (!intents.length) return null;
     const started = Date.now();
@@ -257,11 +328,36 @@ export class ExecutionEngine {
     });
 
     let sentToVenue = false;
+    let staleAllocations: IntentAllocation[] = [];
+    // Hold the batch's reconcile lease for the whole run so no reconciler can
+    // allocate this batch's venue fills while we are still sending and allocating.
+    const lease = await this.store.claimReconcile(batch.id, this.config.reconcileLeaseMs);
+    if (lease) release.fn = () => this.store.releaseReconcile(batch.id, lease);
+    const renewLease = async () => {
+      if (lease) await this.store.renewReconcile(batch.id, lease);
+    };
     let awaitingVenue = false;
     try {
       await this.store.updateBatch(batch.id, { status: "QUEUED", queuedAt: new Date() });
-      const snapshot = await this.refreshBook(tokenId, intents, head.quotedPriceBps);
-      const strategy = buildStrategy(intents, snapshot, this.config);
+      const snapshot = await this.refreshBook(tokenId);
+      // Stale quotes are judged per intent: one stale order must not block (or be
+      // executed alongside) fresh ones.
+      const { fresh, stale } = this.partitionStale(intents, snapshot);
+      staleAllocations = await this.failIntents(
+        stale,
+        "STALE_PRICE",
+        "The market moved since this order was quoted. Refresh the book and retry.",
+      );
+      if (!fresh.length) {
+        const failed = await this.store.updateBatch(batch.id, {
+          status: "FAILED",
+          errorCode: "STALE_PRICE",
+          errorMessage: "Every queued order was quoted against a stale price.",
+          reconciledAt: new Date(),
+        });
+        return { batch: failed, allocations: staleAllocations };
+      }
+      const strategy = buildStrategy(fresh, snapshot, this.config);
       await this.store.updateBatch(batch.id, {
         status: "QUEUED",
         netSide: strategy.netSide,
@@ -292,7 +388,7 @@ export class ExecutionEngine {
         await this.store.updateBatch(batch.id, { status: "SUBMITTED", submittedAt: new Date() });
         sentToVenue = true;
         for (const slice of strategy.slices) {
-          const submitted = await this.submitSlice(batch.id, slice, snapshot, head.orderType);
+          const submitted = await this.submitSlice(batch.id, slice, snapshot, head.orderType, renewLease);
           venueFills.push(...submitted.fills);
           if (submitted.errorMessage) lastError = submitted.errorMessage;
           if (submitted.status === "open" || submitted.status === "unknown") awaitingVenue = true;
@@ -314,7 +410,7 @@ export class ExecutionEngine {
 
       await this.store.updateBatch(batch.id, { status: "RECONCILING" });
       const allocations = allocateFills(
-        intents,
+        fresh,
         strategy.matches,
         strategy.residual,
         venueFills.map((fill) => ({
@@ -327,6 +423,14 @@ export class ExecutionEngine {
         })),
         this.client.mode === "paper",
       );
+
+      if (strategy.blockedReason) {
+        for (const allocation of allocations) {
+          if (allocation.status !== "failed") continue;
+          allocation.errorCode = strategy.blockedReason;
+          allocation.errorMessage = strategy.notes[0] ?? "Execution blocked by a venue safety limit.";
+        }
+      }
 
       if (awaitingVenue) {
         // Some venue orders are resting or their outcome is unknown. Record what is
@@ -401,7 +505,7 @@ export class ExecutionEngine {
         errorCode: awaitingVenue ? "AWAITING_VENUE" : batchStatus === "FAILED" ? "VENUE_FAILED" : null,
         attempts: 1,
       });
-      return { batch: updated, allocations };
+      return { batch: updated, allocations: [...allocations, ...staleAllocations] };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Execution engine failed";
       const code = error instanceof BettingError ? error.code : "ENGINE_FAILED";
@@ -478,40 +582,46 @@ export class ExecutionEngine {
     }
   }
 
-  private async refreshBook(
-    tokenId: string,
-    intents: { quotedPriceBps?: number }[],
-    quotedFallback?: number,
-  ): Promise<OrderBookSnapshot> {
+  private async refreshBook(tokenId: string): Promise<OrderBookSnapshot> {
     const snapshot = await this.client.getBook(tokenId);
-    const quality = analyzeBook(snapshot, Date.now(), this.config.maxBookAgeMs);
-    if (quality.stale) {
-      const again = await this.client.getBook(tokenId);
-      const retry = analyzeBook(again, Date.now(), this.config.maxBookAgeMs);
-      if (retry.stale) {
-        throw new BettingError("STALE_BOOK", "Polymarket order book is stale.", 409);
-      }
-      return this.assertQuotes(again, retry, intents, quotedFallback);
+    if (!analyzeBook(snapshot, Date.now(), this.config.maxBookAgeMs).stale) return snapshot;
+    const again = await this.client.getBook(tokenId);
+    if (analyzeBook(again, Date.now(), this.config.maxBookAgeMs).stale) {
+      throw new BettingError("STALE_BOOK", "Polymarket order book is stale.", 409);
     }
-    return this.assertQuotes(snapshot, quality, intents, quotedFallback);
+    return again;
   }
 
-  private assertQuotes(
-    snapshot: OrderBookSnapshot,
-    quality: ReturnType<typeof analyzeBook>,
-    intents: { quotedPriceBps?: number }[],
-    quotedFallback?: number,
-  ) {
+  private partitionStale<T extends { quotedPriceBps?: number | null }>(intents: T[], snapshot: OrderBookSnapshot) {
+    const quality = analyzeBook(snapshot);
     const live = quality.bestAskBps ?? quality.midBps ?? 0;
-    const quoted = intents.find((row) => row.quotedPriceBps != null)?.quotedPriceBps ?? quotedFallback;
-    if (isStaleQuotedPrice(quoted, live, this.config.maxStaleBps)) {
-      throw new BettingError(
-        "STALE_PRICE",
-        "The market moved since these orders were queued. Refresh the book and retry.",
-        409,
-      );
+    const fresh: T[] = [];
+    const stale: T[] = [];
+    for (const intent of intents) {
+      if (isStaleQuotedPrice(intent.quotedPriceBps ?? undefined, live, this.config.maxStaleBps)) stale.push(intent);
+      else fresh.push(intent);
     }
-    return snapshot;
+    return { fresh, stale };
+  }
+
+  private async failIntents(intents: ExecutionIntentRow[], code: string, message: string) {
+    const allocations: IntentAllocation[] = [];
+    for (const intent of intents) {
+      await this.store.updateIntent(intent.id, { status: "FAILED", errorCode: code, errorMessage: message });
+      allocations.push({
+        intentId: intent.id,
+        executionId: intent.executionId,
+        status: "failed",
+        fills: [],
+        executedSharesMicros: 0n,
+        executedNotionalMicros: 0n,
+        avgPriceBps: 0,
+        feeMicros: 0n,
+        errorCode: code,
+        errorMessage: message,
+      });
+    }
+    return allocations;
   }
 
   private async submitSlice(
@@ -519,6 +629,7 @@ export class ExecutionEngine {
     slice: { side: "BUY" | "SELL"; sharesMicros: bigint; notionalMicros: bigint; limitPriceBps: number },
     snapshot: OrderBookSnapshot,
     orderType: "FAK" | "FOK" | "GTC",
+    onSliceRecorded?: () => Promise<void>,
   ) {
     let last = {
       fills: [] as VenueFill[],
@@ -527,30 +638,17 @@ export class ExecutionEngine {
       status: "failed" as VenueOrderResult["status"],
     };
     for (let attempt = 1; attempt <= this.config.maxAttempts; attempt += 1) {
-      const result = await this.client.submitOrder({
-        tokenId: snapshot.tokenId,
-        side: slice.side,
-        orderType,
-        limitPriceBps: slice.limitPriceBps,
-        sharesMicros: slice.sharesMicros,
-        notionalMicros: slice.notionalMicros,
-        tickSize: snapshot.tickSize,
-        negRisk: snapshot.negRisk,
-        book: snapshot,
-      });
-      const fills = result.fills.map((fill) => ({
-        ...fill,
-        feeMicros: fill.feeMicros || feeOnNotional(fill.notionalMicros, this.config.takerFeeBps),
-      }));
-      await this.store.addSlice({
+      // Record the slice as "unknown" BEFORE the venue call. If the process dies
+      // mid-call, reconciliation still knows an order may exist.
+      const row = await this.store.addSlice({
         batchId,
         side: slice.side,
         sharesMicros: slice.sharesMicros,
         notionalMicros: slice.notionalMicros,
         limitPriceBps: slice.limitPriceBps,
         orderType,
-        status: result.status,
-        polymarketOrderId: result.polymarketOrderId,
+        status: "unknown",
+        polymarketOrderId: null,
         requestJson: jsonSafe({
           tokenId: snapshot.tokenId,
           side: slice.side,
@@ -559,11 +657,40 @@ export class ExecutionEngine {
           notionalUsd: formatUsd(slice.notionalMicros),
           attempt,
         }),
-        responseJson: jsonSafe(result.response ?? {}),
-        errorMessage: result.errorMessage,
+        responseJson: null,
+        errorMessage: null,
         attempt,
         submittedAt: new Date(),
       });
+      let result: VenueOrderResult;
+      try {
+        result = await this.client.submitOrder({
+          tokenId: snapshot.tokenId,
+          side: slice.side,
+          orderType,
+          limitPriceBps: slice.limitPriceBps,
+          sharesMicros: slice.sharesMicros,
+          notionalMicros: slice.notionalMicros,
+          tickSize: snapshot.tickSize,
+          negRisk: snapshot.negRisk,
+          book: snapshot,
+        });
+      } catch (error) {
+        // A thrown venue call has an unknown outcome: never assume it failed.
+        const message = error instanceof Error ? error.message : "Venue call failed";
+        result = { mode: this.client.mode, status: "unknown", polymarketOrderId: null, response: { error: message }, fills: [], errorMessage: message };
+      }
+      const fills = result.fills.map((fill) => ({
+        ...fill,
+        feeMicros: fill.feeMicros || feeOnNotional(fill.notionalMicros, this.config.takerFeeBps),
+      }));
+      await this.store.updateSlice(row.id, {
+        status: result.status,
+        polymarketOrderId: result.polymarketOrderId,
+        responseJson: jsonSafe(result.response ?? {}),
+        errorMessage: result.errorMessage,
+      });
+      if (onSliceRecorded) await onSliceRecorded();
       last = {
         fills,
         errorMessage: result.errorMessage,

@@ -189,6 +189,40 @@ export function mapPostOrderResponse(
   };
 }
 
+export class VenueTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`Polymarket did not answer within ${ms}ms; order outcome unknown.`);
+    this.name = "VenueTimeoutError";
+  }
+}
+
+/** Resolves with the promise or rejects after `ms`. The underlying request may still land. */
+export function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new VenueTimeoutError(ms)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+/**
+ * Serializes order posts per process with a minimum spacing, keeping well under
+ * Polymarket's per-account order token bucket (standard tier: 40/s, burst 60).
+ */
+let lastPost = 0;
+let postChain: Promise<void> = Promise.resolve();
+export function paceOrderPost(minSpacingMs = Number.parseInt(process.env.POLYMARKET_ORDER_SPACING_MS ?? "50", 10)) {
+  const next = postChain.then(async () => {
+    const wait = lastPost + minSpacingMs - Date.now();
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    lastPost = Date.now();
+  });
+  postChain = next.catch(() => undefined);
+  return next;
+}
+
 export async function submitLiveOrder(request: VenueOrderRequest): Promise<VenueOrderResult> {
   const { OrderType, Side } = await import("@polymarket/clob-client-v2");
   const client = await sdkClient();
@@ -204,11 +238,13 @@ export async function submitLiveOrder(request: VenueOrderRequest): Promise<Venue
   const amount = Number(formatUsd(request.notionalMicros, 2));
   const side = request.side === "SELL" ? Side.SELL : Side.BUY;
 
+  const timeoutMs = Number.parseInt(process.env.VEYRA_VENUE_TIMEOUT_MS ?? "10000", 10);
   try {
-    const response =
+    await paceOrderPost();
+    const response = await withTimeout(
       request.orderType === "GTC"
-        ? await client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, OrderType.GTC)
-        : await client.createAndPostMarketOrder(
+        ? client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, OrderType.GTC)
+        : client.createAndPostMarketOrder(
             {
               tokenID: request.tokenId,
               price,
@@ -219,11 +255,16 @@ export async function submitLiveOrder(request: VenueOrderRequest): Promise<Venue
             },
             options,
             request.orderType === "FOK" ? OrderType.FOK : OrderType.FAK,
-          );
+          ),
+      Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10_000,
+    );
     return mapPostOrderResponse(request, response as PostOrderResponse);
   } catch (error) {
     const status = errorStatus(error);
     const message = error instanceof Error ? error.message : "Live Polymarket submission failed";
+    if (error instanceof VenueTimeoutError) {
+      return { mode: "live", status: "unknown", polymarketOrderId: null, response: { error: message }, fills: [], errorMessage: message };
+    }
     // 429/503 are refused before matching and are safe to retry. Anything else
     // (timeouts, 5xx, network) may have reached the matcher: never blind-retry.
     const retryable = status === 429 || status === 503 || status === 425;
@@ -343,4 +384,24 @@ export async function getLiveOrder(orderId: string): Promise<VenueOrderResult | 
   const tradeIds = [...new Set(order.associate_trades ?? [])];
   const pages = await Promise.all(tradeIds.map((id) => client.getTrades({ id }, true)));
   return mapOpenOrder(order, orderId, fillsFromTrades(orderId, pages.flat() as TradeLike[]));
+}
+
+/**
+ * Venue activity for one token since a time: our open order ids and the order ids
+ * behind our trades (L2-scoped to this account). Used to decide whether an order
+ * whose submission outcome is unknown and has no id could exist on the venue.
+ */
+export async function findLiveActivity(tokenId: string, since: Date) {
+  const client = await sdkClient();
+  const open = (await client.getOpenOrders({ asset_id: tokenId })) as OpenOrderLike[];
+  const trades = (await client.getTrades({ asset_id: tokenId, after: String(Math.floor(since.getTime() / 1000)) })) as TradeLike[];
+  const tradeOrderIds = new Set<string>();
+  for (const trade of trades) {
+    if (trade.taker_order_id) tradeOrderIds.add(trade.taker_order_id);
+    for (const maker of trade.maker_orders ?? []) if (maker.order_id) tradeOrderIds.add(maker.order_id);
+  }
+  return {
+    openOrderIds: open.map((order) => order.id).filter((id): id is string => Boolean(id)),
+    tradeOrderIds: [...tradeOrderIds],
+  };
 }

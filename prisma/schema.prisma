@@ -191,6 +191,8 @@ model ExecutionBatch {
   latencyMs                           Int               @default(0)
   attempts                            Int               @default(0)
   idempotencyKey                      String?           @unique
+  reconcileToken                      String?
+  reconcileClaimedAt                  DateTime?
   errorCode                           String?
   errorMessage                        String?
   queuedAt                            DateTime?

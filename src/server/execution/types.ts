@@ -153,6 +153,8 @@ export type ExecutionStrategy = {
   expectedSlippageBps: number;
   independentExpectedSlippageBps: number;
   notes: string[];
+  /** Set when a venue-side safety limit prevented sending any order. */
+  blockedReason?: "WIDE_SPREAD";
 };
 
 export type InternalMatch = {

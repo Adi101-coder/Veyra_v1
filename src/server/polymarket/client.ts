@@ -8,7 +8,7 @@ import { filledShares, walkSide } from "@/server/execution/math";
 import type { ExecutionSide } from "@/server/execution/types";
 import type { ExecutionRequest, ExecutionSubmitResult, ExecutorPort } from "@/server/polymarket/executor";
 import { fetchClobBook, fetchClobPrice } from "@/server/polymarket/clob";
-import { getLiveOrder, submitLiveOrder } from "@/server/polymarket/live";
+import { findLiveActivity, getLiveOrder, submitLiveOrder } from "@/server/polymarket/live";
 
 export type VenueOrderRequest = {
   tokenId: string;
@@ -54,6 +54,8 @@ export type PolymarketClient = {
   getPrice(tokenId: string, side: ExecutionSide): Promise<string | null>;
   getOrder(orderId: string): Promise<VenueOrderResult | null>;
   submitOrder(request: VenueOrderRequest): Promise<VenueOrderResult>;
+  /** Live only: this account's open orders and traded order ids on a token since a time. */
+  findActivity?(tokenId: string, since: Date): Promise<{ openOrderIds: string[]; tradeOrderIds: string[] }>;
 };
 
 export function createPolymarketClient(options?: {
@@ -61,6 +63,7 @@ export function createPolymarketClient(options?: {
   getBook?: (tokenId: string) => Promise<OrderBookSnapshot>;
   submitOrder?: (request: VenueOrderRequest) => Promise<VenueOrderResult>;
   getOrder?: (orderId: string) => Promise<VenueOrderResult | null>;
+  findActivity?: PolymarketClient["findActivity"];
 }): PolymarketClient {
   const mode = options?.mode ?? (process.env.POLYMARKET_EXECUTION_MODE === "live" ? "live" : "paper");
   return {
@@ -68,6 +71,7 @@ export function createPolymarketClient(options?: {
     getBook: options?.getBook ?? fetchClobBook,
     getPrice: (tokenId, side) => fetchClobPrice(tokenId, side),
     getOrder: options?.getOrder ?? (mode === "live" ? getLiveOrder : async () => null),
+    findActivity: options?.findActivity ?? (mode === "live" ? findLiveActivity : undefined),
     submitOrder:
       options?.submitOrder ??
       (mode === "live" ? submitLiveOrder : (request) => Promise.resolve(paperFill(request))),
