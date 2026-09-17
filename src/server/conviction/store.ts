@@ -10,9 +10,9 @@ function asOutcome(value: string): Outcome {
   return value === "NO" ? "NO" : "YES";
 }
 
-function voteCapital(row: { stakeMicros: bigint; position: { notionalMicros: bigint } | null }) {
-  const filled = row.position?.notionalMicros ?? 0n;
-  return filled > 0n ? filled : row.stakeMicros;
+/** Capital is the cost basis of shares actually held (from fills), never the requested stake. */
+function voteCapital(row: { position: { notionalMicros: bigint } | null }) {
+  return row.position?.notionalMicros ?? 0n;
 }
 
 export function memoryConvictionStore(seed: ConvictionVote[] = []): ConvictionStore {
@@ -56,7 +56,8 @@ export function prismaConvictionStore(prisma: PrismaClient): ConvictionStore {
   return {
     async listVotes(marketId) {
       const rows = await prisma.prediction.findMany({
-        where: { marketId, NOT: { status: "failed" } },
+        // Only predictions whose position holds filled shares count toward conviction.
+        where: { marketId, position: { sharesMicros: { gt: 0 } } },
         include: { position: true },
         orderBy: { createdAt: "asc" },
       });
@@ -68,7 +69,7 @@ export function prismaConvictionStore(prisma: PrismaClient): ConvictionStore {
         confidenceBps: row.confidenceBps,
         capitalMicros: voteCapital(row),
         createdAt: row.createdAt,
-        status: row.status,
+        status: row.position?.status ?? row.status,
       }));
     },
     async latestSnapshot(marketId) {

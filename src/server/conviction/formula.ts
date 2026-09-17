@@ -53,7 +53,7 @@ export const CONVICTION_DOCUMENTATION = {
   conviction:
     "Configurable blend of average and capital-weighted implied P(YES). Default 45/55. Change VEYRA_CONVICTION_CAPITAL_BLEND_BPS to retune.",
   divergence: "Veyra conviction − Polymarket YES probability, in percentage points.",
-  participants: "Unique wallets with a non-failed prediction on the market.",
+  participants: "Unique wallets currently holding filled shares on the market.",
 };
 
 export function impliedYesBps(outcome: Outcome, confidenceBps: number) {
@@ -152,7 +152,11 @@ export function isCountableVote(vote: ConvictionVote) {
   return vote.status !== "failed";
 }
 
-/** One row per wallet: latest confidence/outcome, summed capital. */
+/**
+ * One row per wallet per outcome: latest confidence on that side, capital summed on
+ * that side. A wallet holding both YES and NO keeps each side's capital on its own
+ * side instead of moving all of it to whichever side it touched last.
+ */
 export function collapseParticipants(votes: ConvictionVote[]) {
   const byWallet = new Map<
     string,
@@ -161,7 +165,7 @@ export function collapseParticipants(votes: ConvictionVote[]) {
 
   for (const vote of votes) {
     if (!isCountableVote(vote)) continue;
-    const key = normalizeWallet(vote.walletAddress);
+    const key = `${normalizeWallet(vote.walletAddress)}:${vote.outcome}`;
     const createdAt = vote.createdAt.getTime();
     const existing = byWallet.get(key);
     const capital = vote.capitalMicros > 0n ? vote.capitalMicros : 0n;
@@ -176,7 +180,6 @@ export function collapseParticipants(votes: ConvictionVote[]) {
     }
     existing.capitalMicros += capital;
     if (createdAt >= existing.createdAt) {
-      existing.outcome = vote.outcome;
       existing.confidenceBps = vote.confidenceBps;
       existing.createdAt = createdAt;
     }
@@ -228,7 +231,9 @@ export function computeConviction(input: {
 
   return {
     marketId: input.marketId,
-    participants: participants.length,
+    participants: new Set(
+      input.votes.filter(isCountableVote).map((vote) => normalizeWallet(vote.walletAddress)),
+    ).size,
     capitalMicros,
     averageConfidenceBps,
     capitalWeightedConfidenceBps,
