@@ -53,7 +53,13 @@ export async function fetchWalletActivity(address: string, chain: WalletChain) {
   const response = await fetch(
     `/api/wallet/transactions?address=${encodeURIComponent(address)}&chain=${chain}`,
   );
-  const payload = (await response.json()) as WalletActivity & { error?: string };
+  const text = await response.text();
+  let payload: WalletActivity & { error?: string };
+  try {
+    payload = JSON.parse(text) as WalletActivity & { error?: string };
+  } catch {
+    throw new Error(`Could not load transactions: the server is unavailable (HTTP ${response.status}).`);
+  }
   if (!response.ok) {
     throw new Error(payload.error ?? "Could not load transactions");
   }

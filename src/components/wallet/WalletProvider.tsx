@@ -115,7 +115,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ walletAddress: address }),
         });
-        const nonce = (await nonceResponse.json()) as { nonce?: string; message?: string; error?: { message?: string } };
+        const nonce = (await nonceResponse.json().catch(() => ({}))) as { nonce?: string; message?: string; error?: { message?: string } };
         if (!nonceResponse.ok || !nonce.nonce || !nonce.message) {
           throw new Error(nonce.error?.message ?? "Could not start wallet sign-in");
         }

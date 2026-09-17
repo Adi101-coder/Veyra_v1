@@ -19,8 +19,22 @@ export class ApiError extends Error {
   }
 }
 
+/** Parses an API response; a non-JSON body (e.g. a host error page) becomes a clear error. */
 async function readJson<T>(response: Response): Promise<T> {
-  const json = (await response.json().catch(() => ({}))) as T & {
+  const text = await response.text();
+  let parsed: unknown;
+  try {
+    parsed = text ? JSON.parse(text) : {};
+  } catch {
+    throw new ApiError(
+      response.ok
+        ? "The server returned an unexpected response. Please try again."
+        : `The server is unavailable right now (HTTP ${response.status}). Please try again shortly.`,
+      `HTTP_${response.status}`,
+      response.status || 502,
+    );
+  }
+  const json = parsed as T & {
     error?: { code?: string; message?: string } | string;
   };
   if (!response.ok) {
