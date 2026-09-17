@@ -140,3 +140,38 @@ describe("ConfidenceEngine formula", () => {
     expect(result).toMatchObject({ accepted: false, code: "INSUFFICIENT_LIQUIDITY" });
   });
 });
+
+describe("ConfidenceEngine boundaries (50¢ ask)", () => {
+  const evaluate = (confidenceBps: number, stakeMicros = 100_000_000n) =>
+    engine.evaluate({ outcome: "YES", confidenceBps, stakeMicros, book: book() });
+
+  it("0% and 100% are outside the allowed range; 1% and 50% have no edge over a 50¢ ask", () => {
+    expect(evaluate(0)).toMatchObject({ accepted: false, code: "CONFIDENCE_RANGE" });
+    expect(evaluate(10000)).toMatchObject({ accepted: false, code: "CONFIDENCE_RANGE" });
+    expect(evaluate(100).accepted).toBe(false);
+    expect(evaluate(5000).accepted).toBe(false);
+  });
+
+  it("99% sizes a position capped by max Kelly, never above the stake or its fair value", () => {
+    for (const bps of [9900]) {
+      const result = evaluate(bps);
+      expect(result.accepted).toBe(true);
+      if (!result.accepted) continue;
+      expect(result.notionalMicros).toBeGreaterThan(0n);
+      expect(result.notionalMicros).toBeLessThanOrEqual(100_000_000n);
+      expect(result.sizedKellyBps).toBeLessThanOrEqual(defaultConfidenceEngineConfig.maxKellyBps);
+      expect(result.limitPriceBps).toBeLessThanOrEqual(bps);
+    }
+  });
+
+  it("rejects stakes outside $1-$100k; the maximum stake walks within the limit", () => {
+    expect(evaluate(8000, 10_000n)).toMatchObject({ accepted: false, code: "STAKE_TOO_SMALL" });
+    expect(evaluate(8000, 1_000_000_000_000n)).toMatchObject({ accepted: false, code: "STAKE_TOO_LARGE" });
+    const large = evaluate(8000, defaultConfidenceEngineConfig.maxStakeMicros);
+    expect(large.accepted).toBe(true);
+    if (large.accepted) {
+      expect(large.fills.every((fill) => fill.priceBps <= large.limitPriceBps)).toBe(true);
+      expect(large.notionalMicros).toBeLessThanOrEqual(defaultConfidenceEngineConfig.maxStakeMicros);
+    }
+  });
+});

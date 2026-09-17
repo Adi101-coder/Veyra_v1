@@ -212,4 +212,48 @@ describe("changeConfidence", () => {
       changeConfidence(opened.id, { confidencePct: 60, walletAddress: WALLET }, context),
     ).rejects.toMatchObject({ code: "CONCURRENT_UPDATE" } satisfies Partial<BettingError>);
   });
+
+  it("rejects adjusting to 0% or 100% (same range as placement)", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 80, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "range-open-0001" },
+      context,
+    );
+    for (const confidencePct of [0, 100]) {
+      await expect(changeConfidence(opened.id, { confidencePct, walletAddress: WALLET }, context)).rejects.toMatchObject({
+        code: "CONFIDENCE_RANGE",
+      });
+    }
+  });
+
+  it("90% -> 90% is rejected as unchanged and creates no history or execution", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "same-conf-open-1" },
+      context,
+    );
+    await expect(
+      changeConfidence(opened.id, { confidencePct: 90, walletAddress: WALLET }, context),
+    ).rejects.toMatchObject({ code: "UNCHANGED" });
+    expect(await listConfidenceHistory(opened.id, context)).toHaveLength(0);
+  });
+
+  it("90% -> 10% flattens the position (no edge) and records a SELL", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "flatten-open-01" },
+      context,
+    );
+    expect(Number(opened.position?.shares)).toBeGreaterThan(0);
+    const changed = await changeConfidence(opened.id, { confidencePct: 10, walletAddress: WALLET }, context);
+    expect(changed.history.side).toBe("SELL");
+    expect(changed.history.status).toBe("filled");
+    expect(changed.prediction.position?.shares).toBe("0.00");
+    expect(changed.prediction.position?.status).toBe("closed");
+    expect(changed.prediction.confidencePct).toBe(10);
+    // Closed positions can re-enter.
+    const again = await changeConfidence(opened.id, { confidencePct: 80, walletAddress: WALLET }, context);
+    expect(again.history.side).toBe("BUY");
+    expect(Number(again.prediction.position?.shares)).toBeGreaterThan(0);
+  });
 });

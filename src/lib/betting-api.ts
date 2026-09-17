@@ -8,8 +8,19 @@ import type {
 } from "@/lib/betting";
 import type { MarketConviction } from "@/lib/conviction";
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly code: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 async function readJson<T>(response: Response): Promise<T> {
-  const json = (await response.json()) as T & {
+  const json = (await response.json().catch(() => ({}))) as T & {
     error?: { code?: string; message?: string } | string;
   };
   if (!response.ok) {
@@ -17,9 +28,32 @@ async function readJson<T>(response: Response): Promise<T> {
       typeof json.error === "string"
         ? json.error
         : json.error?.message || `Request failed (${response.status})`;
-    throw new Error(message);
+    const code = typeof json.error === "object" && json.error?.code ? json.error.code : `HTTP_${response.status}`;
+    throw new ApiError(message, code, response.status);
   }
   return json;
+}
+
+/**
+ * Registered by WalletProvider: proves wallet control (signed nonce) and returns
+ * once the HttpOnly session cookie is set. Writes call it on 401 and retry once
+ * with the same idempotency key, so a retry can never create a second order.
+ */
+type SessionEnsurer = () => Promise<void>;
+let ensureSession: SessionEnsurer | null = null;
+
+export function registerSessionEnsurer(fn: SessionEnsurer | null) {
+  ensureSession = fn;
+}
+
+async function authedWrite<T>(url: string, init: RequestInit): Promise<T> {
+  const send = () => fetch(url, { ...init, credentials: "same-origin" });
+  let response = await send();
+  if (response.status === 401 && ensureSession) {
+    await ensureSession();
+    response = await send();
+  }
+  return readJson<T>(response);
 }
 
 export async function quotePrediction(input: QuoteRequest) {
@@ -32,15 +66,12 @@ export async function quotePrediction(input: QuoteRequest) {
   return json.quote;
 }
 
-export async function placePrediction(input: PlacePredictionRequest, idempotencyKey?: string) {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
-  const response = await fetch("/api/predictions", {
+export async function placePrediction(input: PlacePredictionRequest, idempotencyKey: string) {
+  const json = await authedWrite<{ prediction: PredictionDTO }>("/api/predictions", {
     method: "POST",
-    headers,
+    headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
     body: JSON.stringify({ ...input, idempotencyKey }),
   });
-  const json = await readJson<{ prediction: PredictionDTO }>(response);
   return json.prediction;
 }
 
@@ -53,25 +84,33 @@ export async function listPredictions(marketId: string, walletAddress?: string) 
 }
 
 export async function getPrediction(id: string) {
-  const response = await fetch(`/api/predictions/${id}`, { cache: "no-store" });
+  const response = await fetch(`/api/predictions/${encodeURIComponent(id)}`, { cache: "no-store" });
   const json = await readJson<{ prediction: PredictionDTO }>(response);
   return json.prediction;
 }
 
-export async function changeConfidence(id: string, input: ChangeConfidenceRequest, idempotencyKey?: string) {
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
-  const response = await fetch(`/api/predictions/${id}/confidence`, {
-    method: "PATCH",
-    headers,
-    body: JSON.stringify({ ...input, idempotencyKey }),
-  });
-  const json = await readJson<{ prediction: PredictionDTO; history: ConfidenceHistoryDTO }>(response);
-  return json;
+export async function changeConfidence(id: string, input: ChangeConfidenceRequest, idempotencyKey: string) {
+  return authedWrite<{ prediction: PredictionDTO; history: ConfidenceHistoryDTO }>(
+    `/api/predictions/${encodeURIComponent(id)}/confidence`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+      body: JSON.stringify({ ...input, idempotencyKey }),
+    },
+  );
+}
+
+/** Asks the server to reconcile an execution against Polymarket (owner only). */
+export async function syncExecution(executionId: string) {
+  const json = await authedWrite<{ prediction: PredictionDTO }>(
+    `/api/executions/${encodeURIComponent(executionId)}/sync`,
+    { method: "POST", headers: { "content-type": "application/json" } },
+  );
+  return json.prediction;
 }
 
 export async function listConfidenceHistory(id: string) {
-  const response = await fetch(`/api/predictions/${id}/confidence-history`, { cache: "no-store" });
+  const response = await fetch(`/api/predictions/${encodeURIComponent(id)}/confidence-history`, { cache: "no-store" });
   const json = await readJson<{ history: ConfidenceHistoryDTO[] }>(response);
   return json.history;
 }

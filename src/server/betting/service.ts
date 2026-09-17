@@ -550,6 +550,15 @@ export async function changeConfidence(
   }
 
   const newConfidenceBps = confidencePctToBps(input.confidencePct);
+  const limits = loadConfidenceEngineConfig();
+  // Same range the ConfidenceEngine enforces at placement.
+  if (newConfidenceBps < limits.minConfidenceBps || newConfidenceBps > limits.maxConfidenceBps) {
+    throw new BettingError(
+      "CONFIDENCE_RANGE",
+      `Confidence must be between ${limits.minConfidenceBps / 100}% and ${limits.maxConfidenceBps / 100}%.`,
+      422,
+    );
+  }
   if (newConfidenceBps === bundle.confidenceBps) {
     throw new BettingError("UNCHANGED", "Confidence is already at that value.", 422);
   }

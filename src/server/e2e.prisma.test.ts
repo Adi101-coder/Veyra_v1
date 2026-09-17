@@ -84,7 +84,7 @@ let dir: string;
 let prisma: PrismaClient;
 let script: Script;
 let submits = 0;
-let venueOrders = new Map<string, VenueOrderResult>();
+const venueOrders = new Map<string, VenueOrderResult>();
 let resolution: VenueResolution = { resolved: false };
 let deps: BettingDeps;
 

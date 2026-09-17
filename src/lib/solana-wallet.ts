@@ -16,6 +16,7 @@ export type InjectedSolanaProvider = {
     publicKey: { toBase58(): string; toString(): string };
   }>;
   disconnect: () => Promise<void>;
+  signMessage?: (message: Uint8Array, display?: "utf8" | "hex") => Promise<{ signature: Uint8Array } | Uint8Array>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   off?: (event: string, handler: (...args: unknown[]) => void) => void;
 };
@@ -202,4 +203,28 @@ export async function disconnectWallet(provider: ConnectedProvider | null) {
   if (typeof provider.disconnect === "function") {
     await provider.disconnect();
   }
+}
+
+function toHex(bytes: Uint8Array) {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Signs the server's sign-in message. EVM wallets use personal_sign (EIP-191);
+ * Solana wallets sign the UTF-8 bytes with ed25519. Returns the signature as the
+ * server expects it (0x-hex for EVM, hex for Solana).
+ */
+export async function signSessionMessage(provider: ConnectedProvider, address: string, message: string) {
+  const bytes = new TextEncoder().encode(message);
+  if (isEthereumProvider(provider)) {
+    const signature = (await provider.request({
+      method: "personal_sign",
+      params: [`0x${toHex(bytes)}`, address],
+    })) as string;
+    return signature;
+  }
+  if (!provider.signMessage) throw new Error("This wallet cannot sign messages.");
+  const signed = await provider.signMessage(bytes, "utf8");
+  const signature = signed instanceof Uint8Array ? signed : signed.signature;
+  return toHex(signature);
 }

@@ -1,5 +1,4 @@
 import { BettingError } from "@/server/errors";
-import type { Outcome } from "@/lib/betting";
 import type { PrismaClient } from "@prisma/client";
 import { BIN_COUNT } from "@/server/reputation/metrics";
 import type {

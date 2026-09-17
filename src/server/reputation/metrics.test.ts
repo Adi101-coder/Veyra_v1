@@ -69,3 +69,26 @@ describe("reputation metrics", () => {
     expect(pnlMicros(true, 0n, 5n)).toBe(0n);
   });
 });
+
+describe("Brier and PnL reference values", () => {
+  it("matches the textbook values", async () => {
+    const { scoreForecast, formatBrier } = await import("@/server/reputation/metrics");
+    const brier = (predictedOutcome: "YES" | "NO", confidenceBps: number, resolvedOutcome: "YES" | "NO") =>
+      formatBrier(scoreForecast({ predictedOutcome, confidenceBps, resolvedOutcome, notionalMicros: 0n, payoutMicros: 0n }).brierMicros);
+    expect(brier("YES", 9000, "YES")).toBe("0.010000");
+    expect(brier("YES", 9000, "NO")).toBe("0.810000");
+    expect(brier("YES", 5000, "YES")).toBe("0.250000");
+    expect(brier("YES", 5000, "NO")).toBe("0.250000");
+    expect(brier("NO", 9000, "YES")).toBe("0.810000");
+    expect(brier("NO", 9000, "NO")).toBe("0.010000");
+  });
+
+  it("PnL counts held winning shares, sell proceeds and cost", async () => {
+    const { scoreForecast } = await import("@/server/reputation/metrics");
+    // Bought 10 shares for $5, sold 4 for $2.40, 6 held; YES wins -> 6 + 2.40 - 5 = 3.40
+    const win = scoreForecast({ predictedOutcome: "YES", confidenceBps: 7000, resolvedOutcome: "YES", notionalMicros: 5_000_000n, payoutMicros: 6_000_000n, proceedsMicros: 2_400_000n });
+    expect(win.pnlMicros).toBe(3_400_000n);
+    const loss = scoreForecast({ predictedOutcome: "YES", confidenceBps: 7000, resolvedOutcome: "NO", notionalMicros: 5_000_000n, payoutMicros: 6_000_000n, proceedsMicros: 2_400_000n });
+    expect(loss.pnlMicros).toBe(-2_600_000n);
+  });
+});

@@ -2,8 +2,7 @@ import "server-only";
 
 import type { OrderBookSnapshot } from "@/lib/betting";
 import type { EngineResult, EngineWalkFill } from "@/server/confidence/types";
-import { BettingError } from "@/server/errors";
-import { formatPrice, formatShares, formatUsd } from "@/server/money";
+import { formatPrice, formatShares } from "@/server/money";
 import type { ConfidenceEngineConfig } from "@/server/confidence/config";
 import { defaultExecutionEngineConfig } from "@/server/execution/config";
 import { filledShares, walkSide } from "@/server/execution/math";
