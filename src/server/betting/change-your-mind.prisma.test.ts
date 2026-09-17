@@ -122,7 +122,8 @@ async function assertLedger(predictionId: string) {
   for (const execution of prediction.position!.executions) {
     for (const fill of execution.fills) shares += execution.side === "SELL" ? -fill.sharesMicros : fill.sharesMicros;
   }
-  expect(prediction.position!.sharesMicros).toBe(shares < 0n ? 0n : shares);
+  expect(shares >= 0n).toBe(true); // never sold more than was bought
+  expect(prediction.position!.sharesMicros).toBe(shares);
   const settled = prediction.confidenceHistory.filter((row) => row.status === "filled" || row.status === "noop");
   expect(prediction.confidenceBps).toBe(settled.at(-1)?.newConfidenceBps ?? 8000);
   for (const row of prediction.confidenceHistory) {
@@ -338,5 +339,54 @@ describe("Change Your Mind lifecycle under concurrency (Prisma)", () => {
     expect(after.confidenceHistory.find((row) => row.id === created.history.id)!.status).toBe("failed");
     expect((await s.change(opened.id, 60)).history.status).toBe("filled");
     await assertLedger(opened.id);
+  });
+
+  it("recovery racing a real reconcile never counts the same shares twice (either order)", async () => {
+    for (const order of ["venue-first", "recovery-first"] as const) {
+      const s = scenario();
+      const opened = await s.open();
+      s.venue.script = () => resting(`race-${order}`);
+      const pending = await s.change(opened.id, 60);
+      const executionId = pending.prediction.execution!.id;
+      const execution = await prisma.execution.findUniqueOrThrow({ where: { id: executionId } });
+      const deps = s.makeDeps();
+      // The execution layer has finished (intent terminal) but the adjustment history is still pending.
+      await prisma.executionIntent.update({
+        where: { executionId },
+        data: { status: "RECONCILED", executedSharesMicros: execution.sizeSharesMicros, executedNotionalMicros: execution.sizeSharesMicros / 2n, avgPriceBps: 5000 },
+      });
+      const realFill = {
+        venueTradeId: `real-${order}`,
+        priceBps: 4900,
+        sharesMicros: execution.sizeSharesMicros,
+        notionalMicros: (execution.sizeSharesMicros * 4900n) / 10_000n,
+        feeMicros: 0n,
+        isSimulated: false,
+        rawJson: null,
+      };
+      const applyReal = () =>
+        deps.store.applyExecutionResult(executionId, {
+          status: "filled",
+          polymarketOrderId: `race-${order}`,
+          responseJson: "{}",
+          errorMessage: null,
+          submittedAt: new Date(),
+          fills: [realFill],
+        });
+      if (order === "venue-first") {
+        // Real fill recorded (settling history), then recovery sees a stale lock snapshot.
+        await applyReal();
+        await prisma.confidenceHistory.updateMany({ where: { executionId }, data: { status: "pending" } });
+        await prisma.position.update({ where: { predictionId: opened.id }, data: { status: "adjusting" } });
+        await recoverStuckAdjustments(deps, -1_000);
+      } else {
+        await recoverStuckAdjustments(deps, -1_000);
+        await applyReal();
+      }
+      const after = await assertLedger(opened.id);
+      const fills = after.position!.executions.find((row) => row.id === executionId)!.fills;
+      expect(fills).toHaveLength(1);
+      expect(after.position!.status).toBe("filled");
+    }
   });
 });

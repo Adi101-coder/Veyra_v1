@@ -131,7 +131,8 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 - **Idempotency key reuse with a different confidence silently replayed:** now returns 409 `IDEMPOTENCY_KEY_REUSED`. Same-key races replay the winner.
 - **Concurrent fill writers (worker + user sync)** failed on the unique fill constraint. Both fill-writing transactions now retry on unique/busy conflicts and re-read the recorded fills.
 - **Crashed requests left positions `adjusting` forever:** the worker's `recover` step releases locks with no history. It fails adjustments that were never queued (nothing sent), leaves in-flight intents to execution recovery/reconcile, and settles terminal intents from their recorded executed totals.
-- **Scoring could use a confidence set after resolution:** reputation now scores the confidence from the latest filled/no-op change requested at or before the resolution cutoff.
+- **Scoring could use a confidence set after resolution:** reputation now scores the confidence from the latest filled/no-op change requested at or before the resolution cutoff. This is covered by a unit test; the integration scenario cannot reach it because post-resolution changes are already rejected.
+- **Recovery could double-count shares:** a recovered aggregate fill (`intent:<id>`) could not dedupe against the venue's real trade ids if recovery raced a worker or user sync. The two are now mutually exclusive per execution inside the transaction; the test covers both orders.
 
 **Tests:** Prisma suite with an invariant check after every scenario (position shares = BUY fills − SELL fills; confidence = last settled value). Scenarios covered:
 - rapid 80→60→40 changes
@@ -143,7 +144,8 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 - adjusting while the opening order is still pending
 - the market resolving while an adjustment rests (venue cancel → failed, scored at 80%, later changes 409)
 - crash after taking the lock, and crash after writing history but before queueing
+- recovery racing a real reconcile, in both orders
 
-Mutation-checked: letting partial fills move confidence, and a non-exclusive lock, are each caught. Five consecutive runs had no flakes. Full suite: 169 passed, 2 opt-in live skipped.
+The ledger assertion is unclamped (SELL fills exceeding BUY fills fail). Mutation-checked: letting partial fills move confidence, a non-exclusive lock, and removing the recovered/venue fill exclusion are each caught. Five consecutive runs had no flakes. Full suite: 170 passed, 2 opt-in live skipped.
 
 **Remaining:** a pre-cutoff adjustment still pending when the reputation job runs is scored at the prior confidence (scores are not recomputed). Adjustments are one at a time per position by design (concurrent requests get 409 `CONCURRENT_UPDATE`; the UI shows the message).

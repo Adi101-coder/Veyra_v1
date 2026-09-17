@@ -32,7 +32,7 @@ import {
   type PredictionBundle,
   type ReconcileAdjustmentInput,
 } from "@/server/betting/repository";
-import { derivePositionStatus } from "@/server/betting/ledger";
+import { derivePositionStatus, RECOVERED_FILL_PREFIX } from "@/server/betting/ledger";
 import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server/betting/mapper";
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
@@ -638,7 +638,7 @@ export async function recoverStuckAdjustments(deps: BettingDeps = createDefaultD
         executed > 0n
           ? [
               {
-                venueTradeId: `intent:${intent.id}`,
+                venueTradeId: `${RECOVERED_FILL_PREFIX}${intent.id}`,
                 priceBps: intent.avgPriceBps,
                 sharesMicros: executed,
                 notionalMicros: intent.executedNotionalMicros,

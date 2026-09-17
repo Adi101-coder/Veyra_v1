@@ -14,8 +14,19 @@ export function isPendingExecutionStatus(status: string) {
   return PENDING_EXECUTION.has(status);
 }
 
-/** Drops fills already recorded for this execution (same venue trade id). */
+/** Prefix of an aggregate fill synthesized by crash recovery from an intent's executed totals. */
+export const RECOVERED_FILL_PREFIX = "intent:";
+
+/**
+ * Drops fills already recorded for this execution (same venue trade id). Venue
+ * fills and a recovered aggregate describe the same shares, so they are mutually
+ * exclusive per execution: whichever is recorded first wins, the other applies nothing.
+ */
 export function unseenFills(existing: { venueTradeId: string | null }[], incoming: StoredFill[]) {
+  const existingRecovered = existing.some((fill) => fill.venueTradeId?.startsWith(RECOVERED_FILL_PREFIX));
+  const incomingRecovered = incoming.some((fill) => fill.venueTradeId.startsWith(RECOVERED_FILL_PREFIX));
+  if (existingRecovered) return [];
+  if (incomingRecovered && existing.length > 0) return [];
   const seen = new Set(existing.map((fill) => fill.venueTradeId).filter(Boolean));
   const fresh: StoredFill[] = [];
   for (const fill of incoming) {
