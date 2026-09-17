@@ -39,6 +39,12 @@ export function memoryStore(): BettingStore {
         updatedAt: new Date(),
       } as PredictionBundle["market"]);
     },
+    async countPendingExecutions(marketId, createdAtOrBefore) {
+      return predictions
+        .filter((row) => row.marketId === marketId)
+        .flatMap((row) => row.position?.executions ?? [])
+        .filter((row) => row.createdAt <= createdAtOrBefore && ["created", "submitted", "open", "unknown"].includes(row.status)).length;
+    },
     async listForScoring(marketId, createdAtOrBefore) {
       return predictions.filter((row) => row.marketId === marketId && row.createdAt <= createdAtOrBefore);
     },

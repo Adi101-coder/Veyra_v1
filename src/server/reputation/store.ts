@@ -142,10 +142,21 @@ export function memoryReputationStore(): ReputationStore {
       return job;
     },
     async claimJob() {
-      const job = jobs.find((item) => item.status === "QUEUED");
+      const now = Date.now();
+      const job = jobs.find(
+        (item) => item.status === "QUEUED" && (!("availableAt" in item) || !item.availableAt || (item.availableAt as Date).getTime() <= now),
+      );
       if (!job) return null;
       job.status = "PROCESSING";
       return job;
+    },
+    async requeueJob(id, input) {
+      const job = jobs.find((item) => item.id === id) as (ReputationJobRow & { availableAt?: Date }) | undefined;
+      if (!job) return;
+      job.status = "QUEUED";
+      job.errorMessage = input.errorMessage;
+      job.availableAt = input.availableAt;
+      if (input.countAttempt) job.attempts = (job.attempts ?? 0) + 1;
     },
     async finishJob(id, status, errorMessage) {
       const job = jobs.find((item) => item.id === id);
@@ -379,7 +390,7 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
           ? existing.status === "FAILED"
             ? await tx.reputationJob.update({
                 where: { id: existing.id },
-                data: { status: "QUEUED", errorMessage: null, claimedAt: null },
+                data: { status: "QUEUED", errorMessage: null, claimedAt: null, attempts: 0, availableAt: null },
               })
             : existing
           : await tx.reputationJob.create({ data: { marketId, resolvedOutcome, status: "QUEUED" } });
@@ -405,7 +416,10 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
       for (let attempt = 0; attempt < 10; attempt += 1) {
         const candidate = await prisma.reputationJob.findFirst({
           where: {
-            OR: [{ status: "QUEUED" }, { status: "PROCESSING", claimedAt: { lt: staleBefore } }],
+            OR: [
+              { status: "QUEUED", OR: [{ availableAt: null }, { availableAt: { lte: new Date() } }] },
+              { status: "PROCESSING", claimedAt: { lt: staleBefore } },
+            ],
           },
           orderBy: { createdAt: "asc" },
         });
@@ -421,12 +435,25 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
           marketId: candidate.marketId,
           resolvedOutcome: candidate.resolvedOutcome as ReputationJobRow["resolvedOutcome"],
           status: "PROCESSING" as const,
+          attempts: candidate.attempts,
           errorMessage: null,
           createdAt: candidate.createdAt,
           processedAt: null,
         };
       }
       return null;
+    },
+    async requeueJob(id, input) {
+      await prisma.reputationJob.update({
+        where: { id },
+        data: {
+          status: "QUEUED",
+          errorMessage: input.errorMessage,
+          availableAt: input.availableAt,
+          claimedAt: null,
+          ...(input.countAttempt ? { attempts: { increment: 1 } } : {}),
+        },
+      });
     },
     async finishJob(id, status, errorMessage) {
       await prisma.reputationJob.update({

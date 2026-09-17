@@ -149,3 +149,33 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 The ledger assertion is unclamped (SELL fills exceeding BUY fills fail). Mutation-checked: letting partial fills move confidence, a non-exclusive lock, and removing the recovered/venue fill exclusion are each caught. Five consecutive runs had no flakes. Full suite: 170 passed, 2 opt-in live skipped.
 
 **Remaining:** a pre-cutoff adjustment still pending when the reputation job runs is scored at the prior confidence (scores are not recomputed). Adjustments are one at a time per position by design (concurrent requests get 409 `CONCURRENT_UPDATE`; the UI shows the message).
+
+## Prediction reputation hardening (follow-up, 2026-09-17)
+
+**Verified correct (now covered by tests)**
+- Brier for YES and NO picks: 90% correct 0.01, 90% incorrect 0.81, NO@60% on a YES market 0.36, NO@60% on a NO market 0.16. The wallet mean, accuracy, average confidence, calibration bins and ECE are exact.
+- Clean empty state for zero-fill and never-trading wallets: counts are 0, metrics `null`, bins and categories empty.
+- Scores and all aggregate increments are written in one transaction with a unique `predictionId`.
+
+**Fixed**
+- **PnL ignored trading fees:** cost is now filled notional + fees; sell proceeds are notional − fees.
+- **Payout used the live position:** held shares, cost and proceeds are now derived only from fills on executions created at or before the resolution cutoff. Later executions, late bets and late confidence rows cannot change a score.
+- **Scoring ran over unreconciled orders:** a pre-cutoff opening order still resting made its prediction look zero-fill (skipped forever), or scored with incomplete fills. Jobs now defer, via `availableAt`, while pre-cutoff executions are pending, bounded to 24h. After the bound, still-unfilled orders are not scored.
+- **Failed jobs were never retried:** resolution sync ignores resolved markets. Jobs now retry with exponential backoff (`attempts`, migration `…_reputation_job_retry`), become `FAILED` after the max attempts, and a re-enqueue resets them.
+- **Late-filling predictions never counted as opened:** `recordOpen` now runs whenever recorded fills give a position shares (placement, reconcile, flush, sync). It is idempotent per prediction.
+
+**Tests:** Prisma reputation suite. Every scenario recomputes wallet aggregates from `PredictionScore` rows. Scenarios:
+- exact Brier/accuracy/calibration for YES and NO
+- zero-fill and empty states
+- partial fill + sell + fees → exact PnL
+- cutoff tampering: a post-cutoff history row, confidence overwrite, a post-cutoff execution and a late bet are all ignored; later changes get 409
+- deferral until a resting order reconciles, then scoring the real fills
+- the defer bound
+- INVALID and unresolved markets
+- concurrent enqueue and three concurrent workers plus a forced second pass (one score each)
+- a mid-job database failure followed by a crashed claim (resumes, no double count)
+- max attempts then a clean re-enqueue
+
+Mutation-checked: ignoring fees, dropping the execution cutoff, disabling deferral and removing late-open recording are each caught. Four consecutive runs had no flakes. Full suite: 180 passed, 2 opt-in live skipped.
+
+**Remaining:** `totalPredictions` counts opened (filled) predictions, including those on markets later voided or still open. Scoring metrics (accuracy, Brier, calibration, ROI) use only resolved, scored predictions. Scores are final once written; a disputed Polymarket re-resolution is not re-scored.

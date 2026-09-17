@@ -16,6 +16,7 @@ export class ReputationEngine {
   constructor(
     private readonly store: ReputationStore,
     private readonly source: ForecastSource,
+    private readonly options: { maxDeferMs?: number; retryDelayMs?: number; maxAttempts?: number; now?: () => number } = {},
   ) {}
 
   async recordOpen(input: { predictionId: string; walletAddress: string; category: string }) {
@@ -37,14 +38,41 @@ export class ReputationEngine {
       // claimJob skips rows another worker won and reclaims stale PROCESSING rows.
       const job = await this.store.claimJob();
       if (!job) break;
+      const now = this.options.now?.() ?? Date.now();
+      const retryDelay = this.options.retryDelayMs ?? 60_000;
       try {
+        if (job.resolvedOutcome !== "INVALID") {
+          // Pre-cutoff orders whose fills are not reconciled yet would be scored with
+          // incomplete cost/shares (or skipped entirely). Wait for them, bounded.
+          const pending = (await this.source.pendingExecutions?.(job.marketId, job.createdAt)) ?? 0;
+          const maxDefer = this.options.maxDeferMs ?? 24 * 60 * 60 * 1000;
+          if (pending > 0 && now - job.createdAt.getTime() < maxDefer) {
+            await this.store.requeueJob(job.id, {
+              errorMessage: `Waiting for ${pending} execution(s) to reconcile before scoring.`,
+              availableAt: new Date(now + retryDelay),
+              countAttempt: false,
+            });
+            processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, deferred: true });
+            continue;
+          }
+        }
         const count =
           job.resolvedOutcome === "INVALID" ? 0 : await this.resolveMarket(job.marketId, job.resolvedOutcome, job.createdAt);
         await this.store.finishJob(job.id, "DONE");
         processed.push({ jobId: job.id, marketId: job.marketId, scored: count });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Reputation job failed";
-        await this.store.finishJob(job.id, "FAILED", message);
+        const attempts = (job.attempts ?? 0) + 1;
+        if (attempts >= (this.options.maxAttempts ?? 5)) {
+          await this.store.finishJob(job.id, "FAILED", message);
+        } else {
+          // Scores already written are idempotent, so a retry only fills the gaps.
+          await this.store.requeueJob(job.id, {
+            errorMessage: message,
+            availableAt: new Date(now + retryDelay * 2 ** (attempts - 1)),
+            countAttempt: true,
+          });
+        }
         processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, error: message });
       }
     }

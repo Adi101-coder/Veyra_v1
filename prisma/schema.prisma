@@ -355,6 +355,8 @@ model ReputationJob {
   errorMessage     String?
   createdAt        DateTime  @default(now())
   claimedAt        DateTime?
+  attempts         Int       @default(0)
+  availableAt      DateTime?
   processedAt      DateTime?
 
   @@index([status, createdAt])

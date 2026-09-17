@@ -83,7 +83,7 @@ async function recordAllocation(
   batch: ProcessResult["batch"] | null | undefined,
 ) {
   const venueOrderId = batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null;
-  return deps.store.applyExecutionResult(allocation.executionId, {
+  const bundle = await deps.store.applyExecutionResult(allocation.executionId, {
     status: executionStatusFor(allocation),
     polymarketOrderId: venueOrderId,
     responseJson: jsonSafe({ batchId: batch?.id ?? null, batchStatus: batch?.status ?? null, metrics: batch?.metrics }),
@@ -91,6 +91,12 @@ async function recordAllocation(
     submittedAt: new Date(),
     fills: fillsFromAllocation(allocation),
   });
+  // Count the prediction as opened once it holds real shares, including opening
+  // orders that only fill later through reconciliation. Idempotent per prediction.
+  await recordOpenIfFilled(deps, bundle).catch((error) => {
+    console.error("[reputation] recordOpen failed", { predictionId: bundle.id, error: String(error) });
+  });
+  return bundle;
 }
 
 /** Applies allocations for intents of other predictions that shared this batch. */
@@ -170,8 +176,11 @@ export function createPrismaDeps(
   };
 }
 
-function bettingForecastSource(store: BettingStore): ForecastSource {
+export function bettingForecastSource(store: BettingStore): ForecastSource {
   return {
+    async pendingExecutions(marketId, resolvedAt) {
+      return store.countPendingExecutions(marketId, resolvedAt);
+    },
     async listByMarket(marketId, resolvedAt) {
       const rows = await store.listForScoring(marketId, resolvedAt);
       return rows.map((row) => bundleToForecast(row, resolvedAt)).filter((row): row is Forecast => row !== null);
@@ -207,13 +216,25 @@ function bundleToForecast(
 ): Forecast | null {
   let costMicros = 0n;
   let proceedsMicros = 0n;
+  let heldShares = 0n;
+  let boughtShares = 0n;
   for (const execution of bundle.position?.executions ?? []) {
+    // Only orders placed at or before the cutoff can describe the resolved position.
+    if (execution.createdAt > cutoff) continue;
     for (const fill of execution.fills) {
-      if (execution.side === "SELL") proceedsMicros += fill.notionalMicros;
-      else costMicros += fill.notionalMicros;
+      if (execution.side === "SELL") {
+        proceedsMicros += fill.notionalMicros - fill.feeMicros;
+        heldShares -= fill.sharesMicros;
+      } else {
+        costMicros += fill.notionalMicros + fill.feeMicros;
+        heldShares += fill.sharesMicros;
+        boughtShares += fill.sharesMicros;
+      }
     }
   }
-  if (costMicros <= 0n) return null;
+  // Zero-fill predictions (failed, rejected, never reconciled) are not scored.
+  if (boughtShares <= 0n) return null;
+  if (proceedsMicros < 0n) proceedsMicros = 0n;
   return {
     predictionId: bundle.id,
     walletAddress: bundle.walletAddress,
@@ -222,7 +243,8 @@ function bundleToForecast(
     predictedOutcome: bundle.outcome as Outcome,
     confidenceBps: confidenceAtCutoff(bundle, cutoff),
     notionalMicros: costMicros,
-    payoutMicros: bundle.position?.sharesMicros ?? 0n,
+    // Shares held from pre-cutoff fills (each pays $1 if correct), not the live position.
+    payoutMicros: heldShares > 0n ? heldShares : 0n,
     proceedsMicros,
   };
 }
@@ -494,9 +516,6 @@ export async function placePrediction(
       return toPredictionDTO(updated);
     }
     const updated = await recordAllocation(deps, allocation, processed.batch);
-    await recordOpenIfFilled(deps, updated).catch((error) => {
-      console.error("[reputation] recordOpen failed", { predictionId: updated.id, error: String(error) });
-    });
     return toPredictionDTO(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Execution failed";

@@ -164,6 +164,8 @@ export type BettingStore = {
   findByIdempotency(walletAddress: string, key: string): Promise<PredictionBundle | null>;
   getPrediction(id: string): Promise<PredictionBundle | null>;
   findByExecutionId(executionId: string): Promise<PredictionBundle | null>;
+  /** Executions on this market's pre-cutoff predictions whose venue outcome is not final. */
+  countPendingExecutions(marketId: string, createdAtOrBefore: Date): Promise<number>;
   /** All predictions for a market created at or before the cutoff (no page cap). */
   listForScoring(
     marketId: string,
@@ -258,6 +260,16 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
       return prisma.prediction.findFirst({
         where: { walletAddress, idempotencyKey: key },
         include: bundleInclude,
+      });
+    },
+
+    countPendingExecutions(marketId, createdAtOrBefore) {
+      return prisma.execution.count({
+        where: {
+          createdAt: { lte: createdAtOrBefore },
+          status: { in: ["created", "submitted", "open", "unknown"] },
+          position: { marketId },
+        },
       });
     },
 

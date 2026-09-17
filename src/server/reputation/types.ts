@@ -20,6 +20,8 @@ export type Forecast = {
 };
 
 export type ForecastSource = {
+  /** Executions created at or before the cutoff whose venue outcome is not final yet. */
+  pendingExecutions?(marketId: string, resolvedAt: Date): Promise<number>;
   /** Every prediction with at least one fill, created at or before `resolvedAt`. */
   listByMarket(marketId: string, resolvedAt: Date): Promise<Forecast[]>;
 };
@@ -68,6 +70,7 @@ export type ReputationJobRow = {
   marketId: string;
   resolvedOutcome: ResolutionOutcome;
   status: "QUEUED" | "PROCESSING" | "DONE" | "FAILED";
+  attempts?: number;
   errorMessage: string | null;
   createdAt: Date;
   processedAt: Date | null;
@@ -83,5 +86,7 @@ export type ReputationStore = {
   enqueueJob(marketId: string, resolvedOutcome: ResolutionOutcome): Promise<ReputationJobRow>;
   claimJob(): Promise<ReputationJobRow | null>;
   finishJob(id: string, status: "DONE" | "FAILED", errorMessage?: string): Promise<void>;
+  /** Puts a claimed job back in the queue, not claimable before `availableAt`. */
+  requeueJob(id: string, input: { errorMessage: string; availableAt: Date; countAttempt: boolean }): Promise<void>;
   markMarketResolved(marketId: string, outcome: ResolutionOutcome, resolvedAt: Date): Promise<void>;
 };
