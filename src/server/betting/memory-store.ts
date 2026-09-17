@@ -5,6 +5,7 @@ import type {
   PredictionBundle,
   ReconcileAdjustmentInput,
 } from "@/server/betting/repository";
+import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 
 export function memoryStore(): BettingStore {
   const markets = new Map<string, PredictionBundle["market"]>();
@@ -16,6 +17,20 @@ export function memoryStore(): BettingStore {
   const findBundleByPosition = (positionId: string) =>
     predictions.find((row) => row.position?.id === positionId);
 
+  const settleHistoryForExecution = (bundle: PredictionBundle, executionId: string, status: string) => {
+    const settled = settledHistoryStatus(status);
+    if (!settled) return;
+    for (const row of history) {
+      if (row.executionId !== executionId || row.status !== "pending") continue;
+      row.status = settled;
+      row.reconciledAt = new Date();
+      if (settled === "filled") {
+        bundle.confidenceBps = row.newConfidenceBps;
+        bundle.lockVersion += 1;
+      }
+    }
+  };
+
   return {
     async upsertMarket(market) {
       markets.set(market.id, {
@@ -23,6 +38,18 @@ export function memoryStore(): BettingStore {
         createdAt: new Date(),
         updatedAt: new Date(),
       } as PredictionBundle["market"]);
+    },
+    async findByExecutionId(executionId) {
+      return (
+        predictions.find((row) => row.position?.executions.some((execution) => execution.id === executionId)) ??
+        null
+      );
+    },
+    async getMarket(id) {
+      const market = markets.get(id);
+      return market
+        ? { id: market.id, status: market.status, resolvedAt: market.resolvedAt ?? null, resolvedOutcome: market.resolvedOutcome ?? null }
+        : null;
     },
     async findByIdempotency(walletAddress, key) {
       return (
@@ -121,26 +148,36 @@ export function memoryStore(): BettingStore {
       if (!bundle?.position) throw new Error("missing execution");
       const execution = bundle.position.executions.find((item) => item.id === executionId);
       if (!execution) throw new Error("missing execution");
+      const fresh = unseenFills(execution.fills, patch.fills);
       execution.status = patch.status;
-      execution.polymarketOrderId = patch.polymarketOrderId;
+      execution.polymarketOrderId = patch.polymarketOrderId ?? execution.polymarketOrderId;
       execution.responseJson = patch.responseJson;
       execution.errorMessage = patch.errorMessage;
-      execution.submittedAt = patch.submittedAt;
-      execution.fills = patch.fills.map((fill, index) => ({
-        id: `fill_${index}`,
-        executionId,
-        venueTradeId: fill.venueTradeId,
-        priceBps: fill.priceBps,
-        sharesMicros: fill.sharesMicros,
-        notionalMicros: fill.notionalMicros,
-        feeMicros: fill.feeMicros,
-        isSimulated: fill.isSimulated,
-        filledAt: new Date(),
-        rawJson: fill.rawJson,
-      }));
-      bundle.position.status = patch.positionStatus;
+      execution.submittedAt = execution.submittedAt ?? patch.submittedAt;
+      execution.fills.push(
+        ...fresh.map((fill, index) => ({
+          id: `fill_${executionId}_${execution.fills.length + index}`,
+          executionId,
+          venueTradeId: fill.venueTradeId,
+          priceBps: fill.priceBps,
+          sharesMicros: fill.sharesMicros,
+          notionalMicros: fill.notionalMicros,
+          feeMicros: fill.feeMicros,
+          isSimulated: fill.isSimulated,
+          filledAt: new Date(),
+          rawJson: fill.rawJson,
+        })),
+      );
+      const held = applyFillsToHeld(bundle.position, execution.side, fresh);
+      bundle.position.sharesMicros = held.sharesMicros;
+      bundle.position.notionalMicros = held.notionalMicros;
+      bundle.position.avgPriceBps = held.avgPriceBps;
+      bundle.position.payoutMicros = held.sharesMicros;
+      bundle.position.status = derivePositionStatus(bundle.position.executions, held.sharesMicros);
+      settleHistoryForExecution(bundle, executionId, execution.status);
       return bundle;
     },
+
     async claimAdjustmentLock(positionId) {
       const bundle = findBundleByPosition(positionId);
       if (!bundle?.position) return false;

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type {
   ExecutionBatchRow,
@@ -66,6 +67,12 @@ export type ExecutionStore = {
   ): Promise<ExecutionIntentRow>;
   getBatch(id: string): Promise<ExecutionBatchRow | null>;
   listQueuedTokenIds(): Promise<string[]>;
+  listBatchIdsByStatus(status: ExecutionBatchStatus): Promise<string[]>;
+  cancelQueued(executionId: string): Promise<boolean>;
+  updateSlice(
+    id: string,
+    patch: { status: string; responseJson: string | null; errorMessage: string | null },
+  ): Promise<void>;
 };
 
 function emptyMetrics(): ExecutionMetrics {
@@ -253,6 +260,22 @@ export function memoryExecutionStore(): ExecutionStore {
     async listQueuedTokenIds() {
       return [...new Set(intents.filter((row) => row.status === "QUEUED").map((row) => row.tokenId))];
     },
+    async cancelQueued(executionId) {
+      const row = intents.find((item) => item.executionId === executionId && item.status === "QUEUED");
+      if (!row) return false;
+      row.status = "FAILED";
+      row.errorCode = "CANCELLED";
+      return true;
+    },
+    async listBatchIdsByStatus(status) {
+      return batches.filter((row) => row.status === status).map((row) => row.id);
+    },
+    async updateSlice(id, patch) {
+      for (const batch of batches) {
+        const slice = batch.slices.find((row) => row.id === id);
+        if (slice) Object.assign(slice, patch);
+      }
+    },
   };
 }
 
@@ -402,16 +425,17 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
       return toIntent(row);
     },
     async claimQueued(tokenId) {
-      const queued = await prisma.executionIntent.findMany({
+      // One UPDATE statement flips QUEUED -> PROCESSING and stamps a claim token, so
+      // concurrent workers (even in different processes) can never claim the same row.
+      const claimToken = randomUUID();
+      const { count } = await prisma.executionIntent.updateMany({
         where: { tokenId, status: "QUEUED" },
+        data: { status: "PROCESSING", claimToken },
       });
-      if (!queued.length) return [];
-      await prisma.executionIntent.updateMany({
-        where: { id: { in: queued.map((row) => row.id) }, status: "QUEUED" },
-        data: { status: "PROCESSING" },
-      });
+      if (!count) return [];
       const claimed = await prisma.executionIntent.findMany({
-        where: { id: { in: queued.map((row) => row.id) }, status: "PROCESSING" },
+        where: { claimToken, status: "PROCESSING" },
+        orderBy: { createdAt: "asc" },
       });
       return claimed.map(toIntent);
     },
@@ -546,6 +570,25 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
         select: { tokenId: true },
       });
       return [...new Set(rows.map((row) => row.tokenId))];
+    },
+    async cancelQueued(executionId) {
+      const { count } = await prisma.executionIntent.updateMany({
+        where: { executionId, status: "QUEUED" },
+        data: { status: "FAILED", errorCode: "CANCELLED" },
+      });
+      return count > 0;
+    },
+    async listBatchIdsByStatus(status) {
+      const rows = await prisma.executionBatch.findMany({
+        where: { status },
+        select: { id: true },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      });
+      return rows.map((row) => row.id);
+    },
+    async updateSlice(id, patch) {
+      await prisma.executionSlice.update({ where: { id }, data: patch });
     },
   };
 }

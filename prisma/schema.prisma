@@ -222,6 +222,7 @@ model ExecutionIntent {
   bookHash               String?
   idempotencyKey         String?         @unique
   status                 String
+  claimToken             String?
   executedSharesMicros   BigInt          @default(0)
   executedNotionalMicros BigInt          @default(0)
   avgPriceBps            Int             @default(0)
@@ -233,6 +234,7 @@ model ExecutionIntent {
 
   @@index([tokenId, status])
   @@index([positionId])
+  @@index([claimToken])
   @@map("execution_intents")
 }
 

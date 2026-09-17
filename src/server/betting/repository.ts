@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Outcome } from "@/lib/betting";
+import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 
 export type StoredFill = {
   venueTradeId: string | null;
@@ -159,8 +160,10 @@ export type ReconcileAdjustmentInput = {
 
 export type BettingStore = {
   upsertMarket(market: MarketUpsert): Promise<void>;
+  getMarket(id: string): Promise<{ id: string; status: string; resolvedAt: Date | null; resolvedOutcome: string | null } | null>;
   findByIdempotency(walletAddress: string, key: string): Promise<PredictionBundle | null>;
   getPrediction(id: string): Promise<PredictionBundle | null>;
+  findByExecutionId(executionId: string): Promise<PredictionBundle | null>;
   listPredictions(filter: {
     marketId?: string;
     walletAddress?: string;
@@ -175,7 +178,6 @@ export type BettingStore = {
       responseJson: string;
       errorMessage: string | null;
       submittedAt: Date;
-      positionStatus: string;
       fills: StoredFill[];
     },
   ): Promise<PredictionBundle>;
@@ -212,7 +214,6 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           title: market.title,
           category: market.category,
           tag: market.tag,
-          status: market.status,
           source: market.source,
           conditionId: market.conditionId,
           clobTokenYes: market.clobTokenYes,
@@ -222,14 +223,32 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           liquidityUsd: market.liquidityUsd,
           resolvesAt: market.resolvesAt,
           imageUrl: market.imageUrl,
-          accepting: market.accepting,
         },
+      });
+      // A resolved market stays resolved: catalog refreshes must not reopen it.
+      await prisma.market.updateMany({
+        where: { id: market.id, resolvedAt: null },
+        data: { status: market.status, accepting: market.accepting },
+      });
+    },
+
+    getMarket(id) {
+      return prisma.market.findUnique({
+        where: { id },
+        select: { id: true, status: true, resolvedAt: true, resolvedOutcome: true },
       });
     },
 
     findByIdempotency(walletAddress, key) {
       return prisma.prediction.findFirst({
         where: { walletAddress, idempotencyKey: key },
+        include: bundleInclude,
+      });
+    },
+
+    findByExecutionId(executionId) {
+      return prisma.prediction.findFirst({
+        where: { position: { executions: { some: { id: executionId } } } },
         include: bundleInclude,
       });
     },
@@ -306,19 +325,24 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
 
     async applyExecutionResult(executionId, patch) {
       await prisma.$transaction(async (tx) => {
-        const execution = await tx.execution.update({
+        const current = await tx.execution.findUniqueOrThrow({
+          where: { id: executionId },
+          include: { fills: { select: { venueTradeId: true } } },
+        });
+        const fresh = unseenFills(current.fills, patch.fills);
+        await tx.execution.update({
           where: { id: executionId },
           data: {
             status: patch.status,
-            polymarketOrderId: patch.polymarketOrderId,
+            polymarketOrderId: patch.polymarketOrderId ?? current.polymarketOrderId,
             responseJson: patch.responseJson,
             errorMessage: patch.errorMessage,
-            submittedAt: patch.submittedAt,
+            submittedAt: current.submittedAt ?? patch.submittedAt,
           },
         });
-        if (patch.fills.length) {
+        if (fresh.length) {
           await tx.fill.createMany({
-            data: patch.fills.map((fill) => ({
+            data: fresh.map((fill) => ({
               executionId,
               venueTradeId: fill.venueTradeId,
               priceBps: fill.priceBps,
@@ -330,10 +354,39 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
             })),
           });
         }
-        await tx.position.update({
-          where: { id: execution.positionId },
-          data: { status: patch.positionStatus },
+        const position = await tx.position.findUniqueOrThrow({
+          where: { id: current.positionId },
+          include: { executions: { select: { id: true, status: true, createdAt: true } } },
         });
+        const held = applyFillsToHeld(position, current.side, fresh);
+        await tx.position.update({
+          where: { id: position.id },
+          data: {
+            sharesMicros: held.sharesMicros,
+            notionalMicros: held.notionalMicros,
+            avgPriceBps: held.avgPriceBps,
+            payoutMicros: held.sharesMicros,
+            status: derivePositionStatus(position.executions, held.sharesMicros),
+          },
+        });
+        const settled = settledHistoryStatus(patch.status);
+        if (settled) {
+          const pendingHistory = await tx.confidenceHistory.findMany({
+            where: { executionId, status: "pending" },
+          });
+          for (const row of pendingHistory) {
+            await tx.confidenceHistory.update({
+              where: { id: row.id },
+              data: { status: settled, reconciledAt: new Date() },
+            });
+            if (settled === "filled") {
+              await tx.prediction.update({
+                where: { id: row.predictionId },
+                data: { confidenceBps: row.newConfidenceBps, lockVersion: { increment: 1 } },
+              });
+            }
+          }
+        }
       });
       const execution = await prisma.execution.findUniqueOrThrow({
         where: { id: executionId },

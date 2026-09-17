@@ -24,10 +24,14 @@ import type {
   IntentAllocation,
   ProcessResult,
 } from "@/server/execution/types";
-import type { PolymarketClient, VenueFill } from "@/server/polymarket/client";
+import type { PolymarketClient, VenueFill, VenueOrderResult } from "@/server/polymarket/client";
 
 function jsonSafe(value: unknown) {
   return JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? item.toString() : item));
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export class ExecutionEngine {
@@ -51,9 +55,116 @@ export class ExecutionEngine {
 
   async enqueueAndProcess(input: ExecutionIntentInput) {
     const intent = await this.enqueue(input);
-    const processed = await this.processToken(intent.tokenId);
-    const allocation = processed?.allocations.find((row) => row.intentId === intent.id);
-    return { intent, batch: processed?.batch ?? null, allocation, allocations: processed?.allocations ?? [] };
+    // A run already in flight for this token may have claimed its intents before
+    // ours was queued. Wait for it and process again until our intent is handled.
+    for (let round = 0; round < 3; round += 1) {
+      const processed = await this.processToken(intent.tokenId);
+      const allocation = processed?.allocations.find((row) => row.intentId === intent.id);
+      if (allocation) {
+        return { intent, batch: processed?.batch ?? null, allocation, allocations: processed?.allocations ?? [] };
+      }
+      const current = await this.store.findIntentByExecutionId(intent.executionId);
+      if (current && current.status !== "QUEUED" && current.status !== "PROCESSING") {
+        const batch = current.batchId ? await this.store.getBatch(current.batchId) : null;
+        return { intent: current, batch, allocation: undefined, allocations: [] };
+      }
+    }
+    return { intent, batch: null, allocation: undefined, allocations: [] };
+  }
+
+  /** Marks a still-queued intent failed so a worker can never pick it up later. */
+  async cancelQueued(executionId: string) {
+    return this.store.cancelQueued(executionId);
+  }
+
+  /** Re-reads every SUBMITTED batch from the venue and allocates newly final fills. */
+  async reconcileSubmitted() {
+    const ids = await this.store.listBatchIdsByStatus("SUBMITTED");
+    const results: ProcessResult[] = [];
+    for (const id of ids) {
+      const result = await this.reconcileBatch(id);
+      if (result) results.push(result);
+    }
+    return results;
+  }
+
+  async reconcileBatch(batchId: string): Promise<ProcessResult | null> {
+    const batch = await this.store.getBatch(batchId);
+    if (!batch || batch.status !== "SUBMITTED") return null;
+    const unresolved = batch.slices.filter((slice) => slice.status === "open" || slice.status === "unknown");
+    const newFills: VenueFill[] = [];
+    let stillOpen = false;
+    for (const slice of unresolved) {
+      if (!slice.polymarketOrderId) {
+        // Outcome unknown and no order id to query: needs operator review.
+        stillOpen = true;
+        continue;
+      }
+      const order = await this.client.getOrder(slice.polymarketOrderId);
+      if (!order || order.status === "open" || order.status === "unknown") {
+        stillOpen = true;
+        continue;
+      }
+      // Fills are only taken once the order is terminal, so a slice's fills are
+      // allocated exactly once (the slice leaves the unresolved set here).
+      newFills.push(
+        ...order.fills.map((fill) => ({
+          ...fill,
+          feeMicros: fill.feeMicros || feeOnNotional(fill.notionalMicros, this.config.takerFeeBps),
+        })),
+      );
+      await this.store.updateSlice(slice.id, {
+        status: order.status,
+        responseJson: jsonSafe(order.response ?? {}),
+        errorMessage: order.errorMessage,
+      });
+    }
+
+    const pending = batch.intents.filter((row) => row.status === "SUBMITTED");
+    const residual = pending.map((row) => ({ row, remaining: row.sharesMicros - row.executedSharesMicros }));
+    const delta = allocateFills(pending, [], residual, newFills, this.client.mode === "paper");
+    const allocations: IntentAllocation[] = [];
+    for (const allocation of delta) {
+      const intent = pending.find((row) => row.id === allocation.intentId)!;
+      const executedShares = intent.executedSharesMicros + allocation.executedSharesMicros;
+      const executedNotional = intent.executedNotionalMicros + allocation.executedNotionalMicros;
+      const status: IntentAllocation["status"] = stillOpen
+        ? executedShares >= intent.sharesMicros
+          ? "filled"
+          : "pending"
+        : executedShares >= intent.sharesMicros
+          ? "filled"
+          : executedShares > 0n
+            ? "partial"
+            : "failed";
+      await this.store.updateIntent(intent.id, {
+        status: status === "filled" ? "RECONCILED" : status === "pending" ? "SUBMITTED" : status === "partial" ? "PARTIAL" : "FAILED",
+        executedSharesMicros: executedShares,
+        executedNotionalMicros: executedNotional,
+        avgPriceBps: executedShares > 0n ? Number((executedNotional * 10_000n) / executedShares) : 0,
+        feeMicros: intent.feeMicros + allocation.feeMicros,
+        errorCode: status === "failed" ? "UNFILLED" : null,
+        errorMessage: status === "failed" ? "Polymarket order closed without fills." : null,
+      });
+      allocations.push({ ...allocation, status });
+    }
+
+    const addedShares = newFills.reduce((sum, fill) => sum + fill.sharesMicros, 0n);
+    const addedNotional = newFills.reduce((sum, fill) => sum + fill.notionalMicros, 0n);
+    const executedShares = batch.metrics.executedSharesMicros + addedShares;
+    const updated = await this.store.updateBatch(batch.id, {
+      status: stillOpen ? "SUBMITTED" : executedShares > 0n ? "RECONCILED" : "FAILED",
+      errorCode: stillOpen ? batch.errorCode : executedShares > 0n ? null : "VENUE_FAILED",
+      reconciledAt: stillOpen ? null : new Date(),
+      metrics: {
+        ...batch.metrics,
+        executedSharesMicros: executedShares,
+        executedNotionalMicros: batch.metrics.executedNotionalMicros + addedNotional,
+        venueSharesMicros: batch.metrics.venueSharesMicros + addedShares,
+        feeMicros: batch.metrics.feeMicros + newFills.reduce((sum, fill) => sum + fill.feeMicros, 0n),
+      },
+    });
+    return { batch: updated, allocations };
   }
 
   async processAll() {
@@ -106,6 +217,8 @@ export class ExecutionEngine {
       intentIds: intents.map((row) => row.id),
     });
 
+    let sentToVenue = false;
+    let awaitingVenue = false;
     try {
       await this.store.updateBatch(batch.id, { status: "QUEUED", queuedAt: new Date() });
       const snapshot = await this.refreshBook(tokenId, intents, head.quotedPriceBps);
@@ -138,10 +251,12 @@ export class ExecutionEngine {
       let lastError: string | null = null;
       if (strategy.netSide !== "NONE" && strategy.slices.length) {
         await this.store.updateBatch(batch.id, { status: "SUBMITTED", submittedAt: new Date() });
+        sentToVenue = true;
         for (const slice of strategy.slices) {
           const submitted = await this.submitSlice(batch.id, slice, snapshot, head.orderType);
           venueFills.push(...submitted.fills);
           if (submitted.errorMessage) lastError = submitted.errorMessage;
+          if (submitted.status === "open" || submitted.status === "unknown") awaitingVenue = true;
         }
       }
 
@@ -174,14 +289,29 @@ export class ExecutionEngine {
         this.client.mode === "paper",
       );
 
+      if (awaitingVenue) {
+        // Some venue orders are resting or their outcome is unknown. Record what is
+        // known, but keep unfinished intents open until reconcileBatch() sees the
+        // venue's final state. Never treat an accepted order as filled or failed.
+        for (const allocation of allocations) {
+          if (allocation.status !== "filled") {
+            allocation.status = "pending";
+            allocation.errorCode = "AWAITING_VENUE";
+            allocation.errorMessage = "Order accepted by Polymarket; awaiting fill reconciliation.";
+          }
+        }
+      }
+
       for (const allocation of allocations) {
         await this.store.updateIntent(allocation.intentId, {
           status:
             allocation.status === "filled"
               ? "RECONCILED"
-              : allocation.status === "partial"
-                ? "PARTIAL"
-                : "FAILED",
+              : allocation.status === "pending"
+                ? "SUBMITTED"
+                : allocation.status === "partial"
+                  ? "PARTIAL"
+                  : "FAILED",
           executedSharesMicros: allocation.executedSharesMicros,
           executedNotionalMicros: allocation.executedNotionalMicros,
           avgPriceBps: allocation.avgPriceBps,
@@ -224,17 +354,46 @@ export class ExecutionEngine {
         latencyMs: Date.now() - started,
       };
 
-      const finalStatus = batchStatus === "FAILED" ? "FAILED" : "RECONCILED";
+      const finalStatus = awaitingVenue ? "SUBMITTED" : batchStatus === "FAILED" ? "FAILED" : "RECONCILED";
       const updated = await this.store.updateBatch(batch.id, {
         status: finalStatus,
         metrics,
-        reconciledAt: new Date(),
+        reconciledAt: awaitingVenue ? null : new Date(),
+        errorCode: awaitingVenue ? "AWAITING_VENUE" : batchStatus === "FAILED" ? "VENUE_FAILED" : null,
         attempts: 1,
       });
       return { batch: updated, allocations };
     } catch (error) {
       const message = error instanceof Error ? error.message : "Execution engine failed";
       const code = error instanceof BettingError ? error.code : "ENGINE_FAILED";
+      if (sentToVenue) {
+        // Orders may exist on the venue. Do not mark anything failed; an operator or
+        // the reconcile worker must resolve the venue state first.
+        await this.store.releaseIntents(
+          intents.map((row) => row.id),
+          "SUBMITTED",
+        );
+        const held = await this.store.updateBatch(batch.id, {
+          status: "SUBMITTED",
+          errorCode: "RECONCILE_REQUIRED",
+          errorMessage: message,
+        });
+        return {
+          batch: held,
+          allocations: intents.map((intent) => ({
+            intentId: intent.id,
+            executionId: intent.executionId,
+            status: "pending" as const,
+            fills: [],
+            executedSharesMicros: 0n,
+            executedNotionalMicros: 0n,
+            avgPriceBps: 0,
+            feeMicros: 0n,
+            errorCode: "RECONCILE_REQUIRED",
+            errorMessage: message,
+          })),
+        };
+      }
       await this.store.releaseIntents(
         intents.map((row) => row.id),
         code === "STALE_BOOK" || code === "STALE_PRICE" ? "QUEUED" : "FAILED",
@@ -324,6 +483,7 @@ export class ExecutionEngine {
       fills: [] as VenueFill[],
       errorMessage: "not submitted" as string | null,
       polymarketOrderId: null as string | null,
+      status: "failed" as VenueOrderResult["status"],
     };
     for (let attempt = 1; attempt <= this.config.maxAttempts; attempt += 1) {
       const result = await this.client.submitOrder({
@@ -363,11 +523,16 @@ export class ExecutionEngine {
         attempt,
         submittedAt: new Date(),
       });
-      last = { fills, errorMessage: result.errorMessage, polymarketOrderId: result.polymarketOrderId };
-      if (result.status === "filled" || result.status === "partial" || filledShares(fills) > 0n) {
-        return last;
-      }
-      if (result.status === "rejected") break;
+      last = {
+        fills,
+        errorMessage: result.errorMessage,
+        polymarketOrderId: result.polymarketOrderId,
+        status: result.status,
+      };
+      // Only retry when the venue refused the order before matching. An accepted,
+      // resting, timed-out or partially filled order must never be re-posted.
+      if (!result.retryable || attempt >= this.config.maxAttempts) return last;
+      await sleep(Math.min(2_000, 100 * 2 ** (attempt - 1)));
     }
     return last;
   }

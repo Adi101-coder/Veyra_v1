@@ -17,6 +17,7 @@ export type ExecutionIntentStatus =
   | "CREATED"
   | "QUEUED"
   | "PROCESSING"
+  | "SUBMITTED"
   | "RECONCILED"
   | "PARTIAL"
   | "FAILED";
@@ -165,7 +166,8 @@ export type InternalMatch = {
 export type IntentAllocation = {
   intentId: string;
   executionId: string;
-  status: "filled" | "partial" | "failed";
+  /** pending = venue order accepted but not yet terminal; reconcile before acting on it. */
+  status: "filled" | "partial" | "failed" | "pending";
   fills: Array<EngineWalkFill & { feeMicros: bigint; venueTradeId: string; simulated: boolean }>;
   executedSharesMicros: bigint;
   executedNotionalMicros: bigint;

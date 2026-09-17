@@ -24,7 +24,12 @@ import {
   SHARE_SCALE,
 } from "@/server/money";
 import { getPrisma } from "@/server/db";
-import { prismaBettingStore, type BettingStore, type ConfidenceHistoryRow } from "@/server/betting/repository";
+import {
+  prismaBettingStore,
+  type BettingStore,
+  type ConfidenceHistoryRow,
+  type PredictionBundle,
+} from "@/server/betting/repository";
 import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server/betting/mapper";
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
@@ -64,29 +69,41 @@ function fillsFromAllocation(allocation: IntentAllocation) {
   }));
 }
 
+function executionStatusFor(allocation: IntentAllocation) {
+  return allocation.status === "pending" ? "submitted" : allocation.status;
+}
+
+async function recordAllocation(
+  deps: BettingDeps,
+  allocation: IntentAllocation,
+  batch: ProcessResult["batch"] | null | undefined,
+) {
+  const venueOrderId = batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null;
+  return deps.store.applyExecutionResult(allocation.executionId, {
+    status: executionStatusFor(allocation),
+    polymarketOrderId: venueOrderId,
+    responseJson: jsonSafe({ batchId: batch?.id ?? null, batchStatus: batch?.status ?? null, metrics: batch?.metrics }),
+    errorMessage: allocation.errorMessage ?? null,
+    submittedAt: new Date(),
+    fills: fillsFromAllocation(allocation),
+  });
+}
+
+/** Applies allocations for intents of other predictions that shared this batch. */
 async function applyForeignAllocations(
   deps: BettingDeps,
-  result: ProcessResult | { allocations: IntentAllocation[]; batch?: ProcessResult["batch"] | null },
+  result: { allocations: IntentAllocation[]; batch?: ProcessResult["batch"] | null },
   skipExecutionId?: string | null,
 ) {
-  const venueOrderId =
-    result.batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null;
   for (const allocation of result.allocations) {
     if (skipExecutionId && allocation.executionId === skipExecutionId) continue;
     try {
-      await deps.store.applyExecutionResult(allocation.executionId, {
-        status:
-          allocation.status === "filled" ? "filled" : allocation.status === "partial" ? "partial" : "failed",
-        polymarketOrderId: venueOrderId,
-        responseJson: jsonSafe({ batchId: result.batch?.id ?? null, engine: true }),
-        errorMessage: allocation.errorMessage ?? null,
-        submittedAt: new Date(),
-        positionStatus:
-          allocation.status === "filled" ? "filled" : allocation.status === "partial" ? "partial" : "failed",
-        fills: fillsFromAllocation(allocation),
-      });
-    } catch {
-      // Intent may belong to a different store in unit tests.
+      await recordAllocation(deps, allocation, result.batch);
+    } catch (error) {
+      // The intent's execution must exist in this store; surface anything else.
+      if (!(error instanceof Error) || !/missing execution|No Execution found|Record to update not found/i.test(error.message)) {
+        throw error;
+      }
     }
   }
 }
@@ -179,14 +196,44 @@ async function resolveBook(
   deps: BettingDeps,
 ): Promise<OrderBookSnapshot> {
   const tokenId = tokenIdFor(market, outcome);
-  if (!tokenId) return syntheticBookFromMarket(market, outcome);
-  try {
-    const live = await deps.getBook(tokenId);
-    if (!live.asks.length) return syntheticBookFromMarket(market, outcome);
-    return live;
-  } catch {
-    if (market.source === "polymarket") throw new BettingError("POLYMARKET_CLOB", "Could not fetch the Polymarket order book.", 502);
+  if (!tokenId) {
+    // Catalog-only markets have no venue order book. They can only be quoted and
+    // paper-traded against a clearly labelled synthetic book.
+    if (market.source === "polymarket") {
+      throw new BettingError("NO_ORDER_BOOK", "This Polymarket market has no CLOB token for that outcome.", 422);
+    }
     return syntheticBookFromMarket(market, outcome);
+  }
+  let live: OrderBookSnapshot;
+  try {
+    live = await deps.getBook(tokenId);
+  } catch (error) {
+    if (error instanceof BettingError && error.status === 404) {
+      throw new BettingError("NO_ORDER_BOOK", "Polymarket has no order book for this market.", 422);
+    }
+    throw new BettingError("POLYMARKET_CLOB", "Could not fetch the Polymarket order book.", 502);
+  }
+  // Never size against invented liquidity for a real venue token.
+  return live;
+}
+
+async function assertMarketOpen(market: CatalogMarket, deps: BettingDeps) {
+  const stored = await deps.store.getMarket(market.id);
+  if (stored?.resolvedAt || stored?.status === "resolved" || market.status === "resolved") {
+    throw new BettingError("MARKET_RESOLVED", "This market has resolved.", 409);
+  }
+  if (market.source === "polymarket" && market.openSeats <= 0) {
+    throw new BettingError("MARKET_CLOSED", "This market is not accepting orders.", 409);
+  }
+}
+
+function assertExecutable(snapshot: OrderBookSnapshot, deps: BettingDeps) {
+  if (snapshot.source === "synthetic" && deps.executor.mode === "live") {
+    throw new BettingError(
+      "NOT_EXECUTABLE",
+      "This market has no Polymarket order book and cannot be traded live.",
+      422,
+    );
   }
 }
 
@@ -254,6 +301,10 @@ export async function quotePrediction(input: QuoteRequest, deps: BettingDeps = c
   });
 }
 
+function isUniqueViolation(error: unknown) {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
+}
+
 export async function placePrediction(
   input: PlacePredictionRequest,
   deps: BettingDeps = createDefaultDeps(),
@@ -264,6 +315,8 @@ export async function placePrediction(
   }
 
   const { market, snapshot, output, stakeMicros, config } = await runEngine(input, deps);
+  await assertMarketOpen(market, deps);
+  assertExecutable(snapshot, deps);
   await deps.store.upsertMarket(catalogToUpsert(market));
 
   if (!output.accepted) {
@@ -271,68 +324,70 @@ export async function placePrediction(
   }
 
   const request = executionRequest(output, snapshot, config.orderType);
-  const bundle = await deps.store.createPrediction({
-    walletAddress: input.walletAddress,
-    marketId: market.id,
-    outcome: input.outcome,
-    confidenceBps: output.confidenceBps,
-    stakeMicros,
-    marketPriceBps: output.marketPriceBps,
-    engineVersion: output.version,
-    engineInputJson: jsonSafe({
+  let bundle;
+  try {
+    bundle = await deps.store.createPrediction({
+      walletAddress: input.walletAddress,
       marketId: market.id,
       outcome: input.outcome,
       confidenceBps: output.confidenceBps,
-      stakeUsd: input.stakeUsd,
-      book: snapshot,
-    }),
-    engineOutputJson: serializeEngine(output),
-    idempotencyKey: input.idempotencyKey,
-    status: "accepted",
-    position: {
-      marketId: market.id,
-      walletAddress: input.walletAddress,
-      outcome: input.outcome,
-      side: output.side,
-      tokenId: output.tokenId,
-      sharesMicros: output.sharesMicros,
-      limitPriceBps: output.limitPriceBps,
-      avgPriceBps: output.avgPriceBps,
-      notionalMicros: output.notionalMicros,
-      payoutMicros: output.payoutMicros,
-      edgeBps: output.edgeBps,
-      kellyBps: output.sizedKellyBps,
-      status: "open",
-      execution: {
-        venue: "polymarket",
-        mode: deps.executor.mode,
-        status: "created",
-        tokenId: output.tokenId,
+      stakeMicros,
+      marketPriceBps: output.marketPriceBps,
+      engineVersion: output.version,
+      engineInputJson: jsonSafe({
+        stakeUsd: input.stakeUsd,
+        book: snapshot,
+      }),
+      engineOutputJson: serializeEngine(output),
+      idempotencyKey: input.idempotencyKey,
+      status: "accepted",
+      position: {
+        marketId: market.id,
+        walletAddress: input.walletAddress,
+        outcome: input.outcome,
         side: output.side,
-        orderType: config.orderType,
+        tokenId: output.tokenId,
+        // The position starts empty. Shares, notional and payout only grow from
+        // recorded fills (see server/betting/ledger.ts). The engine's target size
+        // lives on the execution request and in engineOutputJson.
+        sharesMicros: 0n,
         limitPriceBps: output.limitPriceBps,
-        sizeSharesMicros: output.sharesMicros,
-        notionalMicros: output.notionalMicros,
-        requestJson: jsonSafe({
-          tokenId: request.tokenId,
-          side: request.side,
-          orderType: request.orderType,
-          price: formatPrice(request.limitPriceBps),
-          size: formatShares(request.sharesMicros),
-          tickSize: request.tickSize,
-          negRisk: request.negRisk,
-        }),
+        avgPriceBps: 0,
+        notionalMicros: 0n,
+        payoutMicros: 0n,
+        edgeBps: output.edgeBps,
+        kellyBps: output.sizedKellyBps,
+        status: "pending",
+        execution: {
+          venue: "polymarket",
+          mode: deps.executor.mode,
+          status: "created",
+          tokenId: output.tokenId,
+          side: output.side,
+          orderType: config.orderType,
+          limitPriceBps: output.limitPriceBps,
+          sizeSharesMicros: output.sharesMicros,
+          notionalMicros: output.notionalMicros,
+          requestJson: jsonSafe({
+            tokenId: request.tokenId,
+            side: request.side,
+            orderType: request.orderType,
+            price: formatPrice(request.limitPriceBps),
+            size: formatShares(request.sharesMicros),
+            tickSize: request.tickSize,
+            negRisk: request.negRisk,
+          }),
+        },
       },
-    },
-  });
-
-  await getReputation(deps)
-    .recordOpen({
-      predictionId: bundle.id,
-      walletAddress: bundle.walletAddress,
-      category: bundle.market.category,
-    })
-    .catch(() => undefined);
+    });
+  } catch (error) {
+    // Two concurrent requests with the same key: the loser returns the winner's row.
+    if (input.idempotencyKey && isUniqueViolation(error)) {
+      const existing = await deps.store.findByIdempotency(input.walletAddress, input.idempotencyKey);
+      if (existing) return toPredictionDTO(existing);
+    }
+    throw error;
+  }
 
   const execution = bundle.position?.executions[0];
   if (!execution || !bundle.position) return toPredictionDTO(bundle);
@@ -345,7 +400,7 @@ export async function placePrediction(
       marketId: market.id,
       outcome: input.outcome,
       tokenId: output.tokenId,
-      side: request.side,
+      side: "BUY",
       sharesMicros: request.sharesMicros,
       notionalMicros: request.notionalMicros,
       limitPriceBps: request.limitPriceBps,
@@ -354,49 +409,54 @@ export async function placePrediction(
       negRisk: request.negRisk,
       quotedPriceBps: output.marketPriceBps,
       bookHash: snapshot.hash,
-      idempotencyKey: input.idempotencyKey ? `place:${input.idempotencyKey}` : undefined,
+      idempotencyKey: `place:${execution.id}`,
     });
+    await applyForeignAllocations(deps, processed, execution.id);
     const allocation = processed.allocation;
-    const venueOrderId =
-      processed.batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null;
     if (!allocation) {
+      // Our intent was not handled by any batch in this request (e.g. stale book
+      // requeue). It stays queued for the execution worker; nothing has filled.
       const updated = await deps.store.applyExecutionResult(execution.id, {
-        status: "failed",
+        status: processed.intent.status === "FAILED" ? "failed" : "created",
         polymarketOrderId: null,
-        responseJson: jsonSafe({ error: "Execution engine returned no allocation" }),
-        errorMessage: "Execution engine returned no allocation",
+        responseJson: jsonSafe({ intentStatus: processed.intent.status }),
+        errorMessage: processed.intent.errorMessage ?? null,
         submittedAt: new Date(),
-        positionStatus: "failed",
         fills: [],
       });
       return toPredictionDTO(updated);
     }
-    await applyForeignAllocations(deps, processed, execution.id);
-    const updated = await deps.store.applyExecutionResult(execution.id, {
-      status:
-        allocation.status === "filled" ? "filled" : allocation.status === "partial" ? "partial" : "failed",
-      polymarketOrderId: venueOrderId,
-      responseJson: jsonSafe({ batchId: processed.batch?.id ?? null, metrics: processed.batch?.metrics }),
-      errorMessage: allocation.errorMessage ?? null,
-      submittedAt: new Date(),
-      positionStatus:
-        allocation.status === "filled" ? "filled" : allocation.status === "partial" ? "partial" : "failed",
-      fills: fillsFromAllocation(allocation),
+    const updated = await recordAllocation(deps, allocation, processed.batch);
+    await recordOpenIfFilled(deps, updated).catch((error) => {
+      console.error("[reputation] recordOpen failed", { predictionId: updated.id, error: String(error) });
     });
     return toPredictionDTO(updated);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Execution failed";
+    const code = error instanceof BettingError ? error.code : "EXECUTION_FAILED";
+    // The engine only throws before anything reaches the venue (stale book/price or
+    // setup errors). Cancel the queued intent so it can never execute later at a
+    // price the user did not see.
+    await getEngine(deps).cancelQueued(execution.id);
     const updated = await deps.store.applyExecutionResult(execution.id, {
       status: "failed",
       polymarketOrderId: null,
-      responseJson: jsonSafe({ error: message }),
+      responseJson: jsonSafe({ error: message, code }),
       errorMessage: message,
       submittedAt: new Date(),
-      positionStatus: "failed",
       fills: [],
     });
     return toPredictionDTO(updated);
   }
+}
+
+async function recordOpenIfFilled(deps: BettingDeps, bundle: PredictionBundle) {
+  if (!bundle.position || bundle.position.sharesMicros <= 0n) return;
+  await getReputation(deps).recordOpen({
+    predictionId: bundle.id,
+    walletAddress: bundle.walletAddress,
+    category: bundle.market.category,
+  });
 }
 
 export async function getPrediction(id: string, deps: BettingDeps = createDefaultDeps()) {
@@ -412,43 +472,30 @@ export async function listPredictions(
   return rows.map(toPredictionDTO);
 }
 
+/**
+ * Reconciles one execution against Polymarket: re-reads the venue orders of its
+ * batch and records only fills the venue reports. Safe to call repeatedly.
+ */
 export async function syncExecution(executionId: string, deps: BettingDeps = createDefaultDeps()) {
-  const prisma = getPrisma();
-  const execution = await prisma.execution.findUnique({
-    where: { id: executionId },
-    include: { position: { include: { prediction: { include: { market: true, position: { include: { executions: { include: { fills: true } } } } } } } } },
-  });
-  if (!execution) throw new BettingError("EXECUTION_NOT_FOUND", "Execution not found.", 404);
-  if (!execution.polymarketOrderId) {
-    throw new BettingError("NO_VENUE_ORDER", "Execution has no Polymarket order id yet.", 409);
+  const engine = getEngine(deps);
+  const intent = await deps.executionStore!.findIntentByExecutionId(executionId);
+  if (!intent) throw new BettingError("EXECUTION_NOT_FOUND", "Execution not found.", 404);
+  if (intent.batchId) {
+    const result = await engine.reconcileBatch(intent.batchId);
+    if (result) await applyForeignAllocations(deps, result);
   }
-  const snapshot = await deps.executor.getOrder(execution.polymarketOrderId);
-  if (!snapshot) throw new BettingError("ORDER_NOT_FOUND", "Polymarket order not found.", 404);
-  const updated = await deps.store.applyExecutionResult(execution.id, {
-    status: snapshot.status,
-    polymarketOrderId: snapshot.polymarketOrderId,
-    responseJson: jsonSafe(snapshot.response ?? {}),
-    errorMessage: snapshot.errorMessage,
-    submittedAt: execution.submittedAt ?? new Date(),
-    positionStatus:
-      snapshot.status === "filled"
-        ? "filled"
-        : snapshot.status === "partial"
-          ? "partial"
-          : snapshot.status === "rejected" || snapshot.status === "failed"
-            ? "failed"
-            : "open",
-    fills: snapshot.fills.map((fill) => ({
-      venueTradeId: fill.venueTradeId ?? null,
-      priceBps: fill.priceBps,
-      sharesMicros: fill.sharesMicros,
-      notionalMicros: fill.notionalMicros,
-      feeMicros: 0n,
-      isSimulated: fill.simulated,
-      rawJson: fill.raw ? jsonSafe(fill.raw) : null,
-    })),
-  });
-  return toPredictionDTO(updated);
+  const bundle = await deps.store.findByExecutionId(executionId);
+  if (!bundle) throw new BettingError("EXECUTION_NOT_FOUND", "Execution not found.", 404);
+  return toPredictionDTO(bundle);
+}
+
+/** Worker entry point: reconcile every batch still awaiting venue state. */
+export async function reconcileExecutions(deps: BettingDeps = createDefaultDeps()) {
+  const results = await getEngine(deps).reconcileSubmitted();
+  for (const result of results) {
+    await applyForeignAllocations(deps, result);
+  }
+  return results;
 }
 
 export async function changeConfidence(
@@ -492,7 +539,7 @@ export async function changeConfidence(
   if (position.status === "adjusting") {
     throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is already in flight.", 409);
   }
-  if (position.status !== "filled" && position.status !== "partial") {
+  if (position.status !== "filled" && position.status !== "partial" && position.status !== "closed") {
     throw new BettingError(
       "POSITION_NOT_READY",
       "Wait until the current position has fills before changing confidence.",
@@ -504,15 +551,25 @@ export async function changeConfidence(
   if (!locked) {
     throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is already in flight.", 409);
   }
-
   const previousStatus = position.status;
+  // Re-read under the lock: fills may have been reconciled since the first read.
+  const lockedBundle = await deps.store.getPrediction(predictionId);
+  if (!lockedBundle?.position || lockedBundle.confidenceBps !== bundle.confidenceBps) {
+    await deps.store.releaseAdjustmentLock(position.id, previousStatus);
+    throw new BettingError("CONCURRENT_UPDATE", "Prediction changed; refresh and try again.", 409);
+  }
+  position.sharesMicros = lockedBundle.position.sharesMicros;
+  position.notionalMicros = lockedBundle.position.notionalMicros;
+  position.avgPriceBps = lockedBundle.position.avgPriceBps;
   const config = loadConfidenceEngineConfig();
   let settled = false;
 
   try {
     const market = await resolveMarket(bundle.marketId, deps);
     if (!market) throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
+    await assertMarketOpen(market, deps);
     const snapshot = await resolveBook(market, bundle.outcome as QuoteRequest["outcome"], deps);
+    assertExecutable(snapshot, deps);
     const book = snapshotToEngineBook(snapshot);
     const livePrice = book.asks[0]?.priceBps ?? bundle.marketPriceBps;
     const quotedBps = input.quotedMarketPrice ? parsePriceBps(input.quotedMarketPrice, "floor") : undefined;
@@ -705,16 +762,20 @@ export async function changeConfidence(
     const filledShares = allocation?.executedSharesMicros ?? 0n;
     const filledNotional = allocation?.executedNotionalMicros ?? 0n;
     const fullyFilled = Boolean(allocation && allocation.status === "filled" && filledShares >= plan.deltaSharesMicros);
-    const failed = !allocation || allocation.status === "failed" || filledShares <= 0n;
+    const awaiting = allocation?.status === "pending";
+    const failed = !awaiting && (!allocation || allocation.status === "failed" || filledShares <= 0n);
     const nextHeld = failed
       ? held
       : applyFilledDelta(held, plan.side, filledShares, filledNotional);
     await applyForeignAllocations(deps, processed, created.executionId);
 
+    if (!allocation) await getEngine(deps).cancelQueued(created.executionId!);
     const updated = await deps.store.reconcileAdjustment({
       historyId: created.history.id,
       executionId: created.executionId,
-      executionStatus: failed ? "failed" : fullyFilled ? "filled" : "partial",
+      // "submitted" keeps the position locked (adjusting) until the venue order is
+      // reconciled by syncExecution / the reconcile worker.
+      executionStatus: awaiting ? "submitted" : failed ? "failed" : fullyFilled ? "filled" : "partial",
       polymarketOrderId:
         processed.batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null,
       responseJson: jsonSafe({ batchId: processed.batch?.id ?? null, metrics: processed.batch?.metrics }),
@@ -724,7 +785,7 @@ export async function changeConfidence(
       position: {
         ...nextHeld,
         payoutMicros: (nextHeld.sharesMicros * 1_000_000n) / SHARE_SCALE,
-        status: failed ? previousStatus : fullyFilled ? "filled" : "partial",
+        status: awaiting ? "adjusting" : failed ? previousStatus : nextHeld.sharesMicros > 0n ? "filled" : "closed",
         edgeBps: target.edgeBps,
         kellyBps: target.sizedKellyBps,
         limitPriceBps: plan.limitPriceBps,
@@ -734,7 +795,7 @@ export async function changeConfidence(
         : fullyFilled
           ? { confidenceBps: newConfidenceBps, marketPriceBps: livePrice }
           : undefined,
-      historyStatus: failed ? "failed" : fullyFilled ? "filled" : "partial",
+      historyStatus: awaiting ? "pending" : failed ? "failed" : fullyFilled ? "filled" : "partial",
       historyErrorCode: failed ? "EXECUTION_FAILED" : null,
       historyErrorMessage: failed ? allocation?.errorMessage ?? null : null,
     });
@@ -743,7 +804,10 @@ export async function changeConfidence(
     return {
       prediction: toPredictionDTO(updated),
       history: toConfidenceHistoryDTO(
-        history ?? { ...created.history, status: failed ? "failed" : fullyFilled ? "filled" : "partial" },
+        history ?? {
+          ...created.history,
+          status: awaiting ? "pending" : failed ? "failed" : fullyFilled ? "filled" : "partial",
+        },
       ),
     };
   } catch (error) {
