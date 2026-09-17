@@ -50,11 +50,24 @@ type WalletContextValue = {
   onRobinhoodChain: boolean;
   switchingNetwork: boolean;
   switchToRobinhoodChain: () => Promise<void>;
+  /** True while the one-time wallet sign-in signature (nonce → sign → verify) runs. */
+  signingIn: boolean;
+  /** Message from the last failed wallet sign-in; cleared when a new one starts. */
+  signInError: string | null;
+  /** Whether the server holds a verified session for the connected wallet. */
+  hasSession: boolean;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
 const STORAGE_KEY = "vantage.wallet";
+type SessionState = {
+  address: string | null;
+  signingIn: boolean;
+  signInError: string | null;
+  hasSession: boolean;
+};
+
 const idleActivity: ActivityState = { status: "idle", data: null, error: null };
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
@@ -64,6 +77,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityState>(idleActivity);
+  // Sign-in state is keyed by wallet address so an account switch reads as "no session".
+  const [sessionState, setSessionState] = useState<SessionState>({
+    address: null,
+    signingIn: false,
+    signInError: null,
+    hasSession: false,
+  });
+  const sessionCurrent = sessionState.address !== null && sessionState.address === address;
+  const signingIn = sessionCurrent && sessionState.signingIn;
+  const signInError = sessionCurrent ? sessionState.signInError : null;
+  const hasSession = sessionCurrent && sessionState.hasSession;
 
   const chain = walletId ? walletChain(walletId) : null;
 
@@ -73,9 +97,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       registerSessionEnsurer(null);
       return;
     }
+    let active = true;
+    const update = (patch: Partial<Omit<SessionState, "address">>) => {
+      if (!active) return;
+      setSessionState((prev) =>
+        prev.address === address
+          ? { ...prev, ...patch }
+          : { address, signingIn: false, signInError: null, hasSession: false, ...patch },
+      );
+    };
     let pending: Promise<void> | null = null;
     registerSessionEnsurer(() => {
       pending ??= (async () => {
+        update({ signingIn: true, signInError: null });
         const nonceResponse = await fetch("/api/auth/nonce", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -95,9 +129,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           const body = (await verify.json().catch(() => ({}))) as { error?: { message?: string } };
           throw new Error(body.error?.message ?? "Wallet sign-in failed");
         }
-      })().finally(() => {
-        pending = null;
-      });
+        update({ hasSession: true });
+      })()
+        .catch((err: unknown) => {
+          update({ signInError: err instanceof Error ? err.message : "Wallet sign-in failed" });
+          throw err;
+        })
+        .finally(() => {
+          pending = null;
+          update({ signingIn: false });
+        });
       return pending;
     });
     // A session for a different wallet (account switch) must not be reused.
@@ -108,9 +149,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         if (session.walletAddress && session.walletAddress !== normalized) {
           return fetch("/api/auth/logout", { method: "POST" });
         }
+        update({ hasSession: session.walletAddress === normalized });
       })
       .catch(() => undefined);
-    return () => registerSessionEnsurer(null);
+    return () => {
+      active = false;
+      registerSessionEnsurer(null);
+      setSessionState((prev) => (prev.signingIn ? { ...prev, signingIn: false } : prev));
+    };
   }, [provider, address]);
 
   const attach = useCallback((id: WalletId, next: ConnectedProvider, key: string) => {
@@ -297,8 +343,14 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       onRobinhoodChain: isRobinhoodChainId(detectedChainId, robinhoodChain),
       switchingNetwork,
       switchToRobinhoodChain,
+      signingIn,
+      signInError,
+      hasSession,
     }),
     [
+      signingIn,
+      signInError,
+      hasSession,
       detectedChainId,
       robinhoodChain,
       switchingNetwork,

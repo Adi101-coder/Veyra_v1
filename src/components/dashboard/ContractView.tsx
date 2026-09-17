@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { useWallet } from "@/components/wallet/WalletProvider";
+import { isKnownStatus, statusLabel, StatusChip } from "@/components/status/StatusChip";
+import { WalletSignatureNote } from "@/components/status/WalletSignatureNote";
 import { Shell } from "@/components/Shell";
 import {
   formatResolvesBy,
@@ -12,7 +14,7 @@ import {
   type Market,
   type WagerRow,
 } from "@/lib/markets";
-import { describeBettingError, predictionToWagerRow, type EngineQuote } from "@/lib/betting";
+import { describeBettingError, describeQuoteRejection, predictionToWagerRow, type EngineQuote } from "@/lib/betting";
 import { getMarketConviction, listPredictions, placePrediction, quotePrediction } from "@/lib/betting-api";
 import {
   convictionTrailLabel,
@@ -254,7 +256,7 @@ export function ContractView({ market }: { market: Market }) {
                 </div>
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
-                    Polymarket
+                    {conviction?.polymarketSource === "resolved" ? "Polymarket (resolved)" : "Polymarket"}
                   </p>
                   <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
                     {formatConvictionPct(conviction?.polymarketProbability ?? null)}
@@ -269,6 +271,9 @@ export function ContractView({ market }: { market: Market }) {
                   </p>
                 </div>
               </div>
+              {conviction && conviction.participants > 0 ? (
+                <ConvictionBreakdown conviction={conviction} stale={convictionStale} />
+              ) : null}
               {convictionTrailLabel(conviction?.trail ?? []) ? (
                 <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
                   {convictionTrailLabel(conviction?.trail ?? [])}
@@ -372,6 +377,52 @@ export function ContractView({ market }: { market: Market }) {
   );
 }
 
+function formatUsd2(value: number) {
+  return Number.isFinite(value) ? `$${value.toFixed(2)}` : "—";
+}
+
+function ConvictionBreakdown({ conviction, stale }: { conviction: MarketConviction; stale: boolean }) {
+  const sides = [conviction.outcomes.YES, conviction.outcomes.NO];
+  const hasCapital = sides.some((side) => side.capitalCommitted > 0);
+  return (
+    <div className={`mt-4 ${stale ? "opacity-50" : ""}`}>
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+        {conviction.participants} {conviction.participants === 1 ? "participant" : "participants"} · $
+        {conviction.totalCapitalUsd} filled
+      </p>
+      {hasCapital ? (
+        <div
+          className="mt-2 flex h-1 w-full overflow-hidden rounded-full bg-[rgba(26,26,26,0.06)]"
+          aria-hidden="true"
+        >
+          <span className="h-full bg-[#2f9e6e]" style={{ flexGrow: Math.max(0, conviction.outcomes.YES.capitalCommitted), flexBasis: 0 }} />
+          <span className="h-full bg-[#c45c6a]" style={{ flexGrow: Math.max(0, conviction.outcomes.NO.capitalCommitted), flexBasis: 0 }} />
+        </div>
+      ) : null}
+      <div className="mt-3 grid grid-cols-2 gap-4">
+        {sides.map((side) => (
+          <div key={side.outcome} className="min-w-0">
+            <p
+              className={`font-mono text-[9px] uppercase tracking-[0.16em] ${
+                side.outcome === "YES" ? "text-[#2f9e6e]" : "text-[#c45c6a]"
+              }`}
+            >
+              {side.outcome}
+            </p>
+            <p className="mt-1 font-mono text-[11px] leading-5 text-[#1a1a1a]">
+              {side.participants} · {formatUsd2(side.capitalCommitted)} filled
+            </p>
+            <p className="font-mono text-[10px] leading-4 text-[#8a8a8a]">
+              avg {formatConvictionPct(side.averageConfidence)} · weighted{" "}
+              {formatConvictionPct(side.capitalWeightedConfidence)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function WagerTableRow({ marketId, row }: { marketId: string; row: WagerRow }) {
   const router = useRouter();
   const href = row.id.includes("-local-")
@@ -398,7 +449,9 @@ function WagerTableRow({ marketId, row }: { marketId: string; row: WagerRow }) {
       </td>
       <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.stake}</td>
       <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.gold}</td>
-      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.lockBy}</td>
+      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">
+        {isKnownStatus("order", row.lockBy) ? <StatusChip kind="order" status={row.lockBy} /> : row.lockBy}
+      </td>
       <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.mechanism}</td>
       <td className="py-3 pr-3">
         <span
@@ -522,10 +575,10 @@ function CreateWagerCard({
       const fill = prediction.execution?.status ?? prediction.status;
       setMessage(
         fill === "failed" || fill === "rejected"
-          ? `Order ${fill}.${prediction.errorMessage ? ` ${prediction.errorMessage}` : ""}`
+          ? `Order: ${statusLabel("order", fill)}.${prediction.errorMessage ? ` ${prediction.errorMessage}` : ""}`
           : prediction.position && Number.parseFloat(prediction.position.shares) > 0
-            ? `Position ${fill}. ${prediction.position.shares} ${outcome} shares at ${prediction.position.avgPrice}.`
-            : `Order ${fill}. Shares appear once fills are recorded.`,
+            ? `Position: ${statusLabel("order", fill)}. ${prediction.position.shares} ${outcome} shares at ${prediction.position.avgPrice}.`
+            : `Order: ${statusLabel("order", fill)}. Shares appear once fills are recorded.`,
       );
     } catch (error) {
       setMessage(describeBettingError(error, "Could not place prediction."));
@@ -670,9 +723,11 @@ function CreateWagerCard({
           {paperOnly ? <span className="text-[#b0b0b0]"> · Demo market · paper only</span> : null}
         </p>
         {quoteError && !quote ? (
-          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{quoteError}</p>
+          <p role="status" aria-live="polite" className="mt-2 text-[13px] leading-5 text-[#8a6a32]">
+            {quoteError}
+          </p>
         ) : rejected ? (
-          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{rejected.message}</p>
+          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{describeQuoteRejection(rejected)}</p>
         ) : position ? (
           <div className="mt-2 space-y-1 font-mono text-[11px] text-[#5a5a5a]">
             <p>
@@ -694,9 +749,10 @@ function CreateWagerCard({
       >
         {submitting ? "Placing…" : "Make wager"}
       </button>
-      {message ? (
-        <p className="mt-3 text-[12px] leading-5 text-[#6e6e6e]">{message}</p>
-      ) : null}
+      <WalletSignatureNote className="mt-2" />
+      <div aria-live="polite">
+        {message ? <p className="mt-3 text-[12px] leading-5 text-[#6e6e6e]">{message}</p> : null}
+      </div>
 
       <button
         type="button"

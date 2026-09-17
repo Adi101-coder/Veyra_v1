@@ -2,13 +2,19 @@ export type ConvictionBin = {
   minPct: number;
   maxPct: number;
   participants: number;
+  /** USDC micros as a decimal string. */
+  capitalMicros: string;
+  /** Display convenience derived from capitalMicros. */
   capitalCommitted: number;
 };
 
 export type OutcomeConviction = {
   outcome: "YES" | "NO";
   participants: number;
+  capitalMicros: string;
   capitalCommitted: number;
+  averageConfidenceBps: number | null;
+  capitalWeightedConfidenceBps: number | null;
   averageConfidence: number | null;
   capitalWeightedConfidence: number | null;
   distribution: ConvictionBin[];
@@ -19,6 +25,7 @@ export type MarketConviction = {
   marketId: string;
   participants: number;
   totalCapitalUsd: string;
+  capitalMicros: string;
   capitalCommitted: number;
   averageConfidence: number | null;
   capitalWeightedConfidence: number | null;
