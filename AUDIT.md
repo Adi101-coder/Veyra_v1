@@ -1,61 +1,76 @@
-# Veyra end-to-end audit
+# Veyra end-to-end audit (2026-09-17)
 
-Status: in progress (branch `audit/end-to-end`).
-
-## Baseline
-- Stack: Next.js 16 App Router, Prisma + SQLite, `@polymarket/clob-client-v2`, vitest.
-- Baseline: 12 test files / 73 tests passing. No migrations directory (schema applied with `db push`). No authentication.
-
-## Findings backlog (P0 = funds/settlement)
-
-### Execution / Polymarket
-- [ ] P0 Live client fabricated fills by walking the local book after posting (`simulated: false`) — accepted treated as filled.
-- [ ] P0 `submitSlice` re-posted orders on any non-filled result (resting, delayed, timeout) — duplicate live orders.
-- [ ] P0 Accepted-but-unfilled live orders marked FAILED; later venue fills never reconciled.
-- [ ] P0 `fetchClobOrder` used unauthenticated `/order/{id}`; official endpoint is `/data/order/{id}` with L2 auth.
-- [ ] P0 Initial Position stored engine's *desired* shares/notional; fills only changed status.
-- [ ] P0 `claimQueued` not atomic across processes (find → update → find).
-- [ ] P0 `enqueueAndProcess` returns an in-flight run that excludes the new intent → execution marked failed while intent stays QUEUED and executes later.
-- [ ] P1 Synthetic book used for sizing when a live token has no asks, or for catalog markets with no token.
-- [ ] P1 Two duplicate live submitters (`executor.ts`, `client.ts`); signature type / funder not configurable.
-- [ ] P1 `syncExecution` could insert the same venue fills repeatedly.
-
-### Auth / API
-- [ ] P0 No authentication: any caller can place/adjust for any wallet.
-- [ ] P0 `POST /api/markets/[id]/resolve` accepts any outcome from anyone; `/api/executions/flush`, `/api/reputation/flush`, `/api/executions/[id]/sync` unauthenticated.
-- [ ] P1 Idempotency key optional server-side (NULL defeats unique constraint).
-
-### Reputation / Conviction
-- [ ] P0 Failed/zero-fill predictions scored; PnL/ROI used planned size not fills.
-- [ ] P0 Only newest 100 predictions per market scored (`take` cap).
-- [ ] P0 Resolved market re-opened by `upsertMarket`; no check blocking bets/adjustments on resolved markets.
-- [ ] P1 FAILED/stuck resolution jobs never retried; conflicting outcome silently ignored; no INVALID outcome.
-- [ ] P1 Scoring race → P2002 marks job FAILED; `processJobs` stops on lost claim.
-- [ ] P1 `recordOpen` non-atomic and counts failed orders.
-- [ ] P1 Wallet case inconsistency (0x addresses).
-- [ ] P1 Conviction counts failed positions; hedged wallets' capital assigned to latest side.
-- [ ] P1 SSE stream leaks intervals on 404/early abort; no cancel().
-
-### Database
-- [ ] P1 No migrations; fresh DB not reproducible.
-
-### Frontend
-- [ ] P0 Idempotency key regenerated per click; double-submit guarded only by disabled state.
-- [ ] P0 Stale quote can be submitted during debounce.
-- [ ] P1 No indication of synthetic book / static catalog market.
-- [ ] P1 `predictionToWagerRow` shows failed as resolved/LOCKED.
-- [ ] P1 Risk meters parse USD as SOL → always 0.
-- [ ] P1 Fake creator/wager addresses & dates (`fakePubkey`).
-- [ ] P1 Dashboard labels static catalog as live on fetch failure.
-- [ ] P2 Conviction stream ordering/errors; failed loads shown as empty; execution status not refreshed.
-
-## External integrations verified against official docs (2026-09-17)
-- Polymarket CLOB: `/book` (live ordering bids asc / asks desc — engine sorts), `/price`, `/data/order/{id}` (L2), `/data/trades` (L2), POST `/order` response (`success, errorMsg, orderID, status, makingAmount, takingAmount, tradeIDs`), tick sizes, signature types 0–3, chain 137/80002, fees (taker only).
-- Gamma: resolution = `closed && umaResolutionStatus == "resolved"`, winner = outcomePrices index with "1".
-- Robinhood Chain: not used anywhere in this repo (wallets are EVM MetaMask/Binance + Solana). Official: mainnet 4663 `https://rpc.mainnet.chain.robinhood.com`, testnet 46630. Nothing to verify in code.
+Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 73 tests passing, no migrations, no authentication.
 
 ## Fixed
 
-## Remaining / needs real credentials
+### Execution / Polymarket (funds safety)
+- **Fabricated live fills.** After posting an order, the live client walked the local order book and recorded those as real (`simulated: false`) fills — "accepted = filled". Live fills now come only from the venue: POST `/order` `makingAmount`/`takingAmount` on `matched`, or authenticated `/data/order/{id}` + `/data/trades` (`src/server/polymarket/live.ts`).
+- **Duplicate live orders.** `submitSlice` re-posted any order that came back without fills (resting, delayed, timeout) up to 3×. Retries now happen only for venue-refused (429/425/503) orders, with backoff.
+- **Accepted orders marked failed.** Resting/delayed/unknown orders are now `open`/`unknown`; the batch stays `SUBMITTED` and `ExecutionEngine.reconcileBatch` allocates fills exactly once when the venue order is terminal.
+- **Wrong order endpoint.** `fetchClobOrder` used unauthenticated `/order/{id}`; replaced with SDK `getOrder` (L2) + `getTrades`. Documented statuses handled (`CANCELED`, `CANCELED_MARKET_RESOLVED`, `INVALID`, `TRADE_STATUS_*`).
+- **Positions before execution.** A new position stored the engine's *desired* shares/notional; fills only changed status. Positions now start empty and change only from recorded fills (`src/server/betting/ledger.ts`), deduped by venue trade id (DB unique `executionId+venueTradeId`).
+- **Non-atomic intent claims** (find → update → find) could double-execute across processes. Now a single UPDATE with a claim token.
+- **Lost intents.** `enqueueAndProcess` could return an in-flight run that excluded the new intent → execution marked failed while the intent later executed. Fixed.
+- **Stale quotes requeued forever** (and could execute later at an unseen price). Stale intents now fail and every owner's execution is updated.
+- **Synthetic book used for real tokens** when a live book had no asks. Real tokens never fall back; synthetic (demo) books are paper-only and rejected in live mode. Demo tokens now resolve their paper book inside the engine (found by the HTTP smoke test).
+- Duplicate live submitters removed; single `PolymarketClient`. Signature types 0–3 + funder address configurable. Taker fees derived from `fee_rate_bps`.
+
+### Change Your Mind
+- Adjustments re-read the position under the lock; pending venue orders keep the position `adjusting` and history `pending` until reconciled, then history/confidence settle from actual fills.
+- Adjusting to 0%/100% was allowed although placement enforces 1–99%. Now rejected.
+- Adjustments blocked on resolved/closed markets; closed (0-share) positions can re-enter.
+
+### Auth / API / security
+- **No authentication.** Added wallet sign-in (EVM `personal_sign`, Solana ed25519) with single-use DB nonces and an HMAC HttpOnly session cookie. Writes act only for the session wallet; body wallet mismatch → 403. Same-origin check on writes (CSRF).
+- **Anyone could resolve markets / flush jobs.** Resolve, flush, batch detail and `/api/jobs/run` require `VEYRA_OPERATOR_TOKEN`.
+- Idempotency-Key required on money-moving writes; concurrent same-key requests return one prediction (P2002-safe).
+- Rate limits (in-process) on quote, place, adjust, sync, sign-in. 500s no longer leak internal error text. EVM addresses canonicalized to lowercase.
+
+### Resolution / reputation
+- Polymarket markets resolve only to Gamma's final state (`closed && umaResolutionStatus == resolved`, winner priced "1"); a mismatching operator outcome → 409. `INVALID` outcome closes without scoring. Resolution sync worker added.
+- Market is closed in the same transaction as the job; catalog upserts can no longer reopen a resolved market; new bets/quotes/adjustments on resolved markets → 409.
+- Only predictions with fills, created before the cutoff, are scored — all of them (was capped at newest 100). PnL = winning held shares + sell proceeds − filled cost.
+- Failed jobs re-queue, stale PROCESSING leases are reclaimed, conflicting outcomes rejected, concurrent scoring (P2002) tolerated, `recordOpen` transactional and only after a fill. Removed full-table wallet scans.
+
+### Conviction / realtime
+- Counts only positions holding filled shares, capital = filled cost basis (was requested stake, including failed orders). Hedged wallets keep YES and NO capital on their own sides.
+- Polymarket probability from CLOB midpoint (bps) instead of 1%-rounded Gamma price.
+- SSE stream: no interval leaks (404 path, early abort, cancel), non-overlapping ticks, one shared computation per market per interval.
+
+### Database
+- Baseline migration (`prisma/migrations/…_init`) with CHECK constraints (confidence range, positive stake/fill, non-negative position, valid statuses/sides), FKs from intents/history to executions, fill uniqueness, auth nonce table, job lease column. `npm run db:migrate` = `prisma migrate deploy`.
+
+### Frontend (no redesign)
+- Sign-in on first 401 with transparent retry using the same idempotency key.
+- Stable idempotency key per user intent + in-flight guards (double-click safe); a quote must match current inputs.
+- Demo catalog never labelled live (dashboard, hero, contract); "Demo market · paper only" labels; sample-data badges on the static /markets sections.
+- Removed invented data: fake creator/wager addresses and dates, SOL stakes/table options, invented wager counts, fake live esports score; risk meters now show backend USD cost/payout.
+- Wager rows: failed ≠ resolved; RESOLVED/LANDED/MISSED from market resolution. Execution status polls/syncs while pending. Error states distinct from empty states. Conviction stream ignores older events, closes on 404, dims on error. Broken "Watch this wager" link fixed. Write page no longer claims to publish.
+
+## Tests
+- **110 tests in 16 files, all passing** (baseline 73). One existing test that asserted the unsafe blind-retry behaviour was rewritten.
+- New: Prisma end-to-end on a freshly migrated SQLite DB (resting order → reconcile fill once → duplicate/concurrent submit → 80→60 fill → rejected 60→90 → cross-wallet 403 → failed order excluded from conviction/reputation → resolution refused before Gamma / mismatch → scored once, Brier 0.16 → late bet/adjust 409); venue response mapping (full/partial/SELL/resting/unknown, trades, CANCELED, fees); Gamma resolution; sessions, CSRF, operator token, Solana + EVM signature verification; ledger; Brier reference values (90%/50% correct/incorrect, NO picks) and PnL; confidence boundaries (0/1/50/99/100%, $1/$100k stake); 90→90, 90→10, 0%/100% adjustments; stale-quote and timeout never re-posted.
+- **Fresh DB + running app:** deleted DB → `prisma migrate deploy` → `next build` → `next start`; HTTP smoke test over the real API: unauthenticated 401, bad signature 401, nonce replay 401, missing key 400, other-wallet 403, CSRF 403, concurrent duplicate → one prediction, paper fill, 80→60 SELL filled, 100% rejected, operator gating 403, resolve 202, conflict 409, worker runs twice idempotently, reputation Brier 0.16, late bet 409.
+- **Browser:** dashboard (live Polymarket feed), contract page (demo label, backend quote, wager row, resolved state), wager page (confidence history, resolution, owner-only controls), no console errors.
+- Not verified in browser: an actual wallet extension signing, and mobile width (window resize did not apply). ESLint: 6 errors remain, all in files untouched by this audit (Community, Docs, Navbar, WalletProvider activity effect).
+
+## External integrations verified (official docs + SDK + live calls, 2026-09-17)
+- Polymarket CLOB: `/book` (live ordering bids asc / asks desc — engine sorts), `/price`, `/midpoint`, `/data/order/{id}` and `/data/trades` (L2), POST `/order` response fields/statuses, tick sizes, market order amount semantics (BUY USDC / SELL shares), signature types 0–3, chain 137/80002, taker fees. `@polymarket/clob-client-v2` 1.1.0 exports and viem `WalletClient` signer confirmed.
+- Gamma: `/markets/slug/{slug}` for closed markets, resolution fields.
+- Robinhood Chain: **not used anywhere in this repo** (wallets are EVM MetaMask/Binance + Solana; no chain config). Official values for reference: mainnet 4663 `https://rpc.mainnet.chain.robinhood.com`, testnet 46630. Nothing added.
+
+## Remaining / needs real credentials or production
+- Live order placement, `makingAmount`/`takingAmount` per-side meaning in responses, trade status prefix format, and `fee_rate_bps` units are documented-but-unconfirmed; they need a funded Polymarket account and a small live test.
+- Live orders whose submission outcome is `unknown` **without** an order id (network timeout) stay `SUBMITTED` with `RECONCILE_REQUIRED` for operator review — there is no automatic search of open orders/trades for them.
+- Resting GTC orders are reconciled but never cancelled automatically (default order type is FAK).
+- Rate limiter and conviction cache are per-process; multi-instance deployments need a shared store. SQLite is single-writer.
+- Real wallet-extension sign-in (MetaMask/Phantom) not exercised in a browser; smart-contract (ERC-1271) wallets are not supported by the EVM verifier.
+- Paper mode fills against real or demo books are simulated (flagged `mode: paper`, `isSimulated`) — do not run production in paper mode.
 
 ## Production risks
+- **Incorrect positions / duplicate execution:** venue responses that differ from the documented shapes could leave orders `open`/`unknown` (safe, but requires reconciliation) — verify with real credentials first. Timeouts without an order id need manual reconciliation.
+- **Omnibus inventory:** all users trade through one server wallet; internal crossing of opposing intents assumes that wallet actually holds the netted shares. There is no on-chain balance reconciliation job.
+- **Incorrect settlement:** resolution relies on Gamma `umaResolutionStatus`; disputed/re-resolved markets after a job runs are not re-scored.
+- **Fees:** fee accounting depends on `fee_rate_bps` from trades; unconfirmed units could misstate PnL/ROI (not positions).
+- Not production-ready until the live Polymarket path is exercised with real funds in a controlled test.
