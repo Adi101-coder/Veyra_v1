@@ -103,3 +103,22 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 **Merge risk — amended migration:** `prisma/migrations/…_init/migration.sql` was edited in place (adding `claimedAt` and making `Fill.venueTradeId` NOT NULL) after it had already been applied locally. With the old local DB, the worker's `recover` step failed ("column `execution_intents.claimedAt` does not exist"). Any database created from an earlier commit of this branch has a checksum mismatch and must be dropped and recreated; `migrate deploy` will not repair it. This branch has never been deployed, so no shared environment is affected, and `main` had no migrations.
 
 **Still needs real funds:** an actual confirmed testnet settlement (fund the signer with testnet ETH and set `RH_SETTLEMENT_ENABLED=true`); wallet-extension switching in a real browser wallet; mainnet. Reorgs deeper than `RH_CONFIRMATIONS` are not re-checked after confirmation. Settlement signing assumes one active signer process (a second concurrent process could race a nonce; that is detected as a drop and re-signed, not duplicated).
+
+## Smart Execution hardening (follow-up, 2026-09-17)
+
+**Fixed**
+- **Wrong-side fill allocation (funds):** when non-crossing BUY and SELL intents shared a batch, venue fills for the net side were pro-rated across all leftovers, so a SELL could be credited with BUY fills. Venue fills now go only to intents on the side actually sent.
+- **Dropped shares:** surplus from USDC-denominated market BUYs filled at a better price, and pro-rata rounding dust, were never allocated (untracked custody inventory). Every venue share is now allocated.
+- **Slice cap bypass:** single-level books sent one order larger than `VEYRA_EXECUTION_MAX_SLICE_SHARES`. The cap now always applies.
+- **Stale quotes checked for one intent only:** now checked per intent; stale intents fail (never requeue) while fresh ones execute.
+- **Missing limits:** aggregated limit capped at touch ± `VEYRA_MAX_SLIPPAGE_BPS`; no order into a spread wider than `VEYRA_EXECUTION_MAX_SPREAD_BPS`.
+- **Crash between send and record:** slices are persisted as `unknown` before the venue call. Thrown/timed-out calls (`VEYRA_VENUE_TIMEOUT_MS`) are `unknown`, never retried. Order posts are paced (`POLYMARKET_ORDER_SPACING_MS`).
+- **Unknown orders without an id** were stuck forever. After `VEYRA_UNKNOWN_ORDER_GRACE_MS` they close unfilled only if Polymarket shows no open order and no unattributed trade for the token; otherwise they stay open for review.
+- **Double allocation across workers:** batch reconcile lease (`reconcileToken`, migration `…_execution_reconcile_lease`), held and heartbeat-renewed by the sending run for the whole venue call. Reconciliation skips batches with intents still `PROCESSING`; crash recovery skips live runs.
+- **Concurrent enqueue** of the same execution threw P2002; it now returns the existing intent.
+
+**Tests:** engine failure cases and a multi-worker suite on migrated SQLite. The multi-worker suite checks that separate engines draining one token send each intent exactly once, same-key enqueues collapse to one intent, concurrent reconcilers count fills once, and recovery leaves live runs alone. Six consecutive runs had no flakes. The lease-heartbeat test was mutation-checked (fails with the heartbeat disabled). Full suite: 159 passed, 2 opt-in live tests skipped.
+
+**Running app (fresh DB, all migrations):** build succeeds; HTTP flow unchanged; execution batches `RECONCILED` with leases released and slices recorded → `filled`; all worker steps healthy.
+
+**Remaining:** live timeouts, pacing and orphan-activity lookup need a funded Polymarket account. The orphan check is deliberately conservative (any unattributed activity on the token blocks auto-close). Aggregation uses the strictest limit in a batch, so looser-limit intents may under-fill. Staleness compares against the best ask for both sides, matching how quotes are recorded today.
