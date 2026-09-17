@@ -176,11 +176,12 @@ function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
     category,
     tag: event.ticker || tags[0]?.toLowerCase().replace(/\s+/g, "-") || "live",
     staked: formatUsdCompact(volume),
-    tables: Math.max(1, Math.round(liquidity / 80_000) || 3),
+    tables: 0,
     openSeats: accepting ? 1 : 0,
     resolvesIn: resolvesIn(end),
     resolvesAt: resolvesAt(end),
-    wagers: Math.max(1, raw.commentCount ?? (Math.round(volume24 / 12_000) || 4)),
+    // Veyra wager count is not known from Gamma; never invent one.
+    wagers: 0,
     status,
     accent: categoryColor(category),
     featured: event.featured === true || volume24 > 1_000_000 || seed % 7 === 0,
@@ -192,11 +193,8 @@ function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
     source: "polymarket",
     conditionId: raw.conditionId,
     clobTokenIds: parseList(raw.clobTokenIds),
-    tableOptions: [
-      { id: "t1", stake: "0.05 SOL", full: !accepting },
-      { id: "t2", stake: "0.10 SOL", full: false },
-      { id: "t3", stake: "0.25 SOL", full: false },
-    ],
+    // No fabricated stake tables for live markets.
+    tableOptions: [],
     seats: [
       {
         id: "A",
@@ -254,6 +252,16 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
     const markets = await gamma<GammaMarket[]>(`/markets?slug=${slug}&limit=1`);
     const raw = markets[0];
     if (raw) {
+      const event = raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] };
+      return toMarket(event, raw);
+    }
+  } catch {
+    // try the direct slug endpoint next
+  }
+  try {
+    // `/markets?slug=` defaults to closed=false; this endpoint also returns resolved markets.
+    const raw = await gamma<GammaMarket>(`/markets/slug/${slug}`);
+    if (raw && raw.slug) {
       const event = raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] };
       return toMarket(event, raw);
     }

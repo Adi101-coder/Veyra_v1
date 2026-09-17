@@ -1,8 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Outcome } from "@/lib/betting";
+import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 
 export type StoredFill = {
-  venueTradeId: string | null;
+  /** Required: fills are deduplicated per execution by this id. */
+  venueTradeId: string;
   priceBps: number;
   sharesMicros: bigint;
   notionalMicros: bigint;
@@ -75,6 +77,7 @@ export type MarketUpsert = {
 const bundleInclude = {
   market: true,
   position: { include: { executions: { include: { fills: true }, orderBy: { createdAt: "desc" as const } } } },
+  chainSettlements: { orderBy: { createdAt: "desc" as const } },
 } satisfies Prisma.PredictionInclude;
 
 export type PredictionBundle = Prisma.PredictionGetPayload<{ include: typeof bundleInclude }>;
@@ -128,8 +131,14 @@ export type CreateHistoryInput = {
   previousPositionStatus: string;
 };
 
+/**
+ * Settles a Change-Your-Mind adjustment from its execution result. Stores apply only
+ * the recorded fills through the position ledger (never a caller-computed position);
+ * confidence moves to the new value only when the adjustment execution is filled.
+ */
 export type ReconcileAdjustmentInput = {
   historyId: string;
+  /** null = no inventory delta was needed (noop). */
   executionId: string | null;
   executionStatus: string;
   polymarketOrderId: string | null;
@@ -137,30 +146,31 @@ export type ReconcileAdjustmentInput = {
   errorMessage: string | null;
   submittedAt: Date;
   fills: StoredFill[];
-  position: {
-    sharesMicros: bigint;
-    notionalMicros: bigint;
-    avgPriceBps: number;
-    payoutMicros: bigint;
-    status: string;
-    edgeBps?: number;
-    kellyBps?: number;
-    limitPriceBps?: number;
-  };
-  prediction?: {
-    confidenceBps: number;
-    marketPriceBps: number;
-    engineOutputJson?: string;
-  };
-  historyStatus: string;
+  positionMeta?: { edgeBps: number; kellyBps: number; limitPriceBps: number };
   historyErrorCode?: string | null;
   historyErrorMessage?: string | null;
 };
 
 export type BettingStore = {
   upsertMarket(market: MarketUpsert): Promise<void>;
+  getMarket(id: string): Promise<{
+    id: string;
+    source: string;
+    status: string;
+    resolvedAt: Date | null;
+    resolvedOutcome: string | null;
+  } | null>;
+  listOpenVenueMarketIds(): Promise<string[]>;
   findByIdempotency(walletAddress: string, key: string): Promise<PredictionBundle | null>;
   getPrediction(id: string): Promise<PredictionBundle | null>;
+  findByExecutionId(executionId: string): Promise<PredictionBundle | null>;
+  /** Executions on this market's pre-cutoff predictions whose venue outcome is not final. */
+  countPendingExecutions(marketId: string, createdAtOrBefore: Date): Promise<number>;
+  /** All predictions for a market created at or before the cutoff (no page cap). */
+  listForScoring(
+    marketId: string,
+    createdAtOrBefore: Date,
+  ): Promise<(PredictionBundle & { confidenceHistory?: ConfidenceHistoryRow[] })[]>;
   listPredictions(filter: {
     marketId?: string;
     walletAddress?: string;
@@ -175,12 +185,13 @@ export type BettingStore = {
       responseJson: string;
       errorMessage: string | null;
       submittedAt: Date;
-      positionStatus: string;
       fills: StoredFill[];
     },
   ): Promise<PredictionBundle>;
   claimAdjustmentLock(positionId: string): Promise<boolean>;
   releaseAdjustmentLock(positionId: string, status: string): Promise<void>;
+  /** Positions locked "adjusting" longer than the cutoff, with any pending history/execution. */
+  listStaleAdjustments(lockedBefore: Date): Promise<{ positionId: string; predictionId: string; historyId: string | null; executionId: string | null }[]>;
   findHistoryByIdempotency(predictionId: string, key: string): Promise<ConfidenceHistoryRow | null>;
   createHistoryAndExecution(input: {
     history: CreateHistoryInput;
@@ -212,7 +223,6 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           title: market.title,
           category: market.category,
           tag: market.tag,
-          status: market.status,
           source: market.source,
           conditionId: market.conditionId,
           clobTokenYes: market.clobTokenYes,
@@ -222,14 +232,58 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           liquidityUsd: market.liquidityUsd,
           resolvesAt: market.resolvesAt,
           imageUrl: market.imageUrl,
-          accepting: market.accepting,
         },
       });
+      // A resolved market stays resolved: catalog refreshes must not reopen it.
+      await prisma.market.updateMany({
+        where: { id: market.id, resolvedAt: null },
+        data: { status: market.status, accepting: market.accepting },
+      });
+    },
+
+    getMarket(id) {
+      return prisma.market.findUnique({
+        where: { id },
+        select: { id: true, source: true, status: true, resolvedAt: true, resolvedOutcome: true },
+      });
+    },
+
+    async listOpenVenueMarketIds() {
+      const rows = await prisma.market.findMany({
+        where: { source: "polymarket", resolvedAt: null, predictions: { some: {} } },
+        select: { id: true },
+      });
+      return rows.map((row) => row.id);
     },
 
     findByIdempotency(walletAddress, key) {
       return prisma.prediction.findFirst({
         where: { walletAddress, idempotencyKey: key },
+        include: bundleInclude,
+      });
+    },
+
+    countPendingExecutions(marketId, createdAtOrBefore) {
+      return prisma.execution.count({
+        where: {
+          createdAt: { lte: createdAtOrBefore },
+          status: { in: ["created", "submitted", "open", "unknown"] },
+          position: { marketId },
+        },
+      });
+    },
+
+    listForScoring(marketId, createdAtOrBefore) {
+      return prisma.prediction.findMany({
+        where: { marketId, createdAt: { lte: createdAtOrBefore } },
+        include: { ...bundleInclude, confidenceHistory: { orderBy: { createdAt: "asc" } } },
+        orderBy: { createdAt: "asc" },
+      });
+    },
+
+    findByExecutionId(executionId) {
+      return prisma.prediction.findFirst({
+        where: { position: { executions: { some: { id: executionId } } } },
         include: bundleInclude,
       });
     },
@@ -305,20 +359,28 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
     },
 
     async applyExecutionResult(executionId, patch) {
-      await prisma.$transaction(async (tx) => {
-        const execution = await tx.execution.update({
+      // A concurrent writer recording the same venue fills makes the unique
+      // (executionId, venueTradeId) insert fail and roll back; retrying re-reads the
+      // recorded fills and applies nothing twice.
+      await withUniqueRetry(() => prisma.$transaction(async (tx) => {
+        const current = await tx.execution.findUniqueOrThrow({
+          where: { id: executionId },
+          include: { fills: { select: { venueTradeId: true } } },
+        });
+        const fresh = unseenFills(current.fills, patch.fills);
+        await tx.execution.update({
           where: { id: executionId },
           data: {
             status: patch.status,
-            polymarketOrderId: patch.polymarketOrderId,
+            polymarketOrderId: patch.polymarketOrderId ?? current.polymarketOrderId,
             responseJson: patch.responseJson,
             errorMessage: patch.errorMessage,
-            submittedAt: patch.submittedAt,
+            submittedAt: current.submittedAt ?? patch.submittedAt,
           },
         });
-        if (patch.fills.length) {
+        if (fresh.length) {
           await tx.fill.createMany({
-            data: patch.fills.map((fill) => ({
+            data: fresh.map((fill) => ({
               executionId,
               venueTradeId: fill.venueTradeId,
               priceBps: fill.priceBps,
@@ -330,11 +392,45 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
             })),
           });
         }
-        await tx.position.update({
-          where: { id: execution.positionId },
-          data: { status: patch.positionStatus },
+        const position = await tx.position.findUniqueOrThrow({
+          where: { id: current.positionId },
+          include: { executions: { select: { id: true, status: true, createdAt: true } } },
         });
-      });
+        const held = applyFillsToHeld(position, current.side, fresh);
+        await tx.position.update({
+          where: { id: position.id },
+          data: {
+            sharesMicros: held.sharesMicros,
+            notionalMicros: held.notionalMicros,
+            avgPriceBps: held.avgPriceBps,
+            payoutMicros: held.sharesMicros,
+            status: derivePositionStatus(position.executions, held.sharesMicros),
+          },
+        });
+        const settled = settledHistoryStatus(patch.status);
+        if (settled) {
+          const pendingHistory = await tx.confidenceHistory.findMany({
+            where: { executionId, status: "pending" },
+          });
+          for (const row of pendingHistory) {
+            await tx.confidenceHistory.update({
+              where: { id: row.id },
+              data: {
+                status: settled,
+                reconciledAt: new Date(),
+                errorCode: settled === "failed" ? "EXECUTION_FAILED" : null,
+                errorMessage: settled === "failed" ? patch.errorMessage : null,
+              },
+            });
+            if (settled === "filled") {
+              await tx.prediction.update({
+                where: { id: row.predictionId },
+                data: { confidenceBps: row.newConfidenceBps, marketPriceBps: row.marketPriceBps, lockVersion: { increment: 1 } },
+              });
+            }
+          }
+        }
+      }));
       const execution = await prisma.execution.findUniqueOrThrow({
         where: { id: executionId },
         select: { position: { select: { predictionId: true } } },
@@ -349,15 +445,34 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
 
     async claimAdjustmentLock(positionId) {
       const result = await prisma.position.updateMany({
-        where: { id: positionId, NOT: { status: "adjusting" } },
+        // Only an adjustable position can be locked; never a pending/failed/adjusting one.
+        where: { id: positionId, status: { in: ["filled", "partial", "closed"] } },
         data: { status: "adjusting" },
       });
       return result.count === 1;
     },
 
+    async listStaleAdjustments(lockedBefore) {
+      const positions = await prisma.position.findMany({
+        where: { status: "adjusting", updatedAt: { lt: lockedBefore } },
+        select: { id: true, predictionId: true },
+        take: 100,
+      });
+      const result = [];
+      for (const position of positions) {
+        const history = await prisma.confidenceHistory.findFirst({
+          where: { predictionId: position.predictionId, status: "pending" },
+          orderBy: { createdAt: "desc" },
+        });
+        result.push({ positionId: position.id, predictionId: position.predictionId, historyId: history?.id ?? null, executionId: history?.executionId ?? null });
+      }
+      return result;
+    },
+
     async releaseAdjustmentLock(positionId, status) {
-      await prisma.position.update({
-        where: { id: positionId },
+      // Only undo our own lock; never overwrite a status another writer settled.
+      await prisma.position.updateMany({
+        where: { id: positionId, status: "adjusting" },
         data: { status },
       });
     },
@@ -398,79 +513,83 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
     },
 
     async reconcileAdjustment(input) {
-      await prisma.$transaction(async (tx) => {
-        if (input.executionId) {
-          await tx.execution.update({
-            where: { id: input.executionId },
+      const predictionId = await withUniqueRetry(() =>
+        prisma.$transaction(async (tx) => {
+          const history = await tx.confidenceHistory.findUniqueOrThrow({ where: { id: input.historyId } });
+          if (history.status !== "pending") return history.predictionId; // already settled: idempotent
+          const prediction = await tx.prediction.findUniqueOrThrow({
+            where: { id: history.predictionId },
+            include: { position: { include: { executions: { select: { id: true, status: true, createdAt: true } } } } },
+          });
+          const position = prediction.position!;
+
+          let historyStatus: string;
+          if (input.executionId) {
+            const current = await tx.execution.findUniqueOrThrow({
+              where: { id: input.executionId },
+              include: { fills: { select: { venueTradeId: true } } },
+            });
+            const fresh = unseenFills(current.fills, input.fills);
+            await tx.execution.update({
+              where: { id: input.executionId },
+              data: {
+                status: input.executionStatus,
+                polymarketOrderId: input.polymarketOrderId ?? current.polymarketOrderId,
+                responseJson: input.responseJson,
+                errorMessage: input.errorMessage,
+                submittedAt: current.submittedAt ?? input.submittedAt,
+              },
+            });
+            if (fresh.length) {
+              await tx.fill.createMany({ data: fresh.map((fill) => ({ executionId: input.executionId!, ...fill })) });
+            }
+            const held = applyFillsToHeld(position, current.side, fresh);
+            const executions = position.executions.map((row) =>
+              row.id === input.executionId ? { ...row, status: input.executionStatus } : row,
+            );
+            await tx.position.update({
+              where: { id: position.id },
+              data: {
+                sharesMicros: held.sharesMicros,
+                notionalMicros: held.notionalMicros,
+                avgPriceBps: held.avgPriceBps,
+                payoutMicros: held.sharesMicros,
+                status: derivePositionStatus(executions, held.sharesMicros),
+                ...(input.positionMeta ?? {}),
+              },
+            });
+            historyStatus = settledHistoryStatus(input.executionStatus) ?? "pending";
+          } else {
+            await tx.position.update({
+              where: { id: position.id },
+              data: { status: derivePositionStatus(position.executions, position.sharesMicros), ...(input.positionMeta ?? {}) },
+            });
+            historyStatus = "noop";
+          }
+
+          await tx.confidenceHistory.update({
+            where: { id: history.id },
             data: {
-              status: input.executionStatus,
-              polymarketOrderId: input.polymarketOrderId,
-              responseJson: input.responseJson,
-              errorMessage: input.errorMessage,
-              submittedAt: input.submittedAt,
+              status: historyStatus,
+              reconciledAt: historyStatus === "pending" ? null : new Date(),
+              errorCode: historyStatus === "failed" ? (input.historyErrorCode ?? "EXECUTION_FAILED") : null,
+              errorMessage: historyStatus === "failed" ? (input.historyErrorMessage ?? input.errorMessage) : null,
             },
           });
-          if (input.fills.length) {
-            await tx.fill.createMany({
-              data: input.fills.map((fill) => ({
-                executionId: input.executionId!,
-                venueTradeId: fill.venueTradeId,
-                priceBps: fill.priceBps,
-                sharesMicros: fill.sharesMicros,
-                notionalMicros: fill.notionalMicros,
-                feeMicros: fill.feeMicros,
-                isSimulated: fill.isSimulated,
-                rawJson: fill.rawJson,
-              })),
+          if (historyStatus === "filled" || historyStatus === "noop") {
+            await tx.prediction.update({
+              where: { id: history.predictionId },
+              data: {
+                confidenceBps: history.newConfidenceBps,
+                marketPriceBps: history.marketPriceBps,
+                lockVersion: { increment: 1 },
+              },
             });
           }
-        }
-        const history = await tx.confidenceHistory.update({
-          where: { id: input.historyId },
-          data: {
-            status: input.historyStatus,
-            errorCode: input.historyErrorCode ?? null,
-            errorMessage: input.historyErrorMessage ?? null,
-            reconciledAt: new Date(),
-            executionId: input.executionId,
-          },
-        });
-        await tx.position.update({
-          where: { predictionId: history.predictionId },
-          data: {
-            sharesMicros: input.position.sharesMicros,
-            notionalMicros: input.position.notionalMicros,
-            avgPriceBps: input.position.avgPriceBps,
-            payoutMicros: input.position.payoutMicros,
-            status: input.position.status,
-            ...(input.position.edgeBps != null ? { edgeBps: input.position.edgeBps } : {}),
-            ...(input.position.kellyBps != null ? { kellyBps: input.position.kellyBps } : {}),
-            ...(input.position.limitPriceBps != null
-              ? { limitPriceBps: input.position.limitPriceBps }
-              : {}),
-          },
-        });
-        if (input.prediction) {
-          await tx.prediction.update({
-            where: { id: history.predictionId },
-            data: {
-              confidenceBps: input.prediction.confidenceBps,
-              marketPriceBps: input.prediction.marketPriceBps,
-              ...(input.prediction.engineOutputJson
-                ? { engineOutputJson: input.prediction.engineOutputJson }
-                : {}),
-              lockVersion: { increment: 1 },
-            },
-          });
-        }
-      });
-      const history = await prisma.confidenceHistory.findUniqueOrThrow({
-        where: { id: input.historyId },
-      });
-      const bundle = await prisma.prediction.findUnique({
-        where: { id: history.predictionId },
-        include: bundleInclude,
-      });
+          return history.predictionId;
+        }),
+      );
+      const bundle = await prisma.prediction.findUnique({ where: { id: predictionId }, include: bundleInclude });
       if (!bundle) throw new Error("Prediction missing after adjustment reconcile");
       return bundle;
     },
@@ -482,4 +601,16 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
       });
     },
   };
+}
+
+async function withUniqueRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await run();
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      // P2002 unique violation; P2034 write conflict / SQLITE_BUSY deadlock.
+      if ((code !== "P2002" && code !== "P2034") || attempt >= attempts) throw error;
+    }
+  }
 }

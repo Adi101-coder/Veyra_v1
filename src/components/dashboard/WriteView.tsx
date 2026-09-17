@@ -452,7 +452,7 @@ export function WriteView() {
 
               {published ? (
                 <p className="mt-4 rounded-2xl bg-[#e7f4ec] px-4 py-3 text-[13px] text-[#2f9e6e]">
-                  Contract queued. It will show under New on the dashboard.
+                  Draft kept in this tab only. Contract publishing is not live yet, so nothing was submitted.
                 </p>
               ) : null}
 
@@ -466,7 +466,7 @@ export function WriteView() {
                     : "cursor-not-allowed bg-[#dedad3] text-[#9a9a9a]"
                 }`}
               >
-                {published ? "Published" : "Publish contract"}
+                {published ? "Draft only" : "Publish contract"}
               </button>
               <p className="mt-3 text-center text-[12px] leading-5 text-[#8a8a8a]">{encryptNote}</p>
 

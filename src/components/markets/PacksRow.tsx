@@ -12,6 +12,7 @@ export function PacksRow() {
     <section>
       <SectionHead
         title="Packs"
+        sample
         count={packs.length}
         extra={<RailButtons onPrev={rail.onPrev} onNext={rail.onNext} />}
       />
@@ -58,7 +59,7 @@ export function PacksRow() {
               ))}
             </ul>
             <Link
-              href={`/contract/${pack.legs[0]?.marketId}`}
+              href={pack.legs[0] ? `/contract/${pack.legs[0].marketId}` : "/markets"}
               className="mt-5 block rounded-full border border-black/[0.08] py-2.5 text-center text-[14px] font-semibold text-[#171717] no-underline transition hover:bg-[#171717] hover:text-white"
             >
               Buy Pack {pack.multiplier}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Identicon } from "@/components/dashboard/Identicon";
@@ -8,14 +8,11 @@ import { useWallet } from "@/components/wallet/WalletProvider";
 import { Shell } from "@/components/Shell";
 import {
   formatResolvesBy,
-  marketAddress,
-  marketCreatedLabel,
-  marketCreator,
   shortenKey,
   type Market,
   type WagerRow,
 } from "@/lib/markets";
-import { predictionToWagerRow, type EngineQuote } from "@/lib/betting";
+import { describeBettingError, predictionToWagerRow, type EngineQuote } from "@/lib/betting";
 import { getMarketConviction, listPredictions, placePrediction, quotePrediction } from "@/lib/betting-api";
 import {
   convictionTrailLabel,
@@ -64,10 +61,15 @@ function SectionMark() {
 }
 
 export function ContractView({ market }: { market: Market }) {
-  const creator = marketCreator(market);
-  const address = marketAddress(market);
-  const created = marketCreatedLabel(market);
+  const sourceLabel = market.source === "polymarket" ? "Polymarket" : "Demo · paper only";
+  const liquidityLabel =
+    typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)
+      ? `$${Math.round(market.liquidityUsd).toLocaleString("en-US")}`
+      : "—";
+  const conditionLabel = market.conditionId ? shortenKey(market.conditionId, 4, 4) : "—";
   const [rows, setRows] = useState<WagerRow[]>([]);
+  const [rowsError, setRowsError] = useState<string | null>(null);
+  const [convictionStale, setConvictionStale] = useState(false);
   const [hideExpired, setHideExpired] = useState(false);
   const [hideResolved, setHideResolved] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -81,8 +83,9 @@ export function ContractView({ market }: { market: Market }) {
         const predictions = await listPredictions(market.id);
         if (cancelled) return;
         setRows(predictions.map((item) => predictionToWagerRow(item, shortenKey)));
-      } catch {
-        if (!cancelled) setRows([]);
+        setRowsError(null);
+      } catch (error) {
+        if (!cancelled) setRowsError(describeBettingError(error, "Could not load positions."));
       } finally {
         if (!cancelled) setLoadingRows(false);
       }
@@ -95,23 +98,53 @@ export function ContractView({ market }: { market: Market }) {
 
   useEffect(() => {
     let cancelled = false;
-    const apply = (payload: MarketConviction) => {
-      if (!cancelled && payload.marketId) setConviction(payload);
+    // Timestamp (ms) of the snapshot currently shown; older snapshots are ignored.
+    let latestAt = Number.NEGATIVE_INFINITY;
+    const snapshotTime = (payload: MarketConviction) => {
+      const stamp = payload.asOf ?? payload.snapshotAt;
+      const parsed = stamp ? Date.parse(stamp) : Number.NaN;
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const apply = (payload: MarketConviction, fromStream: boolean) => {
+      if (cancelled || !payload.marketId) return;
+      const at = snapshotTime(payload);
+      if (at !== null) {
+        if (at < latestAt) return;
+        latestAt = at;
+      } else if (!fromStream && latestAt > Number.NEGATIVE_INFINITY) {
+        // An undated REST snapshot must not overwrite a stream event.
+        return;
+      }
+      setConviction(payload);
+      setConvictionStale(false);
     };
     void getMarketConviction(market.id)
-      .then(apply)
+      .then((payload) => apply(payload, false))
       .catch(() => {
-        if (!cancelled) setConviction(null);
+        // keep whatever the stream delivers; nothing shown until then
       });
 
     const stream = new EventSource(`/api/markets/${encodeURIComponent(market.id)}/conviction/stream`);
     stream.onmessage = (event) => {
       try {
-        const payload = JSON.parse(event.data) as MarketConviction & { error?: unknown };
-        if (!payload.error) apply(payload);
+        const payload = JSON.parse(event.data) as MarketConviction & {
+          error?: { code?: string; message?: string };
+        };
+        if (payload.error) {
+          if (payload.error.code === "MARKET_NOT_FOUND" || payload.error.code === "NOT_FOUND") {
+            stream.close();
+          }
+          if (!cancelled) setConvictionStale(true);
+          return;
+        }
+        apply(payload, true);
       } catch {
         // keep the last good snapshot
       }
+    };
+    stream.onerror = () => {
+      // EventSource reconnects on its own; dim the last value until a fresh event lands.
+      if (!cancelled) setConvictionStale(true);
     };
     return () => {
       cancelled = true;
@@ -181,33 +214,36 @@ export function ContractView({ market }: { market: Market }) {
 
               <div className="mt-6 grid gap-5 sm:grid-cols-3">
                 <div className="flex items-center gap-2.5">
-                  <Identicon seed={creator.avatar} className="h-8 w-8" />
+                  <Identicon seed={market.id} className="h-8 w-8" />
                   <div>
                     <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
-                      Creator
+                      Source
                     </p>
                     <p className="font-mono text-[12px] text-[#1a1a1a]">
-                      {shortenKey(creator.wallet, 5, 4)}
+                      {sourceLabel}
                     </p>
                   </div>
                 </div>
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
-                    Address
+                    Condition
                   </p>
                   <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
-                    {shortenKey(address, 4, 4)}
+                    {conditionLabel}
                   </p>
                 </div>
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
-                    Created
+                    Liquidity
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">{created}</p>
+                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">{liquidityLabel}</p>
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-5 sm:grid-cols-3">
+              <div
+                className={`mt-6 grid gap-5 sm:grid-cols-3 ${convictionStale ? "opacity-50" : ""}`}
+                title={convictionStale ? "Live updates paused — showing last value" : undefined}
+              >
                 <div>
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
                     Conviction
@@ -317,7 +353,9 @@ export function ContractView({ market }: { market: Market }) {
                   <p className="py-8 text-center text-sm text-[#8a8a8a]">
                     {loadingRows
                       ? "Loading positions…"
-                      : "No confidence positions on this contract yet."}
+                      : rowsError
+                        ? rowsError
+                        : "No confidence positions on this contract yet."}
                   </p>
                 ) : null}
               </div>
@@ -402,9 +440,19 @@ function CreateWagerCard({
   const [stake, setStake] = useState(25);
   const [details, setDetails] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [quote, setQuote] = useState<EngineQuote | null>(null);
+  const [quoteState, setQuoteState] = useState<{ intent: string; result: EngineQuote } | null>(null);
   const [quoting, setQuoting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [quoteErrorState, setQuoteErrorState] = useState<{ intent: string; message: string } | null>(
+    null,
+  );
+  // Only a quote (or quote error) for the current inputs counts; stale ones are ignored.
+  const quoteIntent = `${market.id}:${outcome}:${confidence}:${stake.toFixed(2)}`;
+  const quote = quoteState?.intent === quoteIntent ? quoteState.result : null;
+  const quoteError = quoteErrorState?.intent === quoteIntent ? quoteErrorState.message : null;
+  const inFlight = useRef(false);
+  // One idempotency key per intent (outcome/confidence/stake); reused on retries.
+  const intentKey = useRef<{ intent: string; key: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -417,12 +465,14 @@ function CreateWagerCard({
         stakeUsd: stake.toFixed(2),
       })
         .then((result) => {
-          if (!cancelled) setQuote(result);
+          if (cancelled) return;
+          setQuoteState({ intent: quoteIntent, result });
+          setQuoteErrorState(null);
         })
         .catch((error) => {
           if (!cancelled) {
-            setQuote(null);
-            setMessage(error instanceof Error ? error.message : "Quote failed");
+            setQuoteState(null);
+            setQuoteErrorState({ intent: quoteIntent, message: describeBettingError(error, "Quote failed.") });
           }
         })
         .finally(() => {
@@ -433,9 +483,10 @@ function CreateWagerCard({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [market.id, outcome, confidence, stake]);
+  }, [market.id, outcome, confidence, stake, quoteIntent]);
 
   const place = async () => {
+    if (inFlight.current) return;
     if (!address) {
       setMessage("Connect a wallet to make a wager.");
       return;
@@ -444,6 +495,15 @@ function CreateWagerCard({
       setMessage("Stake has to be greater than 0.");
       return;
     }
+    if (!quote?.accepted) {
+      setMessage("Waiting for a quote that matches these inputs.");
+      return;
+    }
+    if (!intentKey.current || intentKey.current.intent !== quoteIntent) {
+      intentKey.current = { intent: quoteIntent, key: crypto.randomUUID() };
+    }
+    const idempotencyKey = intentKey.current.key;
+    inFlight.current = true;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -455,24 +515,30 @@ function CreateWagerCard({
           stakeUsd: stake.toFixed(2),
           walletAddress: address,
         },
-        crypto.randomUUID(),
+        idempotencyKey,
       );
+      intentKey.current = null;
       onPlace(predictionToWagerRow(prediction, shortenKey));
       const fill = prediction.execution?.status ?? prediction.status;
       setMessage(
-        prediction.position
-          ? `Position ${fill}. ${prediction.position.shares} ${outcome} shares at ${prediction.position.avgPrice}.`
-          : "Prediction stored.",
+        fill === "failed" || fill === "rejected"
+          ? `Order ${fill}.${prediction.errorMessage ? ` ${prediction.errorMessage}` : ""}`
+          : prediction.position && Number.parseFloat(prediction.position.shares) > 0
+            ? `Position ${fill}. ${prediction.position.shares} ${outcome} shares at ${prediction.position.avgPrice}.`
+            : `Order ${fill}. Shares appear once fills are recorded.`,
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not place prediction.");
+      setMessage(describeBettingError(error, "Could not place prediction."));
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
 
   const position = quote?.position;
   const rejected = quote && !quote.accepted ? quote.rejection : null;
+  const paperOnly =
+    quote !== null && (quote.book.source === "synthetic" || quote.market.source !== "polymarket");
 
   return (
     <aside className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-6 lg:sticky lg:top-6">
@@ -601,8 +667,11 @@ function CreateWagerCard({
       <div className="mt-6 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-white px-4 py-3">
         <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
           {quoting ? "Pricing…" : "Engine quote"}
+          {paperOnly ? <span className="text-[#b0b0b0]"> · Demo market · paper only</span> : null}
         </p>
-        {rejected ? (
+        {quoteError && !quote ? (
+          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{quoteError}</p>
+        ) : rejected ? (
           <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{rejected.message}</p>
         ) : position ? (
           <div className="mt-2 space-y-1 font-mono text-[11px] text-[#5a5a5a]">

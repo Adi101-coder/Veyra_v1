@@ -10,37 +10,77 @@ import {
   REPUTATION_DOCUMENTATION,
   scoreForecast,
 } from "@/server/reputation/metrics";
-import type { Forecast, ForecastSource, ReputationStore } from "@/server/reputation/types";
+import type { Forecast, ForecastSource, ReputationStore, ResolutionOutcome } from "@/server/reputation/types";
 
 export class ReputationEngine {
   constructor(
     private readonly store: ReputationStore,
     private readonly source: ForecastSource,
+    private readonly options: { maxDeferMs?: number; retryDelayMs?: number; maxAttempts?: number; now?: () => number } = {},
   ) {}
 
   async recordOpen(input: { predictionId: string; walletAddress: string; category: string }) {
     return this.store.recordOpen(input);
   }
 
-  async enqueueResolution(marketId: string, resolvedOutcome: Outcome) {
-    if (resolvedOutcome !== "YES" && resolvedOutcome !== "NO") {
-      throw new BettingError("INVALID_OUTCOME", "Resolved outcome must be YES or NO.");
+  async enqueueResolution(marketId: string, resolvedOutcome: ResolutionOutcome) {
+    if (resolvedOutcome !== "YES" && resolvedOutcome !== "NO" && resolvedOutcome !== "INVALID") {
+      throw new BettingError("INVALID_OUTCOME", "Resolved outcome must be YES, NO or INVALID.");
     }
-    return this.store.enqueueJob(marketId, resolvedOutcome);
+    const job = await this.store.enqueueJob(marketId, resolvedOutcome);
+    await this.store.markMarketResolved(marketId, resolvedOutcome, job.createdAt);
+    return job;
   }
 
   async processJobs() {
     const processed = [];
+    const requeuedThisPass = new Set<string>();
     for (;;) {
-      const job = await this.store.claimJob();
+      const now = this.options.now?.() ?? Date.now();
+      // claimJob skips rows another worker won and reclaims stale PROCESSING rows.
+      const job = await this.store.claimJob(new Date(now));
       if (!job) break;
+      if (requeuedThisPass.has(job.id)) {
+        // Never spin on a job this pass already deferred or retried.
+        await this.store.requeueJob(job.id, { errorMessage: job.errorMessage ?? "Deferred", availableAt: new Date(now + (this.options.retryDelayMs ?? 60_000)), countAttempt: false });
+        break;
+      }
+      const retryDelay = this.options.retryDelayMs ?? 60_000;
       try {
-        const count = await this.resolveMarket(job.marketId, job.resolvedOutcome);
+        if (job.resolvedOutcome !== "INVALID") {
+          // Pre-cutoff orders whose fills are not reconciled yet would be scored with
+          // incomplete cost/shares (or skipped entirely). Wait for them, bounded.
+          const pending = (await this.source.pendingExecutions?.(job.marketId, job.createdAt)) ?? 0;
+          const maxDefer = this.options.maxDeferMs ?? 24 * 60 * 60 * 1000;
+          if (pending > 0 && now - job.createdAt.getTime() < maxDefer) {
+            await this.store.requeueJob(job.id, {
+              errorMessage: `Waiting for ${pending} execution(s) to reconcile before scoring.`,
+              availableAt: new Date(now + retryDelay),
+              countAttempt: false,
+            });
+            requeuedThisPass.add(job.id);
+            processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, deferred: true });
+            continue;
+          }
+        }
+        const count =
+          job.resolvedOutcome === "INVALID" ? 0 : await this.resolveMarket(job.marketId, job.resolvedOutcome, job.createdAt);
         await this.store.finishJob(job.id, "DONE");
         processed.push({ jobId: job.id, marketId: job.marketId, scored: count });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Reputation job failed";
-        await this.store.finishJob(job.id, "FAILED", message);
+        const attempts = (job.attempts ?? 0) + 1;
+        if (attempts >= (this.options.maxAttempts ?? 5)) {
+          await this.store.finishJob(job.id, "FAILED", message);
+        } else {
+          // Scores already written are idempotent, so a retry only fills the gaps.
+          await this.store.requeueJob(job.id, {
+            errorMessage: message,
+            availableAt: new Date(now + retryDelay * 2 ** (attempts - 1)),
+            countAttempt: true,
+          });
+          requeuedThisPass.add(job.id);
+        }
         processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, error: message });
       }
     }
@@ -98,10 +138,10 @@ export class ReputationEngine {
     return this.store.listScores(walletAddress);
   }
 
-  private async resolveMarket(marketId: string, resolvedOutcome: Outcome) {
-    const forecasts = await this.source.listByMarket(marketId);
-    const resolvedAt = new Date();
-    await this.store.markMarketResolved(marketId, resolvedOutcome, resolvedAt);
+  private async resolveMarket(marketId: string, resolvedOutcome: Outcome, resolvedAt: Date) {
+    // The market was marked resolved when the job was enqueued, so nothing can be
+    // placed after this cutoff; scoring is limited to predictions made before it.
+    const forecasts = await this.source.listByMarket(marketId, resolvedAt);
     let scored = 0;
     for (const forecast of forecasts) {
       if (await this.store.hasScore(forecast.predictionId)) continue;
@@ -111,8 +151,10 @@ export class ReputationEngine {
         confidenceBps: forecast.confidenceBps,
         notionalMicros: forecast.notionalMicros,
         payoutMicros: forecast.payoutMicros,
+        proceedsMicros: forecast.proceedsMicros,
       });
-      await this.store.applyResolution({
+      try {
+        await this.store.applyResolution({
         predictionId: forecast.predictionId,
         walletAddress: forecast.walletAddress,
         marketId: forecast.marketId,
@@ -127,7 +169,12 @@ export class ReputationEngine {
         payoutMicros: forecast.payoutMicros,
         pnlMicros: scoredRow.pnlMicros,
         resolvedAt,
-      });
+        });
+      } catch (error) {
+        // Already scored by a concurrent worker (unique predictionId): not an error.
+        if ((error as { code?: string })?.code === "P2002") continue;
+        throw error;
+      }
       scored += 1;
     }
     return scored;

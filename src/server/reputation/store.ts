@@ -1,4 +1,4 @@
-import type { Outcome } from "@/lib/betting";
+import { BettingError } from "@/server/errors";
 import type { PrismaClient } from "@prisma/client";
 import { BIN_COUNT } from "@/server/reputation/metrics";
 import type {
@@ -6,6 +6,7 @@ import type {
   ReputationJobRow,
   ReputationSnapshot,
   ReputationStore,
+  ResolutionOutcome,
 } from "@/server/reputation/types";
 
 function emptySnapshot(walletAddress: string): ReputationSnapshot {
@@ -37,7 +38,7 @@ export function memoryReputationStore(): ReputationStore {
   const scores = new Map<string, PredictionScoreRow>();
   const reputations = new Map<string, ReputationSnapshot>();
   const jobs: ReputationJobRow[] = [];
-  const markets = new Map<string, { outcome: Outcome; resolvedAt: Date }>();
+  const markets = new Map<string, { outcome: ResolutionOutcome; resolvedAt: Date }>();
   let seq = 1;
 
   const ensure = (wallet: string) => {
@@ -140,11 +141,22 @@ export function memoryReputationStore(): ReputationStore {
       jobs.push(job);
       return job;
     },
-    async claimJob() {
-      const job = jobs.find((item) => item.status === "QUEUED");
+    async claimJob(at) {
+      const now = (at ?? new Date()).getTime();
+      const job = jobs.find(
+        (item) => item.status === "QUEUED" && (!("availableAt" in item) || !item.availableAt || (item.availableAt as Date).getTime() <= now),
+      );
       if (!job) return null;
       job.status = "PROCESSING";
       return job;
+    },
+    async requeueJob(id, input) {
+      const job = jobs.find((item) => item.id === id) as (ReputationJobRow & { availableAt?: Date }) | undefined;
+      if (!job) return;
+      job.status = "QUEUED";
+      job.errorMessage = input.errorMessage;
+      job.availableAt = input.availableAt;
+      if (input.countAttempt) job.attempts = (job.attempts ?? 0) + 1;
     },
     async finishJob(id, status, errorMessage) {
       const job = jobs.find((item) => item.id === id);
@@ -197,33 +209,32 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
   return {
     async recordOpen(input) {
       try {
-        await prisma.reputationOpen.create({
-          data: {
-            predictionId: input.predictionId,
-            walletAddress: input.walletAddress,
-            category: input.category,
-          },
+        await prisma.$transaction(async (tx) => {
+          await tx.reputationOpen.create({
+            data: {
+              predictionId: input.predictionId,
+              walletAddress: input.walletAddress,
+              category: input.category,
+            },
+          });
+          await tx.userReputation.upsert({
+            where: { walletAddress: input.walletAddress },
+            create: { walletAddress: input.walletAddress, totalPredictions: 1 },
+            update: { totalPredictions: { increment: 1 } },
+          });
+          await tx.userReputationCategory.upsert({
+            where: {
+              walletAddress_category: { walletAddress: input.walletAddress, category: input.category },
+            },
+            create: { walletAddress: input.walletAddress, category: input.category, totalPredictions: 1 },
+            update: { totalPredictions: { increment: 1 } },
+          });
         });
-      } catch {
-        return false;
+        return true;
+      } catch (error) {
+        if (isUniqueViolation(error)) return false;
+        throw error;
       }
-      await prisma.userReputation.upsert({
-        where: { walletAddress: input.walletAddress },
-        create: { walletAddress: input.walletAddress, totalPredictions: 1 },
-        update: { totalPredictions: { increment: 1 } },
-      });
-      await prisma.userReputationCategory.upsert({
-        where: {
-          walletAddress_category: { walletAddress: input.walletAddress, category: input.category },
-        },
-        create: {
-          walletAddress: input.walletAddress,
-          category: input.category,
-          totalPredictions: 1,
-        },
-        update: { totalPredictions: { increment: 1 } },
-      });
-      return true;
     },
     async hasScore(predictionId) {
       const row = await prisma.predictionScore.findUnique({ where: { predictionId } });
@@ -265,6 +276,8 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
         update: {},
       });
       await prisma.$transaction(async (tx) => {
+        // Unique predictionId: a concurrent worker that already scored this row makes
+        // create() throw P2002, which rolls back the aggregate increments below.
         await tx.predictionScore.create({
           data: {
             predictionId: score.predictionId,
@@ -353,18 +366,7 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
         where: { walletAddress: { equals: walletAddress } },
         include: { categories: true, bins: { orderBy: { binIndex: "asc" } } },
       });
-      if (!row) {
-        const all = await prisma.userReputation.findMany({ include: { categories: true, bins: true } });
-        const match = all.find(
-          (item) =>
-            item.walletAddress === walletAddress ||
-            (item.walletAddress.startsWith("0x") &&
-              walletAddress.startsWith("0x") &&
-              item.walletAddress.toLowerCase() === walletAddress.toLowerCase()),
-        );
-        if (!match) return null;
-        return snapshotFromPrisma(match);
-      }
+      if (!row) return null;
       return snapshotFromPrisma(row);
     },
     async listScores(walletAddress) {
@@ -372,64 +374,87 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
         where: { walletAddress },
         orderBy: { resolvedAt: "desc" },
       });
-      if (rows.length) return rows.map(toScore);
-      const all = await prisma.predictionScore.findMany({ orderBy: { resolvedAt: "desc" } });
-      return all
-        .filter(
-          (row) =>
-            row.walletAddress === walletAddress ||
-            (row.walletAddress.startsWith("0x") &&
-              walletAddress.startsWith("0x") &&
-              row.walletAddress.toLowerCase() === walletAddress.toLowerCase()),
-        )
-        .map(toScore);
+      return rows.map(toScore);
     },
     async enqueueJob(marketId, resolvedOutcome) {
-      const existing = await prisma.reputationJob.findUnique({ where: { marketId } });
-      if (existing) {
-        return {
-          id: existing.id,
-          marketId: existing.marketId,
-          resolvedOutcome: existing.resolvedOutcome as Outcome,
-          status: existing.status as ReputationJobRow["status"],
-          errorMessage: existing.errorMessage,
-          createdAt: existing.createdAt,
-          processedAt: existing.processedAt,
-        };
-      }
-      const created = await prisma.reputationJob.create({
-        data: { marketId, resolvedOutcome, status: "QUEUED" },
+      const row = await prisma.$transaction(async (tx) => {
+        const existing = await tx.reputationJob.findUnique({ where: { marketId } });
+        if (existing && existing.resolvedOutcome !== resolvedOutcome) {
+          throw new BettingError(
+            "RESOLUTION_CONFLICT",
+            `Market already resolving as ${existing.resolvedOutcome}.`,
+            409,
+          );
+        }
+        const job = existing
+          ? existing.status === "FAILED"
+            ? await tx.reputationJob.update({
+                where: { id: existing.id },
+                data: { status: "QUEUED", errorMessage: null, claimedAt: null, attempts: 0, availableAt: null },
+              })
+            : existing
+          : await tx.reputationJob.create({ data: { marketId, resolvedOutcome, status: "QUEUED" } });
+        // Close the market in the same transaction so no prediction can land after the cutoff.
+        await tx.market.updateMany({
+          where: { id: marketId, resolvedAt: null },
+          data: { status: "resolved", resolvedOutcome, resolvedAt: job.createdAt, accepting: false },
+        });
+        return job;
       });
       return {
-        id: created.id,
-        marketId: created.marketId,
-        resolvedOutcome: created.resolvedOutcome as Outcome,
-        status: "QUEUED",
-        errorMessage: null,
-        createdAt: created.createdAt,
-        processedAt: null,
+        id: row.id,
+        marketId: row.marketId,
+        resolvedOutcome: row.resolvedOutcome as ReputationJobRow["resolvedOutcome"],
+        status: row.status as ReputationJobRow["status"],
+        errorMessage: row.errorMessage,
+        createdAt: row.createdAt,
+        processedAt: row.processedAt,
       };
     },
-    async claimJob() {
-      const queued = await prisma.reputationJob.findFirst({
-        where: { status: "QUEUED" },
-        orderBy: { createdAt: "asc" },
+    async claimJob(at) {
+      const now = at ?? new Date();
+      const staleBefore = new Date(now.getTime() - JOB_LEASE_MS);
+      for (let attempt = 0; attempt < 10; attempt += 1) {
+        const candidate = await prisma.reputationJob.findFirst({
+          where: {
+            OR: [
+              { status: "QUEUED", OR: [{ availableAt: null }, { availableAt: { lte: now } }] },
+              { status: "PROCESSING", claimedAt: { lt: staleBefore } },
+            ],
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        if (!candidate) return null;
+        const updated = await prisma.reputationJob.updateMany({
+          where: { id: candidate.id, status: candidate.status, claimedAt: candidate.claimedAt },
+          data: { status: "PROCESSING", claimedAt: now },
+        });
+        // Lost the race to another worker: look for the next job instead of stopping.
+        if (updated.count !== 1) continue;
+        return {
+          id: candidate.id,
+          marketId: candidate.marketId,
+          resolvedOutcome: candidate.resolvedOutcome as ReputationJobRow["resolvedOutcome"],
+          status: "PROCESSING" as const,
+          attempts: candidate.attempts,
+          errorMessage: null,
+          createdAt: candidate.createdAt,
+          processedAt: null,
+        };
+      }
+      return null;
+    },
+    async requeueJob(id, input) {
+      await prisma.reputationJob.update({
+        where: { id },
+        data: {
+          status: "QUEUED",
+          errorMessage: input.errorMessage,
+          availableAt: input.availableAt,
+          claimedAt: null,
+          ...(input.countAttempt ? { attempts: { increment: 1 } } : {}),
+        },
       });
-      if (!queued) return null;
-      const updated = await prisma.reputationJob.updateMany({
-        where: { id: queued.id, status: "QUEUED" },
-        data: { status: "PROCESSING" },
-      });
-      if (updated.count !== 1) return null;
-      return {
-        id: queued.id,
-        marketId: queued.marketId,
-        resolvedOutcome: queued.resolvedOutcome as Outcome,
-        status: "PROCESSING",
-        errorMessage: null,
-        createdAt: queued.createdAt,
-        processedAt: null,
-      };
     },
     async finishJob(id, status, errorMessage) {
       await prisma.reputationJob.update({
@@ -439,7 +464,7 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
     },
     async markMarketResolved(marketId, outcome, resolvedAt) {
       await prisma.market.updateMany({
-        where: { id: marketId },
+        where: { id: marketId, resolvedAt: null },
         data: { status: "resolved", resolvedOutcome: outcome, resolvedAt, accepting: false },
       });
     },
@@ -494,3 +519,10 @@ function snapshotFromPrisma(row: {
     categories: row.categories,
   };
 }
+
+function isUniqueViolation(error: unknown) {
+  return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
+}
+
+/** A PROCESSING job untouched for this long is assumed to belong to a crashed worker. */
+const JOB_LEASE_MS = 10 * 60 * 1000;

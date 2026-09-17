@@ -15,6 +15,11 @@ export function jsonError(error: unknown) {
       { status: 400 },
     );
   }
-  const message = error instanceof Error ? error.message : "Unexpected error";
-  return NextResponse.json({ error: { code: "INTERNAL", message } }, { status: 500 });
+  // Never echo internal errors (Prisma, SDK, stack details) to clients.
+  console.error("[api] unhandled error", error instanceof Error ? { name: error.name, message: error.message } : error);
+  const malformed = error instanceof SyntaxError;
+  return NextResponse.json(
+    { error: malformed ? { code: "INVALID_JSON", message: "Request body must be valid JSON." } : { code: "INTERNAL", message: "Unexpected server error." } },
+    { status: malformed ? 400 : 500 },
+  );
 }

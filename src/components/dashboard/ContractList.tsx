@@ -38,7 +38,7 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
             More Contracts
           </h2>
           <p className="mt-1 text-[13px] text-[#7a746a]">
-            {live ? "Live odds and volume from Polymarket." : "Local discovery book."}
+            {live ? "Live odds and volume from Polymarket." : "Demo catalog, paper only. Live feed unavailable."}
           </p>
         </div>
         <label className="relative min-w-0 sm:w-[300px]">
@@ -76,11 +76,11 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
                     {market.volumeUsd ? <span>{formatUsdCompact(market.volumeUsd)} vol</span> : null}
                     {market.volume24hrUsd ? (
                       <span>{formatUsdCompact(market.volume24hrUsd)} 24h</span>
-                    ) : (
+                    ) : market.wagers > 0 ? (
                       <span>
                         {market.wagers} {market.wagers === 1 ? "wager" : "wagers"}
                       </span>
-                    )}
+                    ) : null}
                   </p>
                 </div>
                 <div className="flex w-full shrink-0 items-center gap-3 sm:w-auto sm:min-w-[220px]">

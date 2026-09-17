@@ -16,7 +16,11 @@ import {
   restoreWalletSession,
   type ConnectedProvider,
   type WalletId,
+  signSessionMessage,
 } from "@/lib/solana-wallet";
+import { registerSessionEnsurer } from "@/lib/betting-api";
+import { isRobinhoodChainId, publicRobinhoodChain } from "@/lib/robinhood-chain";
+import { parseChainId, readWalletChainId, switchWalletToChain } from "@/lib/wallet-network";
 import {
   fetchWalletActivity,
   type WalletActivity,
@@ -40,6 +44,12 @@ type WalletContextValue = {
   disconnect: () => Promise<void>;
   refreshActivity: () => Promise<void>;
   clearError: () => void;
+  /** EVM wallets only: the wallet's current chain id (null for Solana / unknown). */
+  networkChainId: number | null;
+  robinhoodChain: { id: number; name: string };
+  onRobinhoodChain: boolean;
+  switchingNetwork: boolean;
+  switchToRobinhoodChain: () => Promise<void>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -56,6 +66,52 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [activity, setActivity] = useState<ActivityState>(idleActivity);
 
   const chain = walletId ? walletChain(walletId) : null;
+
+  // Server session: writes sign in lazily (first 401) with a one-time nonce signature.
+  useEffect(() => {
+    if (!provider || !address) {
+      registerSessionEnsurer(null);
+      return;
+    }
+    let pending: Promise<void> | null = null;
+    registerSessionEnsurer(() => {
+      pending ??= (async () => {
+        const nonceResponse = await fetch("/api/auth/nonce", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ walletAddress: address }),
+        });
+        const nonce = (await nonceResponse.json()) as { nonce?: string; message?: string; error?: { message?: string } };
+        if (!nonceResponse.ok || !nonce.nonce || !nonce.message) {
+          throw new Error(nonce.error?.message ?? "Could not start wallet sign-in");
+        }
+        const signature = await signSessionMessage(provider, address, nonce.message);
+        const verify = await fetch("/api/auth/verify", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ walletAddress: address, nonce: nonce.nonce, signature }),
+        });
+        if (!verify.ok) {
+          const body = (await verify.json().catch(() => ({}))) as { error?: { message?: string } };
+          throw new Error(body.error?.message ?? "Wallet sign-in failed");
+        }
+      })().finally(() => {
+        pending = null;
+      });
+      return pending;
+    });
+    // A session for a different wallet (account switch) must not be reused.
+    void fetch("/api/auth/session", { cache: "no-store" })
+      .then((response) => response.json() as Promise<{ walletAddress: string | null }>)
+      .then((session) => {
+        const normalized = address.startsWith("0x") ? address.toLowerCase() : address;
+        if (session.walletAddress && session.walletAddress !== normalized) {
+          return fetch("/api/auth/logout", { method: "POST" });
+        }
+      })
+      .catch(() => undefined);
+    return () => registerSessionEnsurer(null);
+  }, [provider, address]);
 
   const attach = useCallback((id: WalletId, next: ConnectedProvider, key: string) => {
     setWalletId(id);
@@ -85,6 +141,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   const disconnect = useCallback(async () => {
     await disconnectWallet(provider);
+    await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     setAddress(null);
     setWalletId(null);
     setProvider(null);
@@ -178,6 +235,51 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void refreshActivity();
   }, [refreshActivity]);
 
+  // Network detection for EVM wallets. Betting does not depend on the wallet's
+  // network (sign-in is chain-agnostic personal_sign); this only powers the
+  // Robinhood Chain indicator and switch action.
+  const robinhoodChain = useMemo(() => publicRobinhoodChain(), []);
+  const [networkChainId, setNetworkChainId] = useState<number | null>(null);
+  const [switchingNetwork, setSwitchingNetwork] = useState(false);
+  const evmProvider = provider && isEthereumProvider(provider) ? provider : null;
+
+  useEffect(() => {
+    if (!evmProvider) return;
+    let active = true;
+    readWalletChainId(evmProvider)
+      .then((id) => {
+        if (active) setNetworkChainId(id);
+      })
+      .catch(() => {
+        if (active) setNetworkChainId(null);
+      });
+    const onChainChanged = (...args: unknown[]) => setNetworkChainId(parseChainId(args[0]));
+    evmProvider.on?.("chainChanged", onChainChanged);
+    return () => {
+      active = false;
+      evmProvider.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [evmProvider]);
+
+  const switchToRobinhoodChain = useCallback(async () => {
+    if (!evmProvider) {
+      setError("Connect an EVM wallet (MetaMask or Binance) to use Robinhood Chain.");
+      return;
+    }
+    setSwitchingNetwork(true);
+    setError(null);
+    try {
+      setNetworkChainId(await switchWalletToChain(evmProvider, robinhoodChain));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch network");
+      setNetworkChainId(await readWalletChainId(evmProvider).catch(() => null));
+    } finally {
+      setSwitchingNetwork(false);
+    }
+  }, [evmProvider, robinhoodChain]);
+
+  const detectedChainId = evmProvider ? networkChainId : null;
+
   const value = useMemo(
     () => ({
       address,
@@ -190,8 +292,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       disconnect,
       refreshActivity,
       clearError: () => setError(null),
+      networkChainId: detectedChainId,
+      robinhoodChain: { id: robinhoodChain.id, name: robinhoodChain.name },
+      onRobinhoodChain: isRobinhoodChainId(detectedChainId, robinhoodChain),
+      switchingNetwork,
+      switchToRobinhoodChain,
     }),
     [
+      detectedChainId,
+      robinhoodChain,
+      switchingNetwork,
+      switchToRobinhoodChain,
       address,
       walletId,
       chain,

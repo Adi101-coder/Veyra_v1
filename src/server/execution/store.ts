@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type {
   ExecutionBatchRow,
@@ -66,6 +67,21 @@ export type ExecutionStore = {
   ): Promise<ExecutionIntentRow>;
   getBatch(id: string): Promise<ExecutionBatchRow | null>;
   listQueuedTokenIds(): Promise<string[]>;
+  listBatchIdsByStatus(status: ExecutionBatchStatus): Promise<string[]>;
+  cancelQueued(executionId: string): Promise<boolean>;
+  /** Exclusive reconcile lease on a batch; null if another live lease holds it. */
+  claimReconcile(batchId: string, leaseMs: number): Promise<string | null>;
+  releaseReconcile(batchId: string, token: string): Promise<void>;
+  /** Extends a held lease; false means the lease was lost to another worker. */
+  renewReconcile(batchId: string, token: string): Promise<boolean>;
+  /** Venue order ids already recorded on slices for this token since a time. */
+  listSliceOrderIds(tokenId: string, since: Date): Promise<string[]>;
+  /** Intents stuck in PROCESSING (claimed by a worker that died) older than the cutoff. */
+  listStaleProcessing(claimedBefore: Date): Promise<ExecutionIntentRow[]>;
+  updateSlice(
+    id: string,
+    patch: { status: string; responseJson: string | null; errorMessage: string | null; polymarketOrderId?: string | null },
+  ): Promise<void>;
 };
 
 function emptyMetrics(): ExecutionMetrics {
@@ -253,6 +269,50 @@ export function memoryExecutionStore(): ExecutionStore {
     async listQueuedTokenIds() {
       return [...new Set(intents.filter((row) => row.status === "QUEUED").map((row) => row.tokenId))];
     },
+    async listStaleProcessing(claimedBefore) {
+      return intents.filter((row) => row.status === "PROCESSING" && row.updatedAt < claimedBefore);
+    },
+    async claimReconcile(batchId, leaseMs) {
+      const batch = batches.find((row) => row.id === batchId) as (ExecutionBatchRow & { lease?: { token: string; at: number } }) | undefined;
+      if (!batch) return null;
+      if (batch.lease && Date.now() - batch.lease.at < leaseMs) return null;
+      const token = randomUUID();
+      batch.lease = { token, at: Date.now() };
+      return token;
+    },
+    async renewReconcile(batchId, token) {
+      const batch = batches.find((row) => row.id === batchId) as (ExecutionBatchRow & { lease?: { token: string; at: number } }) | undefined;
+      if (batch?.lease?.token !== token) return false;
+      batch.lease.at = Date.now();
+      return true;
+    },
+    async releaseReconcile(batchId, token) {
+      const batch = batches.find((row) => row.id === batchId) as (ExecutionBatchRow & { lease?: { token: string; at: number } }) | undefined;
+      if (batch?.lease?.token === token) delete batch.lease;
+    },
+    async listSliceOrderIds(tokenId, since) {
+      return batches
+        .filter((row) => row.tokenId === tokenId)
+        .flatMap((row) => row.slices)
+        .filter((slice) => slice.polymarketOrderId && slice.createdAt >= since)
+        .map((slice) => slice.polymarketOrderId!);
+    },
+    async cancelQueued(executionId) {
+      const row = intents.find((item) => item.executionId === executionId && item.status === "QUEUED");
+      if (!row) return false;
+      row.status = "FAILED";
+      row.errorCode = "CANCELLED";
+      return true;
+    },
+    async listBatchIdsByStatus(status) {
+      return batches.filter((row) => row.status === status).map((row) => row.id);
+    },
+    async updateSlice(id, patch) {
+      for (const batch of batches) {
+        const slice = batch.slices.find((row) => row.id === id);
+        if (slice) Object.assign(slice, patch);
+      }
+    },
   };
 }
 
@@ -402,16 +462,17 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
       return toIntent(row);
     },
     async claimQueued(tokenId) {
-      const queued = await prisma.executionIntent.findMany({
+      // One UPDATE statement flips QUEUED -> PROCESSING and stamps a claim token, so
+      // concurrent workers (even in different processes) can never claim the same row.
+      const claimToken = randomUUID();
+      const { count } = await prisma.executionIntent.updateMany({
         where: { tokenId, status: "QUEUED" },
+        data: { status: "PROCESSING", claimToken, claimedAt: new Date() },
       });
-      if (!queued.length) return [];
-      await prisma.executionIntent.updateMany({
-        where: { id: { in: queued.map((row) => row.id) }, status: "QUEUED" },
-        data: { status: "PROCESSING" },
-      });
+      if (!count) return [];
       const claimed = await prisma.executionIntent.findMany({
-        where: { id: { in: queued.map((row) => row.id) }, status: "PROCESSING" },
+        where: { claimToken, status: "PROCESSING" },
+        orderBy: { createdAt: "asc" },
       });
       return claimed.map(toIntent);
     },
@@ -546,6 +607,63 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
         select: { tokenId: true },
       });
       return [...new Set(rows.map((row) => row.tokenId))];
+    },
+    async listStaleProcessing(claimedBefore) {
+      const rows = await prisma.executionIntent.findMany({
+        where: { status: "PROCESSING", claimedAt: { lt: claimedBefore } },
+        take: 500,
+      });
+      return rows.map(toIntent);
+    },
+    async claimReconcile(batchId, leaseMs) {
+      const token = randomUUID();
+      const { count } = await prisma.executionBatch.updateMany({
+        where: {
+          id: batchId,
+          OR: [{ reconcileClaimedAt: null }, { reconcileClaimedAt: { lt: new Date(Date.now() - leaseMs) } }],
+        },
+        data: { reconcileToken: token, reconcileClaimedAt: new Date() },
+      });
+      return count === 1 ? token : null;
+    },
+    async renewReconcile(batchId, token) {
+      const { count } = await prisma.executionBatch.updateMany({
+        where: { id: batchId, reconcileToken: token },
+        data: { reconcileClaimedAt: new Date() },
+      });
+      return count === 1;
+    },
+    async releaseReconcile(batchId, token) {
+      await prisma.executionBatch.updateMany({
+        where: { id: batchId, reconcileToken: token },
+        data: { reconcileToken: null, reconcileClaimedAt: null },
+      });
+    },
+    async listSliceOrderIds(tokenId, since) {
+      const rows = await prisma.executionSlice.findMany({
+        where: { batch: { tokenId }, createdAt: { gte: since }, polymarketOrderId: { not: null } },
+        select: { polymarketOrderId: true },
+      });
+      return rows.map((row) => row.polymarketOrderId!);
+    },
+    async cancelQueued(executionId) {
+      const { count } = await prisma.executionIntent.updateMany({
+        where: { executionId, status: "QUEUED" },
+        data: { status: "FAILED", errorCode: "CANCELLED" },
+      });
+      return count > 0;
+    },
+    async listBatchIdsByStatus(status) {
+      const rows = await prisma.executionBatch.findMany({
+        where: { status },
+        select: { id: true },
+        orderBy: { createdAt: "asc" },
+        take: 200,
+      });
+      return rows.map((row) => row.id);
+    },
+    async updateSlice(id, patch) {
+      await prisma.executionSlice.update({ where: { id }, data: patch });
     },
   };
 }

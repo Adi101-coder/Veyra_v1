@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Heart } from "lucide-react";
 import { featuredEvent } from "@/lib/market-feed";
-import { cardClass, CrestMark, LeagueMark, Photo } from "@/components/markets/primitives";
+import { cardClass, CrestMark, LeagueMark, Photo, SampleBadge } from "@/components/markets/primitives";
 
 function DualChart({ home, away }: { home: number[]; away: number[] }) {
   const w = 640;
@@ -57,7 +57,10 @@ export function FeaturedEvent() {
       <article className={`${cardClass} px-5 py-5 sm:px-7 sm:py-6`}>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
-            <p className="text-[13px] font-medium text-[#8b887f]">Tennis</p>
+            <p className="flex items-center gap-2 text-[13px] font-medium text-[#8b887f]">
+              Tennis
+              <SampleBadge />
+            </p>
             <h2 className="mt-1 text-[22px] font-semibold tracking-[-0.035em] text-[#171717] sm:text-[26px]">
               <Link href={`/contract/${event.marketId}`} className="text-inherit no-underline">
                 {event.home.name} vs {event.away.name}

@@ -5,7 +5,6 @@ import { memoryExecutionStore } from "@/server/execution/store";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 import { defaultExecutionEngineConfig } from "@/server/execution/config";
 import type { ExecutionIntentInput } from "@/server/execution/types";
-import { BettingError } from "@/server/errors";
 
 const book: OrderBookSnapshot = {
   tokenId: "token-yes",
@@ -135,21 +134,90 @@ describe("ExecutionEngine", () => {
     expect(submits[0]?.sharesMicros).toBe(10_000_000n);
   });
 
-  it("retries a failed slice then fills", async () => {
+  it("retries only a venue-refused (retryable) slice, then fills", async () => {
     let attempts = 0;
     const { engine } = engineWith(async (request) => {
       attempts += 1;
-      return filledResult(request, attempts >= 2 ? 1 : 0);
+      if (attempts === 1) {
+        return { ...filledResult(request, 0), status: "rejected", polymarketOrderId: null, retryable: true };
+      }
+      return filledResult(request, 1);
     });
     const processed = await engine.enqueueAndProcess(intent("r", "BUY", 10_000_000n));
     expect(attempts).toBe(2);
     expect(processed.allocation?.status).toBe("filled");
   });
 
-  it("rejects a stale quoted book", async () => {
-    const { engine } = engineWith(async (request) => filledResult(request));
-    await expect(
-      engine.enqueueAndProcess({ ...intent("stale", "BUY", 10_000_000n), quotedPriceBps: 4000 }),
-    ).rejects.toMatchObject({ code: "STALE_PRICE" } satisfies Partial<BettingError>);
+  it("never re-posts an order whose outcome is unknown (timeout)", async () => {
+    let attempts = 0;
+    const { engine } = engineWith(async (request) => {
+      attempts += 1;
+      return { ...filledResult(request, 0), status: "unknown", polymarketOrderId: null, errorMessage: "timeout" };
+    });
+    const processed = await engine.enqueueAndProcess(intent("timeout", "BUY", 10_000_000n));
+    expect(attempts).toBe(1);
+    expect(processed.allocation?.status).toBe("pending");
+    expect(processed.allocation?.executedSharesMicros).toBe(0n);
+    expect(processed.batch?.status).toBe("SUBMITTED");
+  });
+
+  it("keeps an accepted resting order pending, then reconciles real venue fills", async () => {
+    let attempts = 0;
+    let venue: VenueOrderResult | null = null;
+    const store = memoryExecutionStore();
+    const client = createPolymarketClient({
+      mode: "live",
+      getBook: async () => book,
+      submitOrder: async (request) => {
+        attempts += 1;
+        return { ...filledResult(request, 0), status: "open", polymarketOrderId: "order-1", errorMessage: null };
+      },
+      getOrder: async () => venue,
+    });
+    const engine = new ExecutionEngine(client, store, defaultExecutionEngineConfig);
+    const processed = await engine.enqueueAndProcess(intent("rest", "BUY", 10_000_000n));
+    expect(attempts).toBe(1);
+    expect(processed.allocation?.status).toBe("pending");
+
+    // Still resting: nothing changes.
+    venue = { ...filledResult({ ...processed.intent, book } as never, 0), status: "open", polymarketOrderId: "order-1" };
+    const stillOpen = await engine.reconcileBatch(processed.batch!.id);
+    expect(stillOpen?.batch.status).toBe("SUBMITTED");
+    expect(stillOpen?.allocations[0]?.executedSharesMicros).toBe(0n);
+
+    // Venue cancels after a 40% fill: allocate exactly the reported fill, once.
+    venue = {
+      ...filledResult({ sharesMicros: 10_000_000n, limitPriceBps: 5000, tokenId: "token-yes" } as never, 0.4),
+      status: "partial",
+      polymarketOrderId: "order-1",
+    };
+    const done = await engine.reconcileBatch(processed.batch!.id);
+    expect(done?.batch.status).toBe("RECONCILED");
+    expect(done?.allocations[0]?.status).toBe("partial");
+    expect(done?.allocations[0]?.executedSharesMicros).toBe(4_000_000n);
+    expect(await engine.reconcileBatch(processed.batch!.id)).toBeNull();
+  });
+
+  it("fails (never requeues) intents whose quoted price is stale, without touching the venue", async () => {
+    const { engine, submits } = engineWith(async (request) => filledResult(request));
+    const processed = await engine.enqueueAndProcess({ ...intent("stale", "BUY", 10_000_000n), quotedPriceBps: 4000 });
+    expect(submits).toHaveLength(0);
+    expect(processed.allocation?.status).toBe("failed");
+    expect(processed.allocation?.errorCode).toBe("STALE_PRICE");
+    expect(await engine.processAll()).toEqual([]);
+  });
+
+  it("recovers intents a crashed worker left PROCESSING without re-sending them", async () => {
+    const store = memoryExecutionStore();
+    const client = createPolymarketClient({ mode: "paper", getBook: async () => book, submitOrder: async (r) => filledResult(r) });
+    const engine = new ExecutionEngine(client, store, defaultExecutionEngineConfig);
+    await engine.enqueue(intent("crash", "BUY", 10_000_000n));
+    // Simulate a worker that claimed the intent and died before any batch was submitted.
+    await store.claimQueued("token-yes");
+    const recovered = await engine.recoverStuck(-1_000);
+    expect(recovered.recovered).toBe(1);
+    expect(recovered.allocations[0]).toMatchObject({ executionId: "exec-crash", status: "failed", errorCode: "WORKER_ABORTED" });
+    expect((await store.findIntentByExecutionId("exec-crash"))?.status).toBe("FAILED");
+    expect(await engine.processAll()).toEqual([]);
   });
 });

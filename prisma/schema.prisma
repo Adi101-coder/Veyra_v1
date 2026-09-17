@@ -52,6 +52,7 @@ model Prediction {
   position         Position?
   confidenceHistory ConfidenceHistory[]
   score            PredictionScore?
+  chainSettlements ChainSettlement[]
 
   @@unique([walletAddress, idempotencyKey])
   @@index([marketId, createdAt])
@@ -104,6 +105,8 @@ model Execution {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   fills             Fill[]
+  intent            ExecutionIntent?
+  confidenceHistory ConfidenceHistory[]
 
   @@index([polymarketOrderId])
   @@index([positionId])
@@ -113,7 +116,7 @@ model Fill {
   id             String    @id @default(cuid())
   executionId    String
   execution      Execution @relation(fields: [executionId], references: [id])
-  venueTradeId   String?
+  venueTradeId   String
   priceBps       Int
   sharesMicros   BigInt
   notionalMicros BigInt
@@ -122,6 +125,7 @@ model Fill {
   filledAt       DateTime  @default(now())
   rawJson        String?
 
+  @@unique([executionId, venueTradeId])
   @@index([executionId])
 }
 
@@ -146,6 +150,7 @@ model ConfidenceHistory {
   status                  String
   idempotencyKey          String?
   executionId             String?
+  execution               Execution? @relation(fields: [executionId], references: [id])
   previousPositionStatus  String
   errorCode               String?
   errorMessage            String?
@@ -186,6 +191,8 @@ model ExecutionBatch {
   latencyMs                           Int               @default(0)
   attempts                            Int               @default(0)
   idempotencyKey                      String?           @unique
+  reconcileToken                      String?
+  reconcileClaimedAt                  DateTime?
   errorCode                           String?
   errorMessage                        String?
   queuedAt                            DateTime?
@@ -206,6 +213,7 @@ model ExecutionIntent {
   batchId                String?
   batch                  ExecutionBatch? @relation(fields: [batchId], references: [id])
   executionId            String          @unique
+  execution              Execution       @relation(fields: [executionId], references: [id])
   positionId             String
   predictionId           String?
   marketId               String
@@ -222,6 +230,8 @@ model ExecutionIntent {
   bookHash               String?
   idempotencyKey         String?         @unique
   status                 String
+  claimToken             String?
+  claimedAt              DateTime?
   executedSharesMicros   BigInt          @default(0)
   executedNotionalMicros BigInt          @default(0)
   avgPriceBps            Int             @default(0)
@@ -233,6 +243,7 @@ model ExecutionIntent {
 
   @@index([tokenId, status])
   @@index([positionId])
+  @@index([claimToken])
   @@map("execution_intents")
 }
 
@@ -343,6 +354,9 @@ model ReputationJob {
   status           String
   errorMessage     String?
   createdAt        DateTime  @default(now())
+  claimedAt        DateTime?
+  attempts         Int       @default(0)
+  availableAt      DateTime?
   processedAt      DateTime?
 
   @@index([status, createdAt])
@@ -368,11 +382,114 @@ model ConvictionSnapshot {
   averageConfidenceBps           Int?
   capitalWeightedConfidenceBps   Int?
   convictionBps                  Int?
-  polymarketProbabilityBps       Int
+  polymarketProbabilityBps       Int?
   divergenceBps                  Int?
   distributionJson               String
+  inputsHash                     String?
+  bucketStart                    DateTime?
   createdAt                      DateTime @default(now())
 
+  @@unique([marketId, bucketStart])
   @@index([marketId, createdAt])
   @@map("conviction_snapshots")
+}
+
+model AuthNonce {
+  nonce         String    @id
+  walletAddress String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([expiresAt])
+  @@map("auth_nonces")
+}
+
+/// On-chain settlement reference for a resolved Veyra prediction on Robinhood Chain.
+/// The attestation transaction carries an ABI-encoded summary of the scored,
+/// fill-backed prediction. A reference is only "confirmed" from a mined receipt.
+model ChainSettlement {
+  id                  String     @id @default(cuid())
+  predictionId        String
+  prediction          Prediction @relation(fields: [predictionId], references: [id])
+  chainId             Int
+  network             String
+  kind                String
+  status              String
+  payloadHash         String
+  calldata            String
+  fromAddress         String?
+  toAddress           String?
+  nonce               Int?
+  txHash              String?    @unique
+  rawTx               String?
+  gasLimit            String?
+  maxFeePerGasWei     String?
+  blockNumber         BigInt?
+  blockHash           String?
+  gasUsed             BigInt?
+  effectiveGasPriceWei String?
+  confirmations       Int        @default(0)
+  attempts            Int        @default(0)
+  lastErrorKind       String?
+  lastError           String?
+  nextAttemptAt       DateTime?
+  claimToken          String?
+  claimedAt           DateTime?
+  submittedAt         DateTime?
+  confirmedAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([predictionId, chainId, kind])
+  @@index([status, nextAttemptAt])
+  @@map("chain_settlements")
+}
+
+/// Exclusive, expiring lease for singleton background jobs (one holder at a time across processes).
+model JobLease {
+  name       String   @id
+  token      String
+  leaseUntil DateTime
+  updatedAt  DateTime @updatedAt
+
+  @@map("job_leases")
+}
+
+/// One read-only comparison of the internal ledger against the omnibus Polymarket account.
+model InventoryReconciliationRun {
+  id           String             @id @default(cuid())
+  status       String
+  network      String
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+  tradesSince  DateTime?
+  findingCount Int                @default(0)
+  fingerprint  String?
+  summaryJson  String?
+  errorMessage String?
+  findings     InventoryFinding[]
+
+  @@index([startedAt])
+  @@map("inventory_reconciliation_runs")
+}
+
+model InventoryFinding {
+  id           String                     @id @default(cuid())
+  runId        String
+  run          InventoryReconciliationRun @relation(fields: [runId], references: [id])
+  kind         String
+  severity     String
+  tokenId      String?
+  predictionId String?
+  executionId  String?
+  venueTradeId String?
+  expected     String?
+  actual       String?
+  detailJson   String
+  fingerprint  String
+
+  @@unique([runId, fingerprint])
+  @@index([runId, severity])
+  @@map("inventory_findings")
 }

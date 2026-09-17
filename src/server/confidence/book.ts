@@ -72,3 +72,14 @@ export function syntheticBookFromMarket(
 export function tokenIdFor(market: CatalogMarket, outcome: Outcome) {
   return outcome === "YES" ? market.clobTokenIds?.[0] : market.clobTokenIds?.[1];
 }
+
+/**
+ * Paper mode only: rebuilds the synthetic book for a catalog market's synthetic
+ * token ("synthetic:<marketId>:<YES|NO>"). Returns null for real venue tokens.
+ */
+export function syntheticBookForToken(tokenId: string, lookup: (id: string) => CatalogMarket | null) {
+  const match = /^synthetic:(.+):(YES|NO)$/.exec(tokenId);
+  if (!match) return null;
+  const market = lookup(match[1]!);
+  return market ? syntheticBookFromMarket(market, match[2] as Outcome) : null;
+}

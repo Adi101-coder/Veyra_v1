@@ -2,6 +2,7 @@ import "server-only";
 
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { BettingError } from "@/server/errors";
+import { parsePriceBps } from "@/server/money";
 
 const CLOB = process.env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com";
 const USER_AGENT = "VEYRAMarkets/0.1 (confidence-betting)";
@@ -21,16 +22,6 @@ type ClobBook = {
   error?: string;
 };
 
-type ClobOrder = {
-  id?: string;
-  status?: string;
-  size_matched?: string;
-  original_size?: string;
-  price?: string;
-  associate_trades?: string[];
-  error?: string;
-};
-
 async function clobGet<T>(path: string, auth?: Record<string, string>): Promise<T> {
   const response = await fetch(`${CLOB}${path}`, {
     headers: {
@@ -41,7 +32,8 @@ async function clobGet<T>(path: string, auth?: Record<string, string>): Promise<
     cache: "no-store",
     signal: AbortSignal.timeout(8_000),
   });
-  const json = (await response.json()) as T & { error?: string };
+  // Rate-limit and gateway errors are not always JSON.
+  const json = (await response.json().catch(() => ({}))) as T & { error?: string };
   if (!response.ok) {
     throw new BettingError(
       "POLYMARKET_CLOB",
@@ -82,8 +74,12 @@ export async function fetchClobPrice(tokenId: string, side: "BUY" | "SELL") {
   return raw.price ?? null;
 }
 
-export async function fetchClobOrder(orderId: string) {
-  return clobGet<ClobOrder>(`/order/${encodeURIComponent(orderId)}`);
+/** Midpoint of the best bid/ask in basis points, or null when the book is one-sided. */
+export async function fetchClobMidpoint(tokenId: string) {
+  const raw = await clobGet<{ mid?: string }>(`/midpoint?token_id=${encodeURIComponent(tokenId)}`);
+  if (!raw.mid) return null;
+  const bps = parsePriceBps(raw.mid, "floor");
+  return bps > 0 && bps < 10_000 ? bps : null;
 }
 
 export function clobHost() {

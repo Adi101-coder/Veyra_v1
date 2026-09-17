@@ -17,6 +17,7 @@ export type ExecutionIntentStatus =
   | "CREATED"
   | "QUEUED"
   | "PROCESSING"
+  | "SUBMITTED"
   | "RECONCILED"
   | "PARTIAL"
   | "FAILED";
@@ -152,6 +153,8 @@ export type ExecutionStrategy = {
   expectedSlippageBps: number;
   independentExpectedSlippageBps: number;
   notes: string[];
+  /** Set when a venue-side safety limit prevented sending any order. */
+  blockedReason?: "WIDE_SPREAD";
 };
 
 export type InternalMatch = {
@@ -165,7 +168,8 @@ export type InternalMatch = {
 export type IntentAllocation = {
   intentId: string;
   executionId: string;
-  status: "filled" | "partial" | "failed";
+  /** pending = venue order accepted but not yet terminal; reconcile before acting on it. */
+  status: "filled" | "partial" | "failed" | "pending";
   fills: Array<EngineWalkFill & { feeMicros: bigint; venueTradeId: string; simulated: boolean }>;
   executedSharesMicros: bigint;
   executedNotionalMicros: bigint;

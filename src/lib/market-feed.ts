@@ -450,10 +450,10 @@ export const esportMatches: EsportMatch[] = [
   {
     marketId: "exrustec-nexus-m1",
     game: "cs2",
-    live: { home: 0, away: 0 },
-    when: "Live",
+    // Sample fixture: no live score feed exists, so never mark it live.
+    when: "Wed, Sep 16 · 7:00 PM",
     home: { name: "ex-RUSTEC", crest: crest("XR", "#5b3fd6"), chance: 57 },
-    away: { name: "Nexus", crest: crest("NX", "#128a6a"), chance: 52.8 },
+    away: { name: "Nexus", crest: crest("NX", "#128a6a"), chance: 43 },
   },
   {
     marketId: "exrustec-nexus-m1",

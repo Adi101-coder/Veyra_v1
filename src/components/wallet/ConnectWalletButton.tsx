@@ -20,6 +20,12 @@ export function ConnectWalletButton() {
     connect,
     disconnect,
     clearError,
+    chain,
+    networkChainId,
+    robinhoodChain,
+    onRobinhoodChain,
+    switchingNetwork,
+    switchToRobinhoodChain,
   } = useWallet();
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -108,6 +114,30 @@ export function ConnectWalletButton() {
             >
               View all activity
             </Link>
+            {chain === "evm" ? (
+              onRobinhoodChain ? (
+                <p className="border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-[12px] text-[#8a8a8a]">
+                  Network · {robinhoodChain.name}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  disabled={switchingNetwork}
+                  onClick={async () => {
+                    await switchToRobinhoodChain();
+                  }}
+                  className="block w-full border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-left text-[13px] text-[#1a1a1a] hover:bg-[#f6f4ef] disabled:opacity-50"
+                >
+                  {switchingNetwork ? "Switching…" : `Switch to ${robinhoodChain.name}`}
+                  {networkChainId != null ? (
+                    <span className="ml-1 text-[11px] text-[#8a8a8a]">(on chain {networkChainId})</span>
+                  ) : null}
+                </button>
+              )
+            ) : null}
+            {chain === "evm" && error ? (
+              <p className="px-4 pb-2.5 text-[12px] text-[#c45c6a]">{error}</p>
+            ) : null}
             <button
               type="button"
               onClick={async () => {

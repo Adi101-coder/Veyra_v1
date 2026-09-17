@@ -262,6 +262,13 @@ export function planSlices(
       ? snapshotToEngineBook(snapshot).asks[0]?.sizeMicros ?? 0n
       : snapshotToEngineBook(snapshot).bids[0]?.sizeMicros ?? 0n;
 
+  // The size cap applies first: even a single-level book must not receive one
+  // order larger than the configured maximum slice.
+  if (walkable > config.maxSliceSharesMicros && config.maxSliceSharesMicros >= min) {
+    notes.push("Splitting because net size exceeds the configured max slice.");
+    return { slices: chunkWalk(walk, side, config.maxSliceSharesMicros, min), walk, notes };
+  }
+
   if (walkable <= depthAtTouch || walk.length === 1) {
     notes.push("Single-touch or single-level book; one venue order.");
     return {
@@ -356,8 +363,11 @@ export function buildStrategy(
   config: ExecutionEngineConfig,
 ): ExecutionStrategy & { matches: InternalMatch[]; residual: WorkingIntent[] } {
   const quality = analyzeBook(snapshot, Date.now(), config.maxBookAgeMs);
-  const { matches, residual } = crossIntents(intents, quality);
-  const net = netResidual(residual);
+  const { matches, residual: crossed } = crossIntents(intents, quality);
+  const net = netResidual(crossed);
+  // Only intents on the side actually sent to the venue may receive venue fills.
+  // Opposing leftovers (limits that did not cross) are not executed this batch.
+  const residual = crossed.filter((item) => item.row.side === net.side);
   const internalShares = matches.reduce((sum, match) => sum + match.sharesMicros, 0n);
   const independent = independentExpectedSlippage(intents, snapshot, config.shareLotMicros);
 
@@ -378,7 +388,33 @@ export function buildStrategy(
     };
   }
 
-  const planned = planSlices(snapshot, net.side, net.sharesMicros, net.limitPriceBps, config);
+  if (quality.spreadBps != null && quality.spreadBps > config.maxSpreadBps) {
+    return {
+      netSide: net.side,
+      netSharesMicros: net.sharesMicros,
+      internalSharesMicros: internalShares,
+      venueSharesMicros: 0n,
+      slices: [],
+      quality,
+      expectedVenueAvgBps: 0,
+      expectedSlippageBps: 0,
+      independentExpectedSlippageBps: independent,
+      notes: [`Spread ${quality.spreadBps} bps exceeds the ${config.maxSpreadBps} bps limit; no venue order.`],
+      blockedReason: "WIDE_SPREAD",
+      matches,
+      residual,
+    };
+  }
+  // Cap how far past the touch the aggregated order may walk.
+  const touch = net.side === "BUY" ? quality.bestAskBps : quality.bestBidBps;
+  const slippageLimit =
+    touch == null
+      ? net.limitPriceBps
+      : net.side === "BUY"
+        ? Math.min(net.limitPriceBps, touch + config.maxSlippageBps)
+        : Math.max(net.limitPriceBps, touch - config.maxSlippageBps);
+  const limitPriceBps = floorToTick(slippageLimit, quality.tickBps || 100);
+  const planned = planSlices(snapshot, net.side, net.sharesMicros, limitPriceBps, config);
   const venueShares = planned.slices.reduce((sum, slice) => sum + slice.sharesMicros, 0n);
   const expectedAvg = vwapBps(planned.walk);
   return {
@@ -455,13 +491,16 @@ export function allocateFills(
   const venueTotal = filledShares(venuePool);
   let venueLeft = venueTotal;
 
+  // Every venue share is allocated: pro-rata by requested residual, with rounding
+  // dust and any surplus (a USDC-denominated market BUY can receive more shares
+  // than requested at a better price) going to the last intent. Dropping shares
+  // here would leave custody inventory that no position accounts for.
   for (let i = 0; i < leftover.length; i += 1) {
     const item = leftover[i]!;
     if (totalResidual <= 0n || venueLeft <= 0n) break;
     const share =
       i === leftover.length - 1 ? venueLeft : (item.remaining * venueTotal) / totalResidual;
-    const take = share < item.remaining ? share : item.remaining;
-    const sized = take < venueLeft ? take : venueLeft;
+    const sized = share < venueLeft ? share : venueLeft;
     if (sized <= 0n) continue;
     const piece = takeFromFills(venuePool, sized);
     for (const fill of piece) {
@@ -472,7 +511,7 @@ export function allocateFills(
       });
     }
     venueLeft -= sized;
-    item.remaining -= sized;
+    item.remaining = item.remaining > sized ? item.remaining - sized : 0n;
   }
 
   for (const intent of intents) {

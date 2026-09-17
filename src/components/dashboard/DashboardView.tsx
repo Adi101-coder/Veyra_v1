@@ -18,24 +18,42 @@ export function DashboardView() {
   const [tab, setTab] = useState<TabId>("trending");
   const [category, setCategory] = useState<CategoryId>("all");
   const [query, setQuery] = useState("");
-  const [markets, setMarkets] = useState<Market[]>(coreMarkets);
+  const [markets, setMarkets] = useState<Market[]>([]);
   const [source, setSource] = useState<"local" | "polymarket">("local");
   const [loading, setLoading] = useState(true);
+  const [feedError, setFeedError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const fallback = (message: string) => {
+      setMarkets(coreMarkets);
+      setSource("local");
+      setFeedError(message);
+    };
     const load = async () => {
       try {
         const response = await fetch("/api/markets", { cache: "no-store" });
+        if (!response.ok) {
+          if (!cancelled) fallback(`Live feed unavailable (HTTP ${response.status})`);
+          return;
+        }
         const json = (await response.json()) as {
           source?: "local" | "polymarket";
           markets?: Market[];
+          error?: string;
         };
         if (cancelled) return;
-        if (json.markets?.length) setMarkets(json.markets);
-        if (json.source) setSource(json.source);
+        if (json.source === "polymarket" && json.markets?.length) {
+          setMarkets(json.markets);
+          setSource("polymarket");
+          setFeedError(null);
+        } else {
+          setMarkets(json.markets?.length ? json.markets : coreMarkets);
+          setSource("local");
+          setFeedError(json.error ?? "Live feed unavailable");
+        }
       } catch {
-        if (!cancelled) setMarkets(coreMarkets);
+        if (!cancelled) fallback("Live feed unavailable");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -88,9 +106,15 @@ export function DashboardView() {
                 source === "polymarket" ? "bg-[#2c7a55]" : "bg-[#b58a2a]"
               }`}
             />
-            {loading ? "Syncing markets" : source === "polymarket" ? "Live · Polymarket" : "Local book"}
+            {loading ? "Syncing markets" : source === "polymarket" ? "Live · Polymarket" : "Demo catalog · paper only"}
           </p>
         </div>
+
+        {!loading && feedError ? (
+          <p className="-mt-2 mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[#b58a2a]">
+            {feedError} · showing demo catalog
+          </p>
+        ) : null}
 
         <div className="flex gap-2 overflow-x-auto pb-1">
           {categories.map((item) => {
@@ -119,7 +143,7 @@ export function DashboardView() {
         </div>
 
         <div className="mt-6">
-          {loading && !featured.length ? (
+          {loading && !markets.length ? (
             <div className="h-[28rem] animate-pulse rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fbfaf6]" />
           ) : (
             <FeaturedMarket key={featured.map((item) => item.id).join("-")} markets={featured} />
