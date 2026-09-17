@@ -9,9 +9,21 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ) {
   const { id } = await context.params;
+  // Only ids that exist in the static catalog resolve to demo data.
   const local = getMarket(id);
-  if (local) return NextResponse.json({ market: local });
-  const live = await fetchPolymarketMarket(id);
-  if (!live) return NextResponse.json({ market: null }, { status: 404 });
-  return NextResponse.json({ market: live });
+  if (local) return NextResponse.json({ source: "local", market: local });
+  try {
+    const live = await fetchPolymarketMarket(id);
+    if (!live) return NextResponse.json({ source: "polymarket", market: null }, { status: 404 });
+    return NextResponse.json({ source: "polymarket", market: live });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        source: "polymarket",
+        market: null,
+        error: error instanceof Error ? error.message : "Polymarket unavailable",
+      },
+      { status: 502 },
+    );
+  }
 }

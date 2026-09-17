@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ChevronDown, Crown } from "lucide-react";
 import { biggestPositions, topTraders } from "@/lib/market-feed";
-import { AssetMark, cardClass, Photo } from "@/components/markets/primitives";
+import { AssetMark, cardClass, Photo, SampleBadge } from "@/components/markets/primitives";
 
 function Rank({ rank }: { rank: number }) {
   const tone = rank === 1 ? "text-[#c4a46a]" : rank === 2 ? "text-[#9a9a9a]" : "text-[#c47a3a]";
@@ -19,6 +19,7 @@ export function Leaderboards() {
             Top Traders
           </h2>
           <div className="flex items-center gap-2 text-[12px] font-medium text-[#8b887f]">
+            <SampleBadge />
             <span className="rounded-full bg-[#f4f2ec] px-2.5 py-1 text-[#171717]">Daily</span>
             <span className="inline-flex items-center gap-0.5">
               All <ChevronDown className="h-3.5 w-3.5" />
@@ -52,10 +53,7 @@ export function Leaderboards() {
             Biggest Positions
           </h2>
           <div className="flex items-center gap-3 text-[12px] font-medium">
-            <span className="inline-flex items-center gap-1.5 text-[#c45c6a]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#c45c6a]" />
-              LIVE
-            </span>
+            <SampleBadge />
             <span className="inline-flex items-center gap-0.5 text-[#8b887f]">
               All <ChevronDown className="h-3.5 w-3.5" />
             </span>

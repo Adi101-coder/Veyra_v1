@@ -10,7 +10,7 @@ import { Leaderboards } from "@/components/markets/Leaderboards";
 import { TrendingPositions } from "@/components/markets/TrendingPositions";
 import { SportSection } from "@/components/markets/SportSection";
 import { EsportsSection } from "@/components/markets/EsportsSection";
-import { cardClass } from "@/components/markets/primitives";
+import { cardClass, SampleBadge } from "@/components/markets/primitives";
 import {
   channelMarketFilter,
   feedChannels,
@@ -85,12 +85,13 @@ export function MarketsView() {
           {showEsports ? <EsportsSection /> : null}
           {showCatalog ? (
             <section>
-              <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">
+              <h2 className="mb-4 flex items-center gap-2 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">
                 {feedChannels.find((item) => item.id === channel)?.label}
+                <SampleBadge />
               </h2>
               {catalog.length === 0 ? (
                 <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
-                  Nothing live in this channel yet.
+                  Nothing in this channel yet.
                 </p>
               ) : (
                 <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">

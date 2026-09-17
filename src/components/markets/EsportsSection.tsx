@@ -16,12 +16,13 @@ export function EsportsSection() {
     <section id="esports" className="scroll-mt-24">
       <SectionHead
         title="Esports"
+        sample
         count={esportMatches.length}
         extra={<PillTabs tabs={esportTabs} value={tab} onChange={setTab} />}
       />
       {matches.length === 0 ? (
         <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
-          No live {esportTabs.find((item) => item.id === tab)?.label} markets right now.
+          No {esportTabs.find((item) => item.id === tab)?.label} markets right now.
         </p>
       ) : (
         <HorizontalRail>

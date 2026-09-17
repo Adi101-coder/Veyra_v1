@@ -14,17 +14,29 @@ function yesOf(market: Market) {
 
 export function Hero() {
   const [live, setLive] = useState<Market[]>(coreMarkets.slice(0, 4));
+  const [source, setSource] = useState<"local" | "polymarket">("local");
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/markets", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((json: { markets?: Market[] }) => {
-        if (cancelled || !json.markets?.length) return;
-        setLive(json.markets.slice(0, 4));
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((json: { source?: "local" | "polymarket"; markets?: Market[] }) => {
+        if (cancelled) return;
+        if (json.source === "polymarket" && json.markets?.length) {
+          setLive(json.markets.slice(0, 4));
+          setSource("polymarket");
+        } else {
+          setLive(coreMarkets.slice(0, 4));
+          setSource("local");
+        }
       })
       .catch(() => {
-        if (!cancelled) setLive(coreMarkets.slice(0, 4));
+        if (cancelled) return;
+        setLive(coreMarkets.slice(0, 4));
+        setSource("local");
       });
     return () => {
       cancelled = true;
@@ -77,7 +89,10 @@ export function Hero() {
         ))}
       </div>
 
-      <div className="relative mx-auto mt-6 grid max-w-[880px] gap-2 sm:grid-cols-2">
+      <p className="relative mx-auto mt-6 max-w-[880px] text-left text-[11px] tracking-[0.14em] text-[#7d818a] uppercase">
+        {source === "polymarket" ? "Live odds · Polymarket" : "Sample markets · demo odds"}
+      </p>
+      <div className="relative mx-auto mt-2 grid max-w-[880px] gap-2 sm:grid-cols-2">
         {live.map((market) => {
           const yes = yesOf(market);
           return (

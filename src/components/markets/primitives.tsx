@@ -194,14 +194,25 @@ export function LeagueMark({ id }: { id: string }) {
   );
 }
 
+/** Marks sections rendered from the static sample feed (not live data). */
+export function SampleBadge() {
+  return (
+    <span className="rounded-full bg-[#ebe8e0] px-2 py-0.5 text-[10px] font-medium tracking-[0.12em] text-[#8b887f] uppercase">
+      Sample data
+    </span>
+  );
+}
+
 export function SectionHead({
   title,
   count,
   extra,
+  sample,
 }: {
   title: string;
   count?: number;
   extra?: ReactNode;
+  sample?: boolean;
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -211,6 +222,7 @@ export function SectionHead({
           <span className="text-[13px] font-medium tracking-normal text-[#8b887f]">({count})</span>
         ) : null}
         <ChevronRight className="h-4 w-4 text-[#c4c0b6]" />
+        {sample ? <SampleBadge /> : null}
       </h2>
       {extra}
     </div>

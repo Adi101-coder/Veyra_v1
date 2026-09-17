@@ -25,12 +25,13 @@ export function SportSection() {
     <section id="sport" className="scroll-mt-24">
       <SectionHead
         title="Sport"
+        sample
         count={total}
         extra={<PillTabs tabs={sportTabs} value={tab} onChange={setTab} />}
       />
       {leagues.length === 0 ? (
         <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
-          No live {sportTabs.find((item) => item.id === tab)?.label.toLowerCase()} markets right now.
+          No {sportTabs.find((item) => item.id === tab)?.label.toLowerCase()} markets right now.
         </p>
       ) : null}
       <div className="flex flex-col gap-8">
