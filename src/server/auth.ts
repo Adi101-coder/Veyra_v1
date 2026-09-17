@@ -191,6 +191,19 @@ export function requireOperator(request: Request) {
   }
 }
 
+/**
+ * Scheduled worker ticks. Vercel Cron calls the route with
+ * `Authorization: Bearer $CRON_SECRET`, so accept that secret as well as the
+ * operator token. Both are compared in constant time.
+ */
+export function requireOperatorOrCron(request: Request) {
+  const header = request.headers.get("authorization") ?? "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const cronSecret = process.env.CRON_SECRET;
+  if (token && cronSecret && cronSecret.length >= 16 && safeEqual(token, cronSecret)) return;
+  requireOperator(request);
+}
+
 export function sessionCookie(token: string) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${secure}`;

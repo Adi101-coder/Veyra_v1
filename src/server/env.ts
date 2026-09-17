@@ -37,7 +37,16 @@ export function validateEnvironment(env: Env): EnvReport {
   const mode: EnvReport["mode"] = modeRaw === "live" ? "live" : "paper";
 
   // Core
-  if (!set(env.DATABASE_URL)) errors.push("DATABASE_URL is required.");
+  const serverless = set(env.VERCEL) || set(env.AWS_LAMBDA_FUNCTION_NAME) || set(env.NETLIFY);
+  if (!set(env.DATABASE_URL)) {
+    errors.push("DATABASE_URL is required.");
+  } else if (!/^postgres(ql)?:\/\//.test(env.DATABASE_URL!.trim())) {
+    // The schema and migrations are PostgreSQL-only.
+    (production ? errors : warnings).push("DATABASE_URL must be a postgresql:// connection string.");
+  }
+  if (production && !set(env.DIRECT_URL)) {
+    warnings.push("DIRECT_URL is unset: `prisma migrate deploy` will run over the pooled connection, which can fail on a pooler.");
+  }
   if (!set(env.VEYRA_SESSION_SECRET) || env.VEYRA_SESSION_SECRET!.length < 32) {
     (production ? errors : warnings).push("VEYRA_SESSION_SECRET must be at least 32 characters (sessions reset on restart without it).");
   }
@@ -47,7 +56,16 @@ export function validateEnvironment(env: Env): EnvReport {
   if (production && modeRaw !== "live" && modeRaw !== "paper") {
     errors.push('POLYMARKET_EXECUTION_MODE must be set explicitly to "live" or "paper" in production.');
   }
-  if (production && !set(env.VEYRA_WORKER_INTERVAL_MS)) {
+  if (serverless) {
+    // Serverless functions are frozen between requests: an interval-based worker
+    // cannot run. Jobs must be driven by a scheduler (Vercel Cron -> /api/jobs/run).
+    if (Number(env.VEYRA_WORKER_INTERVAL_MS ?? 0) > 0) {
+      errors.push("VEYRA_WORKER_INTERVAL_MS must be 0 on a serverless platform; schedule /api/jobs/run (Vercel Cron) instead.");
+    }
+    if (!set(env.CRON_SECRET) || env.CRON_SECRET!.length < 16) {
+      warnings.push("CRON_SECRET is unset or too short: scheduled worker ticks must authenticate with the operator token instead.");
+    }
+  } else if (production && !set(env.VEYRA_WORKER_INTERVAL_MS)) {
     warnings.push("VEYRA_WORKER_INTERVAL_MS is unset: no in-process worker. Schedule POST /api/jobs/run instead.");
   }
   intInRange(env, "VEYRA_WORKER_INTERVAL_MS", 0, 3_600_000, errors);
@@ -106,6 +124,8 @@ export function validateEnvironment(env: Env): EnvReport {
     warnings,
     configured: {
       database: set(env.DATABASE_URL),
+      directDatabase: set(env.DIRECT_URL),
+      cronSecret: set(env.CRON_SECRET),
       sessionSecret: set(env.VEYRA_SESSION_SECRET),
       operatorToken: set(env.VEYRA_OPERATOR_TOKEN),
       polymarketPrivateKey: set(env.POLYMARKET_PRIVATE_KEY),

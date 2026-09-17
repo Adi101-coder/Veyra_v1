@@ -1,4 +1,5 @@
 import { BettingError } from "@/server/errors";
+import { isUniqueViolation, withUniqueRetry } from "@/server/prisma-retry";
 import type { PrismaClient } from "@prisma/client";
 import { BIN_COUNT } from "@/server/reputation/metrics";
 import type {
@@ -205,35 +206,153 @@ function toScore(row: {
   };
 }
 
+/** One attempt at recording an open prediction. Throws P2002 on any collision. */
+async function recordOpenOnce(
+  prisma: PrismaClient,
+  input: { predictionId: string; walletAddress: string; category: string },
+): Promise<boolean> {
+  await prisma.$transaction(async (tx) => {
+    await tx.reputationOpen.create({
+      data: {
+        predictionId: input.predictionId,
+        walletAddress: input.walletAddress,
+        category: input.category,
+      },
+    });
+    await tx.userReputation.upsert({
+      where: { walletAddress: input.walletAddress },
+      create: { walletAddress: input.walletAddress, totalPredictions: 1 },
+      update: { totalPredictions: { increment: 1 } },
+    });
+    await tx.userReputationCategory.upsert({
+      where: {
+        walletAddress_category: { walletAddress: input.walletAddress, category: input.category },
+      },
+      create: { walletAddress: input.walletAddress, category: input.category, totalPredictions: 1 },
+      update: { totalPredictions: { increment: 1 } },
+    });
+  });
+  return true;
+}
+
+/** One attempt at applying a resolution. Throws P2002 on any collision. */
+async function applyResolutionOnce(prisma: PrismaClient, score: PredictionScoreRow): Promise<void> {
+    const already = await prisma.predictionScore.findUnique({
+      where: { predictionId: score.predictionId },
+    });
+    if (already) return;
+    await withUniqueRetry(() =>
+      prisma.userReputation.upsert({
+        where: { walletAddress: score.walletAddress },
+        create: { walletAddress: score.walletAddress },
+        update: {},
+      }),
+    );
+    await prisma.$transaction(async (tx) => {
+      // Unique predictionId: a concurrent worker that already scored this row makes
+      // create() throw P2002, which rolls back the aggregate increments below.
+      await tx.predictionScore.create({
+        data: {
+          predictionId: score.predictionId,
+          walletAddress: score.walletAddress,
+          marketId: score.marketId,
+          category: score.category,
+          predictedOutcome: score.predictedOutcome,
+          resolvedOutcome: score.resolvedOutcome,
+          confidenceBps: score.confidenceBps,
+          impliedYesBps: score.impliedYesBps,
+          correct: score.correct,
+          brierMicros: score.brierMicros,
+          notionalMicros: score.notionalMicros,
+          payoutMicros: score.payoutMicros,
+          pnlMicros: score.pnlMicros,
+          resolvedAt: score.resolvedAt,
+        },
+      });
+      await tx.userReputation.update({
+        where: { walletAddress: score.walletAddress },
+        data: {
+          resolvedPredictions: { increment: 1 },
+          correctPredictions: { increment: score.correct ? 1 : 0 },
+          confidenceSumBps: { increment: BigInt(score.confidenceBps) },
+          brierSumMicros: { increment: score.brierMicros },
+          ...(score.notionalMicros > 0n
+            ? {
+                notionalSumMicros: { increment: score.notionalMicros },
+                pnlSumMicros: { increment: score.pnlMicros },
+              }
+            : {}),
+        },
+      });
+      await tx.userReputationCategory.upsert({
+        where: {
+          walletAddress_category: {
+            walletAddress: score.walletAddress,
+            category: score.category,
+          },
+        },
+        create: {
+          walletAddress: score.walletAddress,
+          category: score.category,
+          resolvedPredictions: 1,
+          correctPredictions: score.correct ? 1 : 0,
+          confidenceSumBps: BigInt(score.confidenceBps),
+          brierSumMicros: score.brierMicros,
+          notionalSumMicros: score.notionalMicros > 0n ? score.notionalMicros : 0n,
+          pnlSumMicros: score.notionalMicros > 0n ? score.pnlMicros : 0n,
+        },
+        update: {
+          resolvedPredictions: { increment: 1 },
+          correctPredictions: { increment: score.correct ? 1 : 0 },
+          confidenceSumBps: { increment: BigInt(score.confidenceBps) },
+          brierSumMicros: { increment: score.brierMicros },
+          ...(score.notionalMicros > 0n
+            ? {
+                notionalSumMicros: { increment: score.notionalMicros },
+                pnlSumMicros: { increment: score.pnlMicros },
+              }
+            : {}),
+        },
+      });
+      const binIndex = Math.min(9, Math.max(0, Math.floor(score.confidenceBps / 1000)));
+      await tx.calibrationBin.upsert({
+        where: {
+          walletAddress_binIndex: { walletAddress: score.walletAddress, binIndex },
+        },
+        create: {
+          walletAddress: score.walletAddress,
+          binIndex,
+          sampleCount: 1,
+          sumConfidenceBps: BigInt(score.confidenceBps),
+          correctCount: score.correct ? 1 : 0,
+        },
+        update: {
+          sampleCount: { increment: 1 },
+          sumConfidenceBps: { increment: BigInt(score.confidenceBps) },
+          correctCount: { increment: score.correct ? 1 : 0 },
+        },
+      });
+    });
+}
+
 export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
   return {
     async recordOpen(input) {
-      try {
-        await prisma.$transaction(async (tx) => {
-          await tx.reputationOpen.create({
-            data: {
-              predictionId: input.predictionId,
-              walletAddress: input.walletAddress,
-              category: input.category,
-            },
+      // A P2002 here means either this prediction was already recorded (idempotent,
+      // return false) or two wallets/predictions raced on the shared UserReputation /
+      // UserReputationCategory rows (PostgreSQL does not serialise concurrent upserts).
+      // Only the first is a no-op; the second must retry or the totals undercount.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await recordOpenOnce(prisma, input);
+        } catch (error) {
+          if (!isUniqueViolation(error) || attempt >= 4) throw error;
+          const existing = await prisma.reputationOpen.findUnique({
+            where: { predictionId: input.predictionId },
+            select: { predictionId: true },
           });
-          await tx.userReputation.upsert({
-            where: { walletAddress: input.walletAddress },
-            create: { walletAddress: input.walletAddress, totalPredictions: 1 },
-            update: { totalPredictions: { increment: 1 } },
-          });
-          await tx.userReputationCategory.upsert({
-            where: {
-              walletAddress_category: { walletAddress: input.walletAddress, category: input.category },
-            },
-            create: { walletAddress: input.walletAddress, category: input.category, totalPredictions: 1 },
-            update: { totalPredictions: { increment: 1 } },
-          });
-        });
-        return true;
-      } catch (error) {
-        if (isUniqueViolation(error)) return false;
-        throw error;
+          if (existing) return false;
+        }
       }
     },
     async hasScore(predictionId) {
@@ -241,11 +360,14 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
       return Boolean(row);
     },
     async saveScore(row) {
-      await prisma.userReputation.upsert({
-        where: { walletAddress: row.walletAddress },
-        create: { walletAddress: row.walletAddress },
-        update: {},
-      });
+      // Concurrent scorers can create this parent row at the same time (P2002 on PG).
+      await withUniqueRetry(() =>
+        prisma.userReputation.upsert({
+          where: { walletAddress: row.walletAddress },
+          create: { walletAddress: row.walletAddress },
+          update: {},
+        }),
+      );
       await prisma.predictionScore.create({
         data: {
           predictionId: row.predictionId,
@@ -266,100 +388,21 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
       });
     },
     async applyResolution(score) {
-      const already = await prisma.predictionScore.findUnique({
-        where: { predictionId: score.predictionId },
-      });
-      if (already) return;
-      await prisma.userReputation.upsert({
-        where: { walletAddress: score.walletAddress },
-        create: { walletAddress: score.walletAddress },
-        update: {},
-      });
-      await prisma.$transaction(async (tx) => {
-        // Unique predictionId: a concurrent worker that already scored this row makes
-        // create() throw P2002, which rolls back the aggregate increments below.
-        await tx.predictionScore.create({
-          data: {
-            predictionId: score.predictionId,
-            walletAddress: score.walletAddress,
-            marketId: score.marketId,
-            category: score.category,
-            predictedOutcome: score.predictedOutcome,
-            resolvedOutcome: score.resolvedOutcome,
-            confidenceBps: score.confidenceBps,
-            impliedYesBps: score.impliedYesBps,
-            correct: score.correct,
-            brierMicros: score.brierMicros,
-            notionalMicros: score.notionalMicros,
-            payoutMicros: score.payoutMicros,
-            pnlMicros: score.pnlMicros,
-            resolvedAt: score.resolvedAt,
-          },
-        });
-        await tx.userReputation.update({
-          where: { walletAddress: score.walletAddress },
-          data: {
-            resolvedPredictions: { increment: 1 },
-            correctPredictions: { increment: score.correct ? 1 : 0 },
-            confidenceSumBps: { increment: BigInt(score.confidenceBps) },
-            brierSumMicros: { increment: score.brierMicros },
-            ...(score.notionalMicros > 0n
-              ? {
-                  notionalSumMicros: { increment: score.notionalMicros },
-                  pnlSumMicros: { increment: score.pnlMicros },
-                }
-              : {}),
-          },
-        });
-        await tx.userReputationCategory.upsert({
-          where: {
-            walletAddress_category: {
-              walletAddress: score.walletAddress,
-              category: score.category,
-            },
-          },
-          create: {
-            walletAddress: score.walletAddress,
-            category: score.category,
-            resolvedPredictions: 1,
-            correctPredictions: score.correct ? 1 : 0,
-            confidenceSumBps: BigInt(score.confidenceBps),
-            brierSumMicros: score.brierMicros,
-            notionalSumMicros: score.notionalMicros > 0n ? score.notionalMicros : 0n,
-            pnlSumMicros: score.notionalMicros > 0n ? score.pnlMicros : 0n,
-          },
-          update: {
-            resolvedPredictions: { increment: 1 },
-            correctPredictions: { increment: score.correct ? 1 : 0 },
-            confidenceSumBps: { increment: BigInt(score.confidenceBps) },
-            brierSumMicros: { increment: score.brierMicros },
-            ...(score.notionalMicros > 0n
-              ? {
-                  notionalSumMicros: { increment: score.notionalMicros },
-                  pnlSumMicros: { increment: score.pnlMicros },
-                }
-              : {}),
-          },
-        });
-        const binIndex = Math.min(9, Math.max(0, Math.floor(score.confidenceBps / 1000)));
-        await tx.calibrationBin.upsert({
-          where: {
-            walletAddress_binIndex: { walletAddress: score.walletAddress, binIndex },
-          },
-          create: {
-            walletAddress: score.walletAddress,
-            binIndex,
-            sampleCount: 1,
-            sumConfidenceBps: BigInt(score.confidenceBps),
-            correctCount: score.correct ? 1 : 0,
-          },
-          update: {
-            sampleCount: { increment: 1 },
-            sumConfidenceBps: { increment: BigInt(score.confidenceBps) },
-            correctCount: { increment: score.correct ? 1 : 0 },
-          },
-        });
-      });
+      // Retry on P2002: concurrent scoring for the same wallet collides on the shared
+      // UserReputation / UserReputationCategory / CalibrationBin rows. A duplicate score
+      // for this prediction is the other P2002 case and stays a no-op.
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          return await applyResolutionOnce(prisma, score);
+        } catch (error) {
+          if (!isUniqueViolation(error) || attempt >= 4) throw error;
+          const scored = await prisma.predictionScore.findUnique({
+            where: { predictionId: score.predictionId },
+            select: { predictionId: true },
+          });
+          if (scored) return;
+        }
+      }
     },
     async getReputation(walletAddress) {
       const row = await prisma.userReputation.findFirst({
@@ -377,7 +420,11 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
       return rows.map(toScore);
     },
     async enqueueJob(marketId, resolvedOutcome) {
-      const row = await prisma.$transaction(async (tx) => {
+      // Two resolvers can reach create() for the same market at once: PostgreSQL raises
+      // P2002 rather than serialising them. The retry then finds the existing job and
+      // takes the idempotent branch.
+      const row = await withUniqueRetry(() =>
+        prisma.$transaction(async (tx) => {
         const existing = await tx.reputationJob.findUnique({ where: { marketId } });
         if (existing && existing.resolvedOutcome !== resolvedOutcome) {
           throw new BettingError(
@@ -399,8 +446,9 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
           where: { id: marketId, resolvedAt: null },
           data: { status: "resolved", resolvedOutcome, resolvedAt: job.createdAt, accepting: false },
         });
-        return job;
-      });
+          return job;
+        }),
+      );
       return {
         id: row.id,
         marketId: row.marketId,
@@ -518,10 +566,6 @@ function snapshotFromPrisma(row: {
     bins,
     categories: row.categories,
   };
-}
-
-function isUniqueViolation(error: unknown) {
-  return typeof error === "object" && error !== null && (error as { code?: string }).code === "P2002";
 }
 
 /** A PROCESSING job untouched for this long is assumed to belong to a crashed worker. */

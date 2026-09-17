@@ -1,20 +1,14 @@
 import "server-only";
 
-import path from "node:path";
 import { PrismaClient } from "@prisma/client";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export function resolveDatabaseUrl() {
-  const current = process.env.DATABASE_URL;
-  if (current && current !== "file:./dev.db" && current !== "file:dev.db") {
-    return current;
-  }
-  return `file:${path.join(process.cwd(), "prisma", "dev.db")}`;
-}
-
+/**
+ * One PrismaClient per process (per serverless instance). DATABASE_URL must be a
+ * PostgreSQL URL; on Vercel use the pooled connection string.
+ */
 export function getPrisma() {
-  process.env.DATABASE_URL = resolveDatabaseUrl();
   if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = new PrismaClient();
   }

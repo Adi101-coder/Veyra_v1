@@ -6,6 +6,8 @@ import { configuredInventoryVenue, latestReconciliationReport, runInventoryRecon
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Background work is slower than a default serverless invocation allows. */
+export const maxDuration = 60;
 
 /** Operator: latest read-only omnibus inventory reconciliation report. */
 export async function GET(request: Request) {

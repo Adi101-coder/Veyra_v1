@@ -1,6 +1,7 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Outcome } from "@/lib/betting";
 import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
+import { withUniqueRetry } from "@/server/prisma-retry";
 
 export type StoredFill = {
   /** Required: fills are deduplicated per execution by this id. */
@@ -216,7 +217,9 @@ export type BettingStore = {
 export function prismaBettingStore(prisma: PrismaClient): BettingStore {
   return {
     async upsertMarket(market) {
-      await prisma.market.upsert({
+      // Two first-time bets on the same market race here: on PostgreSQL the losing
+      // upsert raises P2002 instead of being serialised, so retry it.
+      await withUniqueRetry(() => prisma.market.upsert({
         where: { id: market.id },
         create: market,
         update: {
@@ -233,7 +236,7 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           resolvesAt: market.resolvesAt,
           imageUrl: market.imageUrl,
         },
-      });
+      }));
       // A resolved market stays resolved: catalog refreshes must not reopen it.
       await prisma.market.updateMany({
         where: { id: market.id, resolvedAt: null },
@@ -363,6 +366,11 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
       // (executionId, venueTradeId) insert fail and roll back; retrying re-reads the
       // recorded fills and applies nothing twice.
       await withUniqueRetry(() => prisma.$transaction(async (tx) => {
+        // Serialize writers on this position: PostgreSQL READ COMMITTED would
+        // otherwise let two concurrent fill writers read the same shares and lose one
+        // update. The lock is taken before any read that feeds the new position.
+        const owner = await tx.execution.findUniqueOrThrow({ where: { id: executionId }, select: { positionId: true } });
+        await tx.$queryRaw`SELECT "id" FROM "Position" WHERE "id" = ${owner.positionId} FOR UPDATE`;
         const current = await tx.execution.findUniqueOrThrow({
           where: { id: executionId },
           include: { fills: { select: { venueTradeId: true } } },
@@ -517,6 +525,8 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
         prisma.$transaction(async (tx) => {
           const history = await tx.confidenceHistory.findUniqueOrThrow({ where: { id: input.historyId } });
           if (history.status !== "pending") return history.predictionId; // already settled: idempotent
+          // Same lock as applyExecutionResult: the position is read and rewritten below.
+          await tx.$queryRaw`SELECT "id" FROM "Position" WHERE "predictionId" = ${history.predictionId} FOR UPDATE`;
           const prediction = await tx.prediction.findUniqueOrThrow({
             where: { id: history.predictionId },
             include: { position: { include: { executions: { select: { id: true, status: true, createdAt: true } } } } },
@@ -601,16 +611,4 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
       });
     },
   };
-}
-
-async function withUniqueRetry<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
-  for (let attempt = 1; ; attempt += 1) {
-    try {
-      return await run();
-    } catch (error) {
-      const code = (error as { code?: string })?.code;
-      // P2002 unique violation; P2034 write conflict / SQLITE_BUSY deadlock.
-      if ((code !== "P2002" && code !== "P2034") || attempt >= attempts) throw error;
-    }
-  }
 }

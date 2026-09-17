@@ -4,7 +4,7 @@ import { validateEnvironment } from "@/server/env";
 const KEY = `0x${"ab".repeat(32)}`;
 const PROD_LIVE = {
   NODE_ENV: "production",
-  DATABASE_URL: "file:/data/veyra.db",
+  DATABASE_URL: "postgresql://veyra:veyra@db.internal:5432/veyra",
   VEYRA_SESSION_SECRET: "s".repeat(40),
   VEYRA_OPERATOR_TOKEN: "o".repeat(30),
   POLYMARKET_EXECUTION_MODE: "live",
@@ -38,7 +38,7 @@ describe("production environment preflight", () => {
   });
 
   it("refuses production without secrets or an explicit execution mode", () => {
-    const report = validateEnvironment({ NODE_ENV: "production", DATABASE_URL: "file:x.db" });
+    const report = validateEnvironment({ NODE_ENV: "production", DATABASE_URL: "postgresql://veyra@db/veyra" });
     expect(report.errors.join("\n")).toMatch(/VEYRA_SESSION_SECRET/);
     expect(report.errors.join("\n")).toMatch(/VEYRA_OPERATOR_TOKEN/);
     expect(report.errors.join("\n")).toMatch(/POLYMARKET_EXECUTION_MODE must be set explicitly/);
@@ -64,10 +64,48 @@ describe("production environment preflight", () => {
   });
 
   it("development only warns and defaults to paper", () => {
-    const report = validateEnvironment({ DATABASE_URL: "file:./dev.db" });
+    const report = validateEnvironment({ DATABASE_URL: "postgresql://veyra@127.0.0.1:5432/veyra" });
     expect(report.errors).toEqual([]);
     expect(report.mode).toBe("paper");
     expect(report.warnings.join("\n")).toMatch(/SESSION_SECRET/);
+  });
+});
+
+describe("serverless deployments", () => {
+  it("rejects an in-process worker on Vercel and asks for a cron secret", () => {
+    const report = validateEnvironment({
+      NODE_ENV: "production",
+      VERCEL: "1",
+      DATABASE_URL: "postgresql://veyra@db/veyra",
+      DIRECT_URL: "postgresql://veyra@db/veyra",
+      VEYRA_SESSION_SECRET: "s".repeat(40),
+      VEYRA_OPERATOR_TOKEN: "o".repeat(30),
+      POLYMARKET_EXECUTION_MODE: "paper",
+      VEYRA_WORKER_INTERVAL_MS: "15000",
+    });
+    expect(report.errors.join("\n")).toMatch(/VEYRA_WORKER_INTERVAL_MS must be 0/);
+    expect(report.warnings.join("\n")).toMatch(/CRON_SECRET/);
+  });
+
+  it("accepts a scheduler-driven serverless deployment", () => {
+    const report = validateEnvironment({
+      NODE_ENV: "production",
+      VERCEL: "1",
+      DATABASE_URL: "postgresql://veyra@db/veyra",
+      DIRECT_URL: "postgresql://veyra@db/veyra",
+      VEYRA_SESSION_SECRET: "s".repeat(40),
+      VEYRA_OPERATOR_TOKEN: "o".repeat(30),
+      CRON_SECRET: "c".repeat(24),
+      POLYMARKET_EXECUTION_MODE: "paper",
+      VEYRA_WORKER_INTERVAL_MS: "0",
+    });
+    expect(report.errors).toEqual([]);
+    expect(report.warnings.join("\n")).not.toMatch(/CRON_SECRET/);
+  });
+
+  it("refuses a non-postgres DATABASE_URL in production", () => {
+    const report = validateEnvironment({ NODE_ENV: "production", DATABASE_URL: "file:/data/veyra.db" });
+    expect(report.errors.join("\n")).toMatch(/postgresql:\/\//);
   });
 });
 
@@ -80,12 +118,14 @@ describe(".env.production.example", () => {
       const match = /^([A-Z0-9_]+)="(.*)"$/.exec(line.trim());
       if (match) env[match[1]!] = match[2]!;
     }
-    for (const key of ["DATABASE_URL", "VEYRA_SESSION_SECRET", "VEYRA_OPERATOR_TOKEN", "POLYMARKET_EXECUTION_MODE", "POLYMARKET_PRIVATE_KEY", "POLYMARKET_API_KEY", "POLYMARKET_SIGNATURE_TYPE", "RH_NETWORK", "NEXT_PUBLIC_RH_NETWORK", "RH_SETTLEMENT_PRIVATE_KEY"]) {
+    for (const key of ["DATABASE_URL", "DIRECT_URL", "CRON_SECRET", "VEYRA_SESSION_SECRET", "VEYRA_OPERATOR_TOKEN", "POLYMARKET_EXECUTION_MODE", "POLYMARKET_PRIVATE_KEY", "POLYMARKET_API_KEY", "POLYMARKET_SIGNATURE_TYPE", "RH_NETWORK", "NEXT_PUBLIC_RH_NETWORK", "RH_SETTLEMENT_PRIVATE_KEY"]) {
       expect(Object.keys(env)).toContain(key);
     }
     expect(validateEnvironment(env).errors.length).toBeGreaterThan(0); // empty secrets must not boot
     const filled = {
       ...env,
+      DATABASE_URL: "postgresql://veyra:veyra@db.internal:5432/veyra",
+      DIRECT_URL: "postgresql://veyra:veyra@db.internal:5432/veyra",
       VEYRA_SESSION_SECRET: "s".repeat(40),
       VEYRA_OPERATOR_TOKEN: "o".repeat(30),
       POLYMARKET_PRIVATE_KEY: `0x${"ab".repeat(32)}`,

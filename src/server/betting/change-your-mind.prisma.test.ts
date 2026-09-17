@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { coreMarkets, type Market } from "@/lib/markets";
 import {
@@ -22,29 +19,23 @@ import { prismaBettingStore } from "@/server/betting/repository";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 
 /**
- * Change Your Mind on a real migrated SQLite database with a scripted Polymarket.
+ * Change Your Mind on a real migrated PostgreSQL schema with a scripted Polymarket.
  * Invariant checked after every scenario: position shares == BUY fills - SELL fills,
  * and prediction confidence == the last *filled/noop* history value.
  */
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let marketSeq = 0;
 let walletSeq = 0;
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-cym-"));
-  const url = `file:${path.join(dir, "cym.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("cym");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 const book = (): OrderBookSnapshot => ({
@@ -388,5 +379,25 @@ describe("Change Your Mind lifecycle under concurrency (Prisma)", () => {
       expect(fills).toHaveLength(1);
       expect(after.position!.status).toBe("filled");
     }
+  });
+
+  it("survives two first-time wagers racing to create the same market row", async () => {
+    // A bare upsert is not serialised on PostgreSQL: concurrent callers collide with
+    // P2002 instead of falling through to the update, which would fail the wager.
+    const store = prismaBettingStore(prisma);
+    const market = {
+      id: "race-market",
+      title: "t",
+      category: "crypto",
+      tag: "t",
+      status: "open",
+      source: "polymarket",
+    };
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, () => store.upsertMarket(market as Parameters<typeof store.upsertMarket>[0])),
+    );
+    const failed = results.filter((r) => r.status === "rejected");
+    expect(failed).toHaveLength(0);
+    expect(await prisma.market.count({ where: { id: "race-market" } })).toBe(1);
   });
 });

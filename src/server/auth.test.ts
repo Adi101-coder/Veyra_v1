@@ -2,7 +2,7 @@ import { generateKeyPairSync, sign } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { verifyMessage } from "viem";
-import { decodeBase58, issueSession, readSession, requireOperator, requireWallet, SESSION_COOKIE, verifySolanaSignature } from "@/server/auth";
+import { decodeBase58, issueSession, readSession, requireOperator, requireOperatorOrCron, requireWallet, SESSION_COOKIE, verifySolanaSignature } from "@/server/auth";
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 function encodeBase58(bytes: Buffer) {
@@ -55,6 +55,34 @@ describe("wallet sessions", () => {
       requireOperator(new Request("http://x/", { headers: { authorization: "Bearer operator-token-0123456789abcdef" } })),
     ).not.toThrow();
     process.env.VEYRA_OPERATOR_TOKEN = previous;
+  });
+
+  it("accepts the platform cron secret on the jobs tick, and nothing weaker", () => {
+    const previousOperator = process.env.VEYRA_OPERATOR_TOKEN;
+    const previousCron = process.env.CRON_SECRET;
+    process.env.VEYRA_OPERATOR_TOKEN = "operator-token-0123456789abcdef";
+    const bearer = (token: string) => new Request("http://x/", { headers: { authorization: `Bearer ${token}` } });
+
+    // No cron secret configured: only the operator token works.
+    delete process.env.CRON_SECRET;
+    expect(() => requireOperatorOrCron(bearer("cron-secret-0123456789abcdef"))).toThrow(/Operator token/);
+    expect(() => requireOperatorOrCron(bearer("operator-token-0123456789abcdef"))).not.toThrow();
+
+    process.env.CRON_SECRET = "cron-secret-0123456789abcdef";
+    expect(() => requireOperatorOrCron(bearer("cron-secret-0123456789abcdef"))).not.toThrow();
+    expect(() => requireOperatorOrCron(bearer("operator-token-0123456789abcdef"))).not.toThrow();
+    expect(() => requireOperatorOrCron(bearer("nope"))).toThrow(/Operator token/);
+    expect(() => requireOperatorOrCron(new Request("http://x/"))).toThrow(/Operator token/);
+
+    // A short/empty cron secret must never open the endpoint.
+    process.env.CRON_SECRET = "short";
+    expect(() => requireOperatorOrCron(bearer("short"))).toThrow(/Operator token/);
+    process.env.CRON_SECRET = "";
+    expect(() => requireOperatorOrCron(bearer(""))).toThrow(/Operator token/);
+
+    if (previousCron === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = previousCron;
+    process.env.VEYRA_OPERATOR_TOKEN = previousOperator;
   });
 });
 

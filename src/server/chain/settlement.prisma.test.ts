@@ -1,11 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { decodeAbiParameters, keccak256, parseTransaction, type Hash, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import { createRobinhoodClients } from "@/server/chain/client";
 import { loadRobinhoodChainConfig } from "@/server/chain/config";
 import {
@@ -21,23 +18,17 @@ import { createSimulatedChain, RpcFailure } from "@/server/chain/testing/simulat
 const KEY = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d" as const;
 const SIGNER = privateKeyToAccount(KEY).address;
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let seq = 0;
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-chain-"));
-  const url = `file:${path.join(dir, "chain.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("chain");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 beforeEach(async () => {

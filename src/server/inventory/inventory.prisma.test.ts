@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { coreMarkets, type Market } from "@/lib/markets";
 import { changeConfidence, createPrismaDeps, placePrediction, type BettingDeps } from "@/server/betting/service";
@@ -18,22 +15,16 @@ import { tradesForAccount } from "@/server/polymarket/live";
  * of Veyra's database. Scenarios then corrupt one side and assert what is flagged.
  */
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-inv-"));
-  const url = `file:${path.join(dir, "inv.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("inv");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 beforeEach(async () => {

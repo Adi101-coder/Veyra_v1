@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { coreMarkets, type Market } from "@/lib/markets";
 import {
@@ -29,7 +26,7 @@ import { runSettlementTick } from "@/server/chain/settlement";
 import { createSimulatedChain } from "@/server/chain/testing/simulated-chain";
 
 /**
- * Full flow against a freshly migrated SQLite database with a scripted Polymarket:
+ * Full flow against a freshly migrated PostgreSQL schema with a scripted Polymarket:
  * market -> confidence bet -> accepted (resting) order -> reconcile real fill ->
  * change confidence (fill / reject) -> resolution -> reputation -> conviction.
  */
@@ -84,8 +81,8 @@ function venueFill(request: VenueOrderRequest, id: string, fraction = 1): VenueO
   };
 }
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let script: Script;
 let submits = 0;
 const venueOrders = new Map<string, VenueOrderResult>();
@@ -111,20 +108,13 @@ function freshDeps() {
 }
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-e2e-"));
-  const url = `file:${path.join(dir, "e2e.db")}`;
-  // Exactly what a fresh deployment runs.
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("e2e");
+  prisma = database.prisma;
   deps = freshDeps();
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {

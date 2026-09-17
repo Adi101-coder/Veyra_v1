@@ -13,9 +13,20 @@ Plug-in order for a production (live) deployment. Every step is checkable; do no
 ## 2. Configure
 - [ ] Copy `.env.production.example` → `.env.production`, fill every value (or inject via your platform's secret store).
 - [ ] `openssl rand -hex 32` for `VEYRA_SESSION_SECRET`, `openssl rand -hex 24` for `VEYRA_OPERATOR_TOKEN`.
-- [ ] `DATABASE_URL` points to a persistent volume. Run **one** app instance (SQLite is single-writer).
+- [ ] `DATABASE_URL` is a PostgreSQL connection string. On Vercel/Neon use the **pooled** URL here and the **direct** (unpooled) URL in `DIRECT_URL`; `prisma migrate deploy` cannot run over a transaction pooler.
 
-## 3. Build and boot
+## 3. Deploy
+
+### Vercel (serverless) — the current target
+The in-process worker cannot run on serverless: functions are frozen between requests.
+`vercel.json` therefore schedules `GET /api/jobs/run` every minute.
+- [ ] Postgres provisioned (Vercel Postgres / Neon); `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) set for Production.
+- [ ] `VEYRA_WORKER_INTERVAL_MS="0"` — boot fails on Vercel with any other value.
+- [ ] `CRON_SECRET` set (>= 16 chars). Vercel Cron sends it as `Authorization: Bearer $CRON_SECRET`; the operator token also works.
+- [ ] Deploy. The `vercel-build` script runs `prisma migrate deploy` before `next build`.
+- [ ] Cron tab shows `/api/jobs/run` succeeding; a minute-level schedule needs a Pro plan (Hobby is once per day).
+
+### Self-hosted (one long-lived instance, `VEYRA_WORKER_INTERVAL_MS > 0`)
 ```bash
 npm ci
 npm run db:migrate          # prisma migrate deploy on a fresh or existing DB
@@ -53,6 +64,6 @@ Keep `VEYRA_MAX_STAKE_USD` low (e.g. 5–100).
 - [ ] Raise `VEYRA_MAX_STAKE_USD` only after reconciliation stays clean.
 
 ## Known limits at launch
-- Single app instance (SQLite, in-process rate limiter and caches). Multi-instance needs Postgres plus a shared store.
+- The rate limiter and conviction cache are per-process: with several instances (or Vercel's many lambdas) both are per-instance. The database is PostgreSQL and safe to share.
 - The live Polymarket path has been exercised only against scripted venues until step 6 passes.
 - Mainnet Robinhood Chain settlement needs `RH_NETWORK=mainnet` + `RH_ENABLE_MAINNET=true` + `RH_RPC_URL` + `NEXT_PUBLIC_RH_NETWORK=mainnet`.

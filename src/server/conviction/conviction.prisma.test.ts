@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { coreMarkets, type Market } from "@/lib/markets";
 import {
@@ -22,29 +19,23 @@ import type { PolymarketReference } from "@/server/conviction/types";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 
 /**
- * Conviction from real filled positions on a migrated SQLite database. Every
+ * Conviction from real filled positions on a migrated PostgreSQL schema. Every
  * measurement is also recomputed independently from the Fill table, so the store's
  * filters and the ledger must agree with first principles.
  */
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let seq = 0;
 const MID: PolymarketReference = { probabilityBps: 5000, source: "clob_midpoint" };
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-conv-"));
-  const url = `file:${path.join(dir, "conv.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("conv");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 const book = (): OrderBookSnapshot => ({

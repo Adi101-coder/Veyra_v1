@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { coreMarkets, type Market } from "@/lib/markets";
 import {
@@ -24,28 +21,22 @@ import type { ReputationStore } from "@/server/reputation/types";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 
 /**
- * Prediction reputation against a migrated SQLite database and a scripted venue.
+ * Prediction reputation against a migrated PostgreSQL schema and a scripted venue.
  * `assertAggregates` recomputes every wallet aggregate from PredictionScore rows, so
  * any double counting or lost increment shows up as a mismatch.
  */
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let seq = 0;
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-rep-"));
-  const url = `file:${path.join(dir, "rep.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("rep");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 const book = (): OrderBookSnapshot => ({
@@ -360,6 +351,33 @@ describe("Prediction reputation (Prisma)", () => {
       expect((await getUserReputation(wallet, w.deps())).resolvedPredictions).toBe(1);
       await assertAggregates(wallet);
     }
+  });
+
+  it("counts every prediction when a wallet's first predictions are recorded concurrently", async () => {
+    // PostgreSQL does not serialise concurrent upserts on the shared UserReputation /
+    // UserReputationCategory rows: the loser raises P2002. Swallowing that as "already
+    // recorded" would silently undercount the wallet's totals.
+    const store = prismaReputationStore(prisma);
+    const wallet = "0xc0ffee0000000000000000000000000000000001";
+    const recorded = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        store.recordOpen({ predictionId: `race-${i}`, walletAddress: wallet, category: "crypto" }),
+      ),
+    );
+    expect(recorded.every(Boolean)).toBe(true);
+    const snapshot = await prisma.userReputation.findUniqueOrThrow({
+      where: { walletAddress: wallet },
+      include: { categories: true },
+    });
+    expect(snapshot.totalPredictions).toBe(8);
+    expect(snapshot.categories).toHaveLength(1);
+    expect(snapshot.categories[0]!.totalPredictions).toBe(8);
+
+    // Replaying the same prediction ids stays a no-op.
+    expect(await store.recordOpen({ predictionId: "race-0", walletAddress: wallet, category: "crypto" })).toBe(false);
+    expect(
+      (await prisma.userReputation.findUniqueOrThrow({ where: { walletAddress: wallet } })).totalPredictions,
+    ).toBe(8);
   });
 
   it("recovers from a worker failing mid-job and from a crashed claim without double counting", async () => {

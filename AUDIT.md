@@ -13,7 +13,7 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 - **Non-atomic intent claims** (find → update → find) could double-execute across processes. Now a single UPDATE with a claim token.
 - **Lost intents.** `enqueueAndProcess` could return an in-flight run that excluded the new intent → execution marked failed while the intent later executed. Fixed.
 - **Worker crash left intents PROCESSING forever** (execution `created`, position `pending`, nothing retried or reported). Intents now carry `claimedAt`; the worker's `recover` step hands expired claims whose batch reached `SUBMITTED` to reconciliation and fails the rest (nothing was sent).
-- **Null venue trade ids bypassed fill dedupe** (SQLite treats NULLs as distinct). `Fill.venueTradeId` is now required in schema and types.
+- **Null venue trade ids bypassed fill dedupe** (NULLs compare as distinct in a unique index). `Fill.venueTradeId` is now required in schema and types.
 - **Stale quotes requeued forever** (and could execute later at an unseen price). Stale intents now fail and every owner's execution is updated.
 - **Synthetic book used for real tokens** when a live book had no asks. Real tokens never fall back; synthetic (demo) books are paper-only and rejected in live mode. Demo tokens now resolve their paper book inside the engine (found by the HTTP smoke test).
 - Duplicate live submitters removed; single `PolymarketClient`. Signature types 0–3 + funder address configurable. Taker fees derived from `fee_rate_bps`.
@@ -71,7 +71,7 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 - Live orders whose submission outcome is `unknown` **without** an order id (network timeout) stay `SUBMITTED` with `RECONCILE_REQUIRED` for operator review — there is no automatic search of open orders/trades for them.
 - `GET /api/predictions` (contract page wager table) still returns at most 100 rows per market; scoring uses an uncapped query, so this is display-only truncation.
 - Resting GTC orders are reconciled but never cancelled automatically (default order type is FAK).
-- Rate limiter and conviction cache are per-process; multi-instance deployments need a shared store. SQLite is single-writer.
+- Rate limiter and conviction cache are per-process; multi-instance deployments (including serverless) need a shared store for those two.
 - Real wallet-extension sign-in (MetaMask/Phantom) not exercised in a browser; smart-contract (ERC-1271) wallets are not supported by the EVM verifier.
 - Paper mode fills against real or demo books are simulated (flagged `mode: paper`, `isSimulated`) — do not run production in paper mode.
 
@@ -262,3 +262,43 @@ Mutation-checked: counting simulated fills, aggregating shares globally instead 
 - Whether `balance-allowance` excludes funds locked in open orders.
 - Which address it reports for signature type 3.
 - Data API `/positions` is deliberately not used (indexed, may lag).
+
+## PostgreSQL + Vercel (2026-09-17)
+
+The app is deployed on Vercel, which has no persistent disk, so SQLite was replaced by
+PostgreSQL. The six SQLite migrations were squashed into one PostgreSQL baseline
+(`20260917180000_init_postgres`) that keeps all 15 money/status CHECK constraints
+(verified: `migrate deploy` clean, `migrate diff --exit-code` = 0, 15 rows in
+`pg_constraint` with `contype = 'c'`).
+
+**Concurrency bugs this exposed and fixed.** SQLite serialised writers, so a concurrent
+`upsert` simply queued. PostgreSQL under READ COMMITTED does not: a bare (non-transactional)
+upsert loses the race with P2002 instead of falling through to the update. Measured on the
+test database: 140 of 160 concurrent upserts of one new row failed this way. Inside an
+interactive transaction the same statements block and succeed, so only the bare paths were
+at risk.
+- `upsertMarket` — two first-time wagers on the same market: the loser's wager failed.
+- `enqueueJob` (reputation) — two resolvers on the same market: resolution crashed. This was
+  caught by the existing "concurrent and repeated scoring is idempotent" test.
+- `saveScore` / `applyResolution` — concurrent scorers creating one wallet's parent row.
+- `recordOpen` — retries, and distinguishes "already recorded" (no-op) from a lost race, so
+  the wallet's totals can never undercount.
+All of them now go through `withUniqueRetry` (`src/server/prisma-retry.ts`), which retries
+P2002/P2034 and rethrows everything else. Row locks (`SELECT … FOR UPDATE`) were added to
+`applyExecutionResult` and `reconcileAdjustment`, which relied on SQLite's writer lock.
+
+**Serverless.** Functions freeze between requests, so the in-process worker cannot run:
+`validateEnvironment` now rejects `VEYRA_WORKER_INTERVAL_MS > 0` on Vercel, `vercel.json`
+schedules `GET /api/jobs/run` every minute, and that route accepts Vercel's `CRON_SECRET`
+(constant-time compare, minimum 16 chars) as well as the operator token. `vercel-build`
+runs `prisma migrate deploy` before `next build`, using `DIRECT_URL` because migrations
+cannot run over a transaction pooler.
+
+**Tests:** each Prisma suite now creates, migrates and drops its own PostgreSQL schema
+(`src/server/testing/db.ts`), so suites no longer share state. Full suite: 211 passed,
+2 skipped (live-RPC), run three times. Added: `withUniqueRetry` unit tests, cron-secret auth
+tests, serverless env validation tests, and a concurrent `recordOpen` test asserting the
+totals cannot undercount.
+
+**Still per-process on Vercel:** the rate limiter and the conviction cache. Each lambda has
+its own, so the effective rate limit is per-instance.

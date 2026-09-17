@@ -1,9 +1,6 @@
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { createTestDatabase } from "@/server/testing/db";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { defaultExecutionEngineConfig } from "@/server/execution/config";
 import { ExecutionEngine } from "@/server/execution/engine";
@@ -12,28 +9,22 @@ import type { ExecutionIntentInput } from "@/server/execution/types";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 
 /**
- * Multi-worker behaviour on a real migrated SQLite database. Each ExecutionEngine
+ * Multi-worker behaviour on a real migrated PostgreSQL schema. Each ExecutionEngine
  * instance has its own in-process lock, so two instances model two worker processes;
  * only the database claims/leases stand between them.
  */
 
-let dir: string;
 let prisma: PrismaClient;
+let database: ReturnType<typeof createTestDatabase>;
 let seq = 0;
 
 beforeAll(() => {
-  dir = mkdtempSync(path.join(tmpdir(), "veyra-exec-"));
-  const url = `file:${path.join(dir, "exec.db")}`;
-  execFileSync(path.resolve("node_modules/.bin/prisma"), ["migrate", "deploy"], {
-    env: { ...process.env, DATABASE_URL: url },
-    stdio: "pipe",
-  });
-  prisma = new PrismaClient({ datasources: { db: { url } } });
+  database = createTestDatabase("exec");
+  prisma = database.prisma;
 }, 120_000);
 
 afterAll(async () => {
-  await prisma?.$disconnect();
-  rmSync(dir, { recursive: true, force: true });
+  await database?.drop();
 });
 
 beforeEach(async () => {
@@ -59,14 +50,24 @@ const book = (): OrderBookSnapshot => ({
   hash: "h",
 });
 
-/** Real Position/Execution rows so ExecutionIntent's foreign key is satisfied. */
-async function intentRow(side: "BUY" | "SELL", shares: bigint, key?: string): Promise<ExecutionIntentInput> {
-  seq += 1;
-  await prisma.market.upsert({
+/**
+ * The market row is shared by every intent. Concurrent helpers race on PostgreSQL,
+ * so create it once and reuse that promise.
+ */
+let marketReady: Promise<unknown> | null = null;
+function ensureMarket() {
+  marketReady ??= prisma.market.upsert({
     where: { id: "m" },
     create: { id: "m", title: "t", category: "crypto", tag: "t", status: "open", source: "polymarket" },
     update: {},
   });
+  return marketReady;
+}
+
+/** Real Position/Execution rows so ExecutionIntent's foreign key is satisfied. */
+async function intentRow(side: "BUY" | "SELL", shares: bigint, key?: string): Promise<ExecutionIntentInput> {
+  seq += 1;
+  await ensureMarket();
   const prediction = await prisma.prediction.create({
     data: {
       walletAddress: `0x${seq.toString().padStart(40, "0")}`,
