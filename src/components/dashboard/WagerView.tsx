@@ -225,6 +225,7 @@ export function WagerView({
                     : (prediction?.execution?.status ?? prediction?.status ?? "—")
                 }
               />
+              {prediction?.settlement ? <SettlementMeta settlement={prediction.settlement} /> : null}
             </div>
             <Link
               href={`/contract/${market.id}`}
@@ -301,6 +302,30 @@ export function WagerView({
           ) : null}
         </section>
       </Shell>
+    </div>
+  );
+}
+
+/** Robinhood Chain settlement reference; only a confirmed receipt reads as settled. */
+function SettlementMeta({ settlement }: { settlement: NonNullable<PredictionDTO["settlement"]> }) {
+  const label =
+    settlement.status === "confirmed"
+      ? "Settled"
+      : settlement.status === "reverted" || settlement.status === "failed"
+        ? "Settlement failed"
+        : "Settling";
+  return (
+    <div>
+      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">Robinhood Chain</p>
+      <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+        {settlement.txHash && settlement.explorerUrl ? (
+          <a href={settlement.explorerUrl} target="_blank" rel="noreferrer" className="underline decoration-[#c9c4b8]">
+            {label} · {shortenKey(settlement.txHash, 4, 4)}
+          </a>
+        ) : (
+          label
+        )}
+      </p>
     </div>
   );
 }

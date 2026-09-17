@@ -19,6 +19,8 @@ import {
   signSessionMessage,
 } from "@/lib/solana-wallet";
 import { registerSessionEnsurer } from "@/lib/betting-api";
+import { isRobinhoodChainId, publicRobinhoodChain } from "@/lib/robinhood-chain";
+import { parseChainId, readWalletChainId, switchWalletToChain } from "@/lib/wallet-network";
 import {
   fetchWalletActivity,
   type WalletActivity,
@@ -42,6 +44,12 @@ type WalletContextValue = {
   disconnect: () => Promise<void>;
   refreshActivity: () => Promise<void>;
   clearError: () => void;
+  /** EVM wallets only: the wallet's current chain id (null for Solana / unknown). */
+  networkChainId: number | null;
+  robinhoodChain: { id: number; name: string };
+  onRobinhoodChain: boolean;
+  switchingNetwork: boolean;
+  switchToRobinhoodChain: () => Promise<void>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
@@ -227,6 +235,51 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     void refreshActivity();
   }, [refreshActivity]);
 
+  // Network detection for EVM wallets. Betting does not depend on the wallet's
+  // network (sign-in is chain-agnostic personal_sign); this only powers the
+  // Robinhood Chain indicator and switch action.
+  const robinhoodChain = useMemo(() => publicRobinhoodChain(), []);
+  const [networkChainId, setNetworkChainId] = useState<number | null>(null);
+  const [switchingNetwork, setSwitchingNetwork] = useState(false);
+  const evmProvider = provider && isEthereumProvider(provider) ? provider : null;
+
+  useEffect(() => {
+    if (!evmProvider) return;
+    let active = true;
+    readWalletChainId(evmProvider)
+      .then((id) => {
+        if (active) setNetworkChainId(id);
+      })
+      .catch(() => {
+        if (active) setNetworkChainId(null);
+      });
+    const onChainChanged = (...args: unknown[]) => setNetworkChainId(parseChainId(args[0]));
+    evmProvider.on?.("chainChanged", onChainChanged);
+    return () => {
+      active = false;
+      evmProvider.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [evmProvider]);
+
+  const switchToRobinhoodChain = useCallback(async () => {
+    if (!evmProvider) {
+      setError("Connect an EVM wallet (MetaMask or Binance) to use Robinhood Chain.");
+      return;
+    }
+    setSwitchingNetwork(true);
+    setError(null);
+    try {
+      setNetworkChainId(await switchWalletToChain(evmProvider, robinhoodChain));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not switch network");
+      setNetworkChainId(await readWalletChainId(evmProvider).catch(() => null));
+    } finally {
+      setSwitchingNetwork(false);
+    }
+  }, [evmProvider, robinhoodChain]);
+
+  const detectedChainId = evmProvider ? networkChainId : null;
+
   const value = useMemo(
     () => ({
       address,
@@ -239,8 +292,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       disconnect,
       refreshActivity,
       clearError: () => setError(null),
+      networkChainId: detectedChainId,
+      robinhoodChain: { id: robinhoodChain.id, name: robinhoodChain.name },
+      onRobinhoodChain: isRobinhoodChainId(detectedChainId, robinhoodChain),
+      switchingNetwork,
+      switchToRobinhoodChain,
     }),
     [
+      detectedChainId,
+      robinhoodChain,
+      switchingNetwork,
+      switchToRobinhoodChain,
       address,
       walletId,
       chain,

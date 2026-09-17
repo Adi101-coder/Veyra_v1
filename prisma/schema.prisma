@@ -52,6 +52,7 @@ model Prediction {
   position         Position?
   confidenceHistory ConfidenceHistory[]
   score            PredictionScore?
+  chainSettlements ChainSettlement[]
 
   @@unique([walletAddress, idempotencyKey])
   @@index([marketId, createdAt])
@@ -395,4 +396,45 @@ model AuthNonce {
 
   @@index([expiresAt])
   @@map("auth_nonces")
+}
+
+/// On-chain settlement reference for a resolved Veyra prediction on Robinhood Chain.
+/// The attestation transaction carries an ABI-encoded summary of the scored,
+/// fill-backed prediction. A reference is only "confirmed" from a mined receipt.
+model ChainSettlement {
+  id                  String     @id @default(cuid())
+  predictionId        String
+  prediction          Prediction @relation(fields: [predictionId], references: [id])
+  chainId             Int
+  network             String
+  kind                String
+  status              String
+  payloadHash         String
+  calldata            String
+  fromAddress         String?
+  toAddress           String?
+  nonce               Int?
+  txHash              String?    @unique
+  rawTx               String?
+  gasLimit            String?
+  maxFeePerGasWei     String?
+  blockNumber         BigInt?
+  blockHash           String?
+  gasUsed             BigInt?
+  effectiveGasPriceWei String?
+  confirmations       Int        @default(0)
+  attempts            Int        @default(0)
+  lastErrorKind       String?
+  lastError           String?
+  nextAttemptAt       DateTime?
+  claimToken          String?
+  claimedAt           DateTime?
+  submittedAt         DateTime?
+  confirmedAt         DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([predictionId, chainId, kind])
+  @@index([status, nextAttemptAt])
+  @@map("chain_settlements")
 }

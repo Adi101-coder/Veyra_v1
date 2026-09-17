@@ -77,6 +77,7 @@ export type MarketUpsert = {
 const bundleInclude = {
   market: true,
   position: { include: { executions: { include: { fills: true }, orderBy: { createdAt: "desc" as const } } } },
+  chainSettlements: { orderBy: { createdAt: "desc" as const } },
 } satisfies Prisma.PredictionInclude;
 
 export type PredictionBundle = Prisma.PredictionGetPayload<{ include: typeof bundleInclude }>;

@@ -23,6 +23,10 @@ import { defaultConvictionEngineConfig } from "@/server/conviction/config";
 import { prismaConvictionStore } from "@/server/conviction/store";
 import { createPolymarketClient, type VenueOrderRequest, type VenueOrderResult } from "@/server/polymarket/client";
 import type { VenueResolution } from "@/server/polymarket/gamma";
+import { createRobinhoodClients } from "@/server/chain/client";
+import { loadRobinhoodChainConfig } from "@/server/chain/config";
+import { runSettlementTick } from "@/server/chain/settlement";
+import { createSimulatedChain } from "@/server/chain/testing/simulated-chain";
 
 /**
  * Full flow against a freshly migrated SQLite database with a scripted Polymarket:
@@ -276,5 +280,38 @@ describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {
     await expect(
       changeConfidence(predictionId, { confidencePct: 75, walletAddress: ALICE, idempotencyKey: "alice-late-00001" }, deps),
     ).rejects.toMatchObject({ code: "MARKET_RESOLVED" });
+  });
+
+  it("links the scored prediction to a confirmed Robinhood Chain settlement transaction", async () => {
+    const chain = createSimulatedChain({ chainId: 46630 });
+    const settlementDeps = {
+      prisma,
+      clients: createRobinhoodClients(
+        loadRobinhoodChainConfig({
+          RH_SETTLEMENT_ENABLED: "true",
+          RH_SETTLEMENT_PRIVATE_KEY: "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
+        }),
+        chain.transport,
+      ),
+    };
+    const first = await runSettlementTick(settlementDeps);
+    expect(first).toMatchObject({ enabled: true, enqueued: 1, submitted: 1 });
+
+    let [dto] = (await listUserPredictions(ALICE, deps)).filter((row) => row.id === predictionId);
+    expect(dto?.settlement).toMatchObject({ chainId: 46630, network: "testnet", status: "submitted" });
+
+    chain.mine();
+    await runSettlementTick(settlementDeps);
+    [dto] = (await listUserPredictions(ALICE, deps)).filter((row) => row.id === predictionId);
+    expect(dto?.settlement?.status).toBe("confirmed");
+    expect(dto?.settlement?.txHash).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(dto?.settlement?.explorerUrl).toBe(`https://explorer.testnet.chain.robinhood.com/tx/${dto?.settlement?.txHash}`);
+
+    // Only filled, scored predictions settle: BOB's failed order has no reference.
+    expect(await prisma.chainSettlement.count()).toBe(1);
+    const receipt = await createRobinhoodClients(settlementDeps.clients.config, chain.transport).publicClient.getTransactionReceipt({
+      hash: dto!.settlement!.txHash as `0x${string}`,
+    });
+    expect(receipt.status).toBe("success");
   });
 });

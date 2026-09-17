@@ -6,7 +6,9 @@ import type {
   ExecutionDTO,
   PredictionDTO,
   PositionDTO,
+  SettlementReferenceDTO,
 } from "@/lib/betting";
+import { explorerTxUrl } from "@/lib/robinhood-chain";
 import type { EngineResult } from "@/server/confidence/types";
 import type { ConfidenceHistoryRow, PredictionBundle } from "@/server/betting/repository";
 import {
@@ -54,6 +56,21 @@ export function toEngineQuote(
       tokenId: result.tokenId,
     },
     book: bookSource,
+  };
+}
+
+function toSettlementDTO(row: PredictionBundle["chainSettlements"][number] | undefined): SettlementReferenceDTO | null {
+  if (!row) return null;
+  return {
+    chainId: row.chainId,
+    network: row.network,
+    status: row.status as SettlementReferenceDTO["status"],
+    txHash: row.txHash,
+    blockNumber: row.blockNumber?.toString() ?? null,
+    confirmations: row.confirmations,
+    payloadHash: row.payloadHash,
+    explorerUrl: row.txHash ? explorerTxUrl(row.chainId, row.txHash) : null,
+    confirmedAt: row.confirmedAt?.toISOString() ?? null,
   };
 }
 
@@ -118,6 +135,7 @@ export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
     errorMessage: bundle.errorMessage,
     position,
     execution: executionDto,
+    settlement: toSettlementDTO(bundle.chainSettlements?.[0]),
     marketResolution:
       bundle.market.resolvedAt && bundle.market.resolvedOutcome
         ? {

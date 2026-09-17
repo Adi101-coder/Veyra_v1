@@ -142,6 +142,20 @@ export type PredictionDTO = {
   execution: ExecutionDTO | null;
   /** Set once the market has resolved (INVALID = voided). */
   marketResolution: { outcome: "YES" | "NO" | "INVALID"; resolvedAt: string } | null;
+  /** Robinhood Chain settlement reference. Only status "confirmed" means mined and final. */
+  settlement: SettlementReferenceDTO | null;
+};
+
+export type SettlementReferenceDTO = {
+  chainId: number;
+  network: string;
+  status: "queued" | "signing" | "signed" | "submitted" | "confirmed" | "reverted" | "failed";
+  txHash: string | null;
+  blockNumber: string | null;
+  confirmations: number;
+  payloadHash: string;
+  explorerUrl: string | null;
+  confirmedAt: string | null;
 };
 
 export type PositionSnapshotDTO = {
