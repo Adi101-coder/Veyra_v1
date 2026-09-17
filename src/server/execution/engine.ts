@@ -334,7 +334,10 @@ export class ExecutionEngine {
     const lease = await this.store.claimReconcile(batch.id, this.config.reconcileLeaseMs);
     if (lease) release.fn = () => this.store.releaseReconcile(batch.id, lease);
     const renewLease = async () => {
-      if (lease) await this.store.renewReconcile(batch.id, lease);
+      if (!lease) return;
+      if (!(await this.store.renewReconcile(batch.id, lease))) {
+        console.error("[execution] lost reconcile lease during a live run", { batchId: batch.id });
+      }
     };
     let awaitingVenue = false;
     try {
@@ -592,6 +595,10 @@ export class ExecutionEngine {
     return again;
   }
 
+  /**
+   * Quotes are ask-based for both sides (placement and changeConfidence record the
+   * best ask as quotedPriceBps), so staleness is measured against the live ask.
+   */
   private partitionStale<T extends { quotedPriceBps?: number | null }>(intents: T[], snapshot: OrderBookSnapshot) {
     const quality = analyzeBook(snapshot);
     const live = quality.bestAskBps ?? quality.midBps ?? 0;
@@ -663,6 +670,12 @@ export class ExecutionEngine {
         submittedAt: new Date(),
       });
       let result: VenueOrderResult;
+      // Keep the batch lease alive for as long as the venue call takes, so a slow
+      // Polymarket response cannot let recovery or a reconciler take over this run.
+      const heartbeat = onSliceRecorded
+        ? setInterval(() => void onSliceRecorded().catch(() => undefined), Math.max(1_000, Math.floor(this.config.reconcileLeaseMs / 3)))
+        : null;
+      if (onSliceRecorded) await onSliceRecorded();
       try {
         result = await this.client.submitOrder({
           tokenId: snapshot.tokenId,
@@ -679,6 +692,8 @@ export class ExecutionEngine {
         // A thrown venue call has an unknown outcome: never assume it failed.
         const message = error instanceof Error ? error.message : "Venue call failed";
         result = { mode: this.client.mode, status: "unknown", polymarketOrderId: null, response: { error: message }, fills: [], errorMessage: message };
+      } finally {
+        if (heartbeat) clearInterval(heartbeat);
       }
       const fills = result.fills.map((fill) => ({
         ...fill,

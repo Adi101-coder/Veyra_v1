@@ -258,4 +258,25 @@ describe("Smart Execution: venue failures", () => {
     expect(midRun).toEqual([]);
     expect(processed.allocation).toMatchObject({ status: "filled", executedSharesMicros: 2_000_000n });
   });
+
+  it("keeps the batch lease alive through a venue call slower than the lease", async () => {
+    const ref: { observer?: ExecutionEngine } = {};
+    let recovered: Awaited<ReturnType<ExecutionEngine["recoverStuck"]>> | undefined;
+    const { engine, store, client } = setup(
+      async (r) => {
+        // The call outlives the 3s lease; only the 1s heartbeat keeps the lease held at 3.5s.
+        await new Promise((resolve) => setTimeout(resolve, 3_500));
+        const stuck = await store.listStaleProcessing(new Date(Date.now() + 1_000));
+        const batchId = stuck[0]!.batchId!;
+        expect(await store.claimReconcile(batchId, 3_000)).toBeNull();
+        recovered = await ref.observer!.recoverStuck(-1_000);
+        return fill(r);
+      },
+      { config: { reconcileLeaseMs: 3_000 } },
+    );
+    ref.observer = new ExecutionEngine(client, store, { ...defaultExecutionEngineConfig, reconcileLeaseMs: 3_000 });
+    const processed = await engine.enqueueAndProcess(intent("BUY", 2_000_000n));
+    expect(recovered?.allocations).toEqual([]);
+    expect(processed.allocation).toMatchObject({ status: "filled", executedSharesMicros: 2_000_000n });
+  }, 10_000);
 });

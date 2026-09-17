@@ -72,7 +72,8 @@ export type ExecutionStore = {
   /** Exclusive reconcile lease on a batch; null if another live lease holds it. */
   claimReconcile(batchId: string, leaseMs: number): Promise<string | null>;
   releaseReconcile(batchId: string, token: string): Promise<void>;
-  renewReconcile(batchId: string, token: string): Promise<void>;
+  /** Extends a held lease; false means the lease was lost to another worker. */
+  renewReconcile(batchId: string, token: string): Promise<boolean>;
   /** Venue order ids already recorded on slices for this token since a time. */
   listSliceOrderIds(tokenId: string, since: Date): Promise<string[]>;
   /** Intents stuck in PROCESSING (claimed by a worker that died) older than the cutoff. */
@@ -281,7 +282,9 @@ export function memoryExecutionStore(): ExecutionStore {
     },
     async renewReconcile(batchId, token) {
       const batch = batches.find((row) => row.id === batchId) as (ExecutionBatchRow & { lease?: { token: string; at: number } }) | undefined;
-      if (batch?.lease?.token === token) batch.lease.at = Date.now();
+      if (batch?.lease?.token !== token) return false;
+      batch.lease.at = Date.now();
+      return true;
     },
     async releaseReconcile(batchId, token) {
       const batch = batches.find((row) => row.id === batchId) as (ExecutionBatchRow & { lease?: { token: string; at: number } }) | undefined;
@@ -624,10 +627,11 @@ export function prismaExecutionStore(prisma: PrismaClient): ExecutionStore {
       return count === 1 ? token : null;
     },
     async renewReconcile(batchId, token) {
-      await prisma.executionBatch.updateMany({
+      const { count } = await prisma.executionBatch.updateMany({
         where: { id: batchId, reconcileToken: token },
         data: { reconcileClaimedAt: new Date() },
       });
+      return count === 1;
     },
     async releaseReconcile(batchId, token) {
       await prisma.executionBatch.updateMany({
