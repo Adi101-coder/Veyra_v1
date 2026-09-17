@@ -45,7 +45,9 @@ export function validateEnvironment(env: Env): EnvReport {
     (production ? errors : warnings).push("DATABASE_URL must be a postgresql:// connection string.");
   }
   if (production && !set(env.DIRECT_URL)) {
-    warnings.push("DIRECT_URL is unset: `prisma migrate deploy` will run over the pooled connection, which can fail on a pooler.");
+    // schema.prisma references env("DIRECT_URL"): the CLI refuses to run without it,
+    // so `vercel-build` fails before the app is ever reached.
+    errors.push("DIRECT_URL is required: `prisma migrate deploy` cannot run over a transaction pooler, and the Prisma CLI refuses to start without it.");
   }
   if (!set(env.VEYRA_SESSION_SECRET) || env.VEYRA_SESSION_SECRET!.length < 32) {
     (production ? errors : warnings).push("VEYRA_SESSION_SECRET must be at least 32 characters (sessions reset on restart without it).");

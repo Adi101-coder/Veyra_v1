@@ -281,14 +281,20 @@ at risk.
 - `enqueueJob` (reputation) — two resolvers on the same market: resolution crashed. This was
   caught by the existing "concurrent and repeated scoring is idempotent" test.
 - `saveScore` / `applyResolution` — concurrent scorers creating one wallet's parent row.
-- `recordOpen` — retries, and distinguishes "already recorded" (no-op) from a lost race, so
-  the wallet's totals can never undercount.
-All of them now go through `withUniqueRetry` (`src/server/prisma-retry.ts`), which retries
-P2002/P2034 and rethrows everything else. Row locks (`SELECT … FOR UPDATE`) were added to
+These three go through `withUniqueRetry` (`src/server/prisma-retry.ts`), which retries
+P2002/P2034 and rethrows everything else.
+
+`recordOpen` was hardened defensively, not because a collision was reproduced: its upserts
+run inside a transaction and a probe of 120 concurrent calls produced zero P2002. It
+previously treated *any* P2002 as "already recorded", which on the non-atomic upsert path
+would undercount a wallet's totals; it now re-checks whether the prediction really was
+recorded and otherwise retries. Row locks (`SELECT … FOR UPDATE`) were added to
 `applyExecutionResult` and `reconcileAdjustment`, which relied on SQLite's writer lock.
 
 **Serverless.** Functions freeze between requests, so the in-process worker cannot run:
-`validateEnvironment` now rejects `VEYRA_WORKER_INTERVAL_MS > 0` on Vercel, `vercel.json`
+`validateEnvironment` now rejects `VEYRA_WORKER_INTERVAL_MS > 0` on Vercel (boot deliberately
+does not exit on serverless hosts, so this surfaces as `ready: false` in
+`/api/operator/readiness` rather than a failed boot), `vercel.json`
 schedules `GET /api/jobs/run` every minute, and that route accepts Vercel's `CRON_SECRET`
 (constant-time compare, minimum 16 chars) as well as the operator token. `vercel-build`
 runs `prisma migrate deploy` before `next build`, using `DIRECT_URL` because migrations
@@ -302,3 +308,10 @@ totals cannot undercount.
 
 **Still per-process on Vercel:** the rate limiter and the conviction cache. Each lambda has
 its own, so the effective rate limit is per-instance.
+
+**Not verified — requires the real deployment:** nothing here has run against a pooled
+(Neon/PgBouncer) connection; all tests used a direct local PostgreSQL. Prisma over a
+transaction pooler can fail at runtime with `prepared statement "s0" already exists` while
+every local test passes; if that appears in the function logs, `DATABASE_URL` needs
+`?pgbouncer=true`. The transaction and `FOR UPDATE` semantics themselves are unaffected by
+transaction pooling.

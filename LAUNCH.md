@@ -21,9 +21,14 @@ Plug-in order for a production (live) deployment. Every step is checkable; do no
 The in-process worker cannot run on serverless: functions are frozen between requests.
 `vercel.json` therefore schedules `GET /api/jobs/run` every minute.
 - [ ] Postgres provisioned (Vercel Postgres / Neon); `DATABASE_URL` (pooled) and `DIRECT_URL` (direct) set for Production.
-- [ ] `VEYRA_WORKER_INTERVAL_MS="0"` — boot fails on Vercel with any other value.
+- [ ] `VEYRA_WORKER_INTERVAL_MS="0"`. Serverless functions freeze between requests, so an
+  in-process worker silently does nothing. Boot does not exit on Vercel (that would 500 every
+  request), so this shows up as an error in `/api/operator/readiness`, which then reports
+  `ready: false`.
 - [ ] `CRON_SECRET` set (>= 16 chars). Vercel Cron sends it as `Authorization: Bearer $CRON_SECRET`; the operator token also works.
-- [ ] Deploy. The `vercel-build` script runs `prisma migrate deploy` before `next build`.
+- [ ] `DATABASE_URL`/`DIRECT_URL` are scoped to the Production environment (or gate previews),
+  since `vercel-build` migrates only when `VERCEL_ENV=production`.
+- [ ] Deploy. `vercel-build` runs `prisma migrate deploy` (over `DIRECT_URL`) before `next build`.
 - [ ] Cron tab shows `/api/jobs/run` succeeding; a minute-level schedule needs a Pro plan (Hobby is once per day).
 
 ### Self-hosted (one long-lived instance, `VEYRA_WORKER_INTERVAL_MS > 0`)
@@ -35,6 +40,13 @@ NODE_ENV=production npm run start
 ```
 - [ ] Boot log shows `[env] execution mode: live` and no `[env]` errors. A misconfigured production server exits instead of starting.
 - [ ] `GET /api/health` → `{"ok":true}` (use for load-balancer health checks).
+
+### Pooled connections — verify on the first deploy
+Prisma over a transaction pooler (Neon/PgBouncer) can fail at runtime with
+`prepared statement "s0" already exists` while every local test passes. If that appears in the
+function logs, append `?pgbouncer=true` (and a small `connection_limit`) to `DATABASE_URL`.
+The interactive transactions and `SELECT … FOR UPDATE` locks are safe under transaction
+pooling; only statement caching is affected.
 
 ## 4. Readiness (operator)
 ```bash

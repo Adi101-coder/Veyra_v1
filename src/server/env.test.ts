@@ -5,6 +5,7 @@ const KEY = `0x${"ab".repeat(32)}`;
 const PROD_LIVE = {
   NODE_ENV: "production",
   DATABASE_URL: "postgresql://veyra:veyra@db.internal:5432/veyra",
+  DIRECT_URL: "postgresql://veyra:veyra@db.internal:5432/veyra",
   VEYRA_SESSION_SECRET: "s".repeat(40),
   VEYRA_OPERATOR_TOKEN: "o".repeat(30),
   POLYMARKET_EXECUTION_MODE: "live",
@@ -101,6 +102,11 @@ describe("serverless deployments", () => {
     });
     expect(report.errors).toEqual([]);
     expect(report.warnings.join("\n")).not.toMatch(/CRON_SECRET/);
+  });
+
+  it("requires DIRECT_URL in production because the Prisma CLI refuses to run without it", () => {
+    const { DIRECT_URL: _omitted, ...withoutDirect } = PROD_LIVE;
+    expect(validateEnvironment(withoutDirect).errors.join("\n")).toMatch(/DIRECT_URL is required/);
   });
 
   it("refuses a non-postgres DATABASE_URL in production", () => {
