@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { Shell } from "@/components/Shell";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import {
+  describeBettingError,
+  hasFilledShares,
   predictionToWagerRow,
   type ConfidenceHistoryDTO,
   type EngineQuote,
@@ -13,17 +15,16 @@ import {
 } from "@/lib/betting";
 import {
   changeConfidence,
+  getPrediction,
   listConfidenceHistory,
   quotePrediction,
+  syncExecution,
 } from "@/lib/betting-api";
 import {
   categoryColor,
   categoryLabel,
   formatResolvesParts,
-  parseStakeSol,
   shortenKey,
-  wagerAddress,
-  wagerCreatedParts,
   type Market,
   type SeatNote,
   type WagerRow,
@@ -31,14 +32,46 @@ import {
 
 const CONFIDENCE_PRESETS = [60, 70, 80, 90];
 
-function clip(value: number) {
-  return Math.min(0.99, Math.max(0.01, value));
+const POLL_MS = 5000;
+const CHANGEABLE_POSITION_STATUSES = new Set(["filled", "partial", "closed"]);
+
+function needsReconcile(prediction: PredictionDTO) {
+  const execution = prediction.execution?.status;
+  const position = prediction.position?.status;
+  return (
+    execution === "created" ||
+    execution === "submitted" ||
+    position === "pending" ||
+    position === "adjusting"
+  );
 }
 
-function riskSol(belief: number, stake: number, side: "left" | "right") {
-  const p = clip(belief / 100);
-  if (side === "left") return stake * -Math.log10(1 - p);
-  return stake * (-Math.log10(p) / 2);
+function createdParts(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { date: "—", time: "" };
+  return {
+    date: date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
+    }),
+    time: `${date.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    })} UTC`,
+  };
+}
+
+function seatStatusLabel(prediction: PredictionDTO | undefined, note: SeatNote) {
+  if (!prediction || note !== "OPEN") return noteLabel(note);
+  const status = prediction.execution?.status ?? prediction.position?.status ?? prediction.status;
+  if (status === "failed" || status === "rejected" || prediction.position?.status === "failed") {
+    return "Order failed";
+  }
+  if (hasFilledShares(prediction)) return noteLabel(note);
+  return "Awaiting fill";
 }
 
 function noteLabel(note: SeatNote) {
@@ -67,17 +100,53 @@ export function WagerView({
 }) {
   const [copied, setCopied] = useState(false);
   const [prediction, setPrediction] = useState(initialPrediction);
+  const { address: walletAddress } = useWallet();
   const wager = prediction ? predictionToWagerRow(prediction, shortenKey) : initialWager;
   const color = categoryColor(market.category);
-  const address = wagerAddress(wager.id);
-  const created = wagerCreatedParts(wager.id);
+  const created = prediction ? createdParts(prediction.createdAt) : { date: "—", time: "" };
   const resolves = formatResolvesParts(market.resolvesAt);
-  const stake = parseStakeSol(wager.stake);
-  const leftRisk = riskSol(wager.left.belief, stake, "left");
-  const rightRisk = riskSol(wager.right.belief, stake, "right");
+  const costUsd = prediction?.position?.notionalUsd ?? null;
+  const payoutUsd = prediction?.position?.payoutUsd ?? null;
   const creator =
     wager.right.wallet !== "Open seat" ? wager.right : wager.left;
-  const filled = wager.gold;
+  const shares = prediction?.position?.shares ?? "—";
+  const orderId = prediction?.execution?.polymarketOrderId ?? null;
+  const executionId = prediction?.execution?.id ?? null;
+  const predictionId = prediction?.id ?? null;
+  const pollOwner = prediction ? walletsMatch(walletAddress, prediction.walletAddress) : false;
+  const reconciling = prediction ? needsReconcile(prediction) : false;
+
+  // Refresh execution status until it reaches a terminal state.
+  useEffect(() => {
+    if (!predictionId || !reconciling) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    const tick = async () => {
+      let next: PredictionDTO | null = null;
+      if (executionId && pollOwner) {
+        try {
+          next = await syncExecution(executionId);
+        } catch {
+          next = null;
+        }
+      }
+      if (!next) {
+        try {
+          next = await getPrediction(predictionId);
+        } catch {
+          next = null;
+        }
+      }
+      if (cancelled) return;
+      if (next) setPrediction(next);
+      if (!next || needsReconcile(next)) timer = window.setTimeout(() => void tick(), POLL_MS);
+    };
+    timer = window.setTimeout(() => void tick(), POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [predictionId, executionId, pollOwner, reconciling]);
 
   const share = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -147,8 +216,15 @@ export function WagerView({
                 </div>
               </div>
               <Meta label="Stake" value={wager.stake} />
-              <Meta label="Seats" value={filled.replace("/", " / ")} />
-              <Meta label="Address" value={shortenKey(address, 4, 4)} />
+              <Meta label="Shares" value={shares} />
+              <Meta
+                label="Order"
+                value={
+                  orderId
+                    ? shortenKey(orderId, 4, 4)
+                    : (prediction?.execution?.status ?? prediction?.status ?? "—")
+                }
+              />
             </div>
             <Link
               href={`/contract/${market.id}`}
@@ -171,13 +247,13 @@ export function WagerView({
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 sm:gap-0">
-            <SeatPanel seat={wager.left} align="left" />
-            <SeatPanel seat={wager.right} align="right" />
+            <SeatPanel seat={wager.left} align="left" label={seatStatusLabel(prediction, wager.left.note)} />
+            <SeatPanel seat={wager.right} align="right" label={seatStatusLabel(prediction, wager.right.note)} />
           </div>
 
           <div className="mt-8 grid gap-6 sm:grid-cols-2">
-            <RiskMeter label="Risk" value={leftRisk} side="left" />
-            <RiskMeter label="Risk" value={rightRisk} side="right" />
+            <RiskMeter label="Cost" value={costUsd} max={payoutUsd} side="left" />
+            <RiskMeter label="Max payout" value={payoutUsd} max={payoutUsd} side="right" />
           </div>
 
           <div className="mt-10 grid gap-6 border-t border-[rgba(26,26,26,0.08)] pt-6 sm:grid-cols-2">
@@ -241,9 +317,11 @@ function Meta({ label, value }: { label: string; value: string }) {
 function SeatPanel({
   seat,
   align,
+  label,
 }: {
   seat: WagerRow["left"];
   align: "left" | "right";
+  label?: string;
 }) {
   const open = seat.wallet === "Open seat";
   return (
@@ -258,7 +336,7 @@ function SeatPanel({
           {open ? "Open seat" : shortenKey(seat.wallet, 4, 4)}
         </p>
         <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.14em] ${noteClass(seat.note)}`}>
-          {noteLabel(seat.note)}
+          {label ?? noteLabel(seat.note)}
         </p>
       </div>
       <p
@@ -275,13 +353,19 @@ function SeatPanel({
 function RiskMeter({
   label,
   value,
+  max,
   side,
 }: {
   label: string;
-  value: number;
+  value: string | null;
+  max: string | null;
   side: "left" | "right";
 }) {
-  const width = Math.min(92, 18 + value * 400);
+  // Display-only bar scale: fraction of the max payout.
+  const amount = value === null ? 0 : Number.parseFloat(value);
+  const ceiling = max === null ? 0 : Number.parseFloat(max);
+  const ratio = ceiling > 0 && Number.isFinite(amount) ? Math.min(1, Math.max(0, amount / ceiling)) : 0;
+  const width = Math.round(18 + ratio * 74);
   return (
     <div>
       <p
@@ -289,7 +373,7 @@ function RiskMeter({
           side === "right" ? "sm:text-right" : ""
         }`}
       >
-        {label}: {value.toFixed(4)} SOL
+        {label}: {value === null ? "—" : `$${value}`} USD
       </p>
       <div className={`mt-2 flex h-2 overflow-hidden rounded-full bg-[#ddd8ce] ${side === "right" ? "flex-row-reverse" : ""}`}>
         <div className="h-full w-6 bg-[#3a3344]" />
@@ -325,23 +409,45 @@ function ChangeMindPanel({
   const { address } = useWallet();
   const owner = walletsMatch(address, prediction.walletAddress);
   const [confidence, setConfidence] = useState(Math.round(prediction.confidencePct));
-  const [quote, setQuote] = useState<EngineQuote | null>(null);
+  const [quoteState, setQuoteState] = useState<{ intent: string; result: EngineQuote } | null>(null);
   const [history, setHistory] = useState<ConfidenceHistoryDTO[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [quoteErrorState, setQuoteErrorState] = useState<{ intent: string; message: string } | null>(
+    null,
+  );
+  // Only a quote (or quote error) for the current inputs counts; stale ones are ignored.
+  const quoteIntent = `${prediction.id}:${prediction.confidencePct}:${confidence}`;
+  const quote = quoteState?.intent === quoteIntent ? quoteState.result : null;
+  const quoteError = quoteErrorState?.intent === quoteIntent ? quoteErrorState.message : null;
   const [message, setMessage] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
+  // One idempotency key per intent (prediction + target confidence); reused on retries.
+  const intentKey = useRef<{ intent: string; key: string } | null>(null);
+  const positionStatus = prediction.position?.status ?? null;
+  const changeable = positionStatus !== null && CHANGEABLE_POSITION_STATUSES.has(positionStatus);
 
-  useEffect(() => {
+  // Re-sync the slider when the stored confidence changes (adjusting state during render).
+  const [syncedPct, setSyncedPct] = useState(prediction.confidencePct);
+  if (syncedPct !== prediction.confidencePct) {
+    setSyncedPct(prediction.confidencePct);
     setConfidence(Math.round(prediction.confidencePct));
-  }, [prediction.confidencePct]);
+  }
 
   useEffect(() => {
     let cancelled = false;
     void listConfidenceHistory(prediction.id)
       .then((rows) => {
-        if (!cancelled) setHistory(rows);
+        if (cancelled) return;
+        setHistory(rows);
+        setHistoryError(null);
       })
-      .catch(() => {
-        if (!cancelled) setHistory([]);
+      .catch((error) => {
+        if (!cancelled) setHistoryError(describeBettingError(error, "Could not load confidence history."));
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoading(false);
       });
     return () => {
       cancelled = true;
@@ -349,10 +455,7 @@ function ChangeMindPanel({
   }, [prediction.id, prediction.confidencePct, prediction.position?.shares]);
 
   useEffect(() => {
-    if (!owner || confidence === Math.round(prediction.confidencePct)) {
-      setQuote(null);
-      return;
-    }
+    if (!owner || confidence === Math.round(prediction.confidencePct)) return;
     let cancelled = false;
     const timer = window.setTimeout(() => {
       void quotePrediction({
@@ -362,10 +465,14 @@ function ChangeMindPanel({
         stakeUsd: prediction.stakeUsd,
       })
         .then((result) => {
-          if (!cancelled) setQuote(result);
+          if (cancelled) return;
+          setQuoteState({ intent: quoteIntent, result });
+          setQuoteErrorState(null);
         })
-        .catch(() => {
-          if (!cancelled) setQuote(null);
+        .catch((error) => {
+          if (cancelled) return;
+          setQuoteState(null);
+          setQuoteErrorState({ intent: quoteIntent, message: describeBettingError(error, "Could not price this confidence.") });
         });
     }, 280);
     return () => {
@@ -379,9 +486,11 @@ function ChangeMindPanel({
     prediction.marketId,
     prediction.outcome,
     prediction.stakeUsd,
+    quoteIntent,
   ]);
 
   const submit = async () => {
+    if (inFlight.current) return;
     if (!address) {
       setMessage("Connect the wallet that opened this position.");
       return;
@@ -390,6 +499,16 @@ function ChangeMindPanel({
       setMessage("Pick a different confidence first.");
       return;
     }
+    if (!changeable) {
+      setMessage("Confidence can change once the position has filled.");
+      return;
+    }
+    const intent = `${prediction.id}:${confidence}`;
+    if (!intentKey.current || intentKey.current.intent !== intent) {
+      intentKey.current = { intent, key: crypto.randomUUID() };
+    }
+    const idempotencyKey = intentKey.current.key;
+    inFlight.current = true;
     setSubmitting(true);
     setMessage(null);
     try {
@@ -401,8 +520,9 @@ function ChangeMindPanel({
           quotedMarketPrice: quote?.position?.marketPrice,
           expectedConfidencePct: prediction.confidencePct,
         },
-        crypto.randomUUID(),
+        idempotencyKey,
       );
+      intentKey.current = null;
       onUpdated(result.prediction);
       setHistory((rows) => [result.history, ...rows.filter((row) => row.id !== result.history.id)]);
       const fill = result.history.status;
@@ -416,8 +536,9 @@ function ChangeMindPanel({
               : `Recorded ${result.history.previousConfidencePct}% → ${result.history.newConfidencePct}%.`,
       );
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not change confidence.");
+      setMessage(describeBettingError(error, "Could not change confidence."));
     } finally {
+      inFlight.current = false;
       setSubmitting(false);
     }
   };
@@ -484,6 +605,14 @@ function ChangeMindPanel({
               );
             })}
           </div>
+          {quoteError && !unchanged ? (
+            <p className="mt-4 text-[13px] text-[#8a6a32]">{quoteError}</p>
+          ) : null}
+          {owner && !changeable ? (
+            <p className="mt-4 text-[13px] text-[#8a8a8a]">
+              Confidence can change once the position has filled.
+            </p>
+          ) : null}
           {quote && !quote.accepted && !unchanged ? (
             <p className="mt-4 text-[13px] text-[#8a6a32]">
               {quote.rejection?.message ?? "No edge at this confidence. Submitting will flatten the position."}
@@ -491,7 +620,7 @@ function ChangeMindPanel({
           ) : null}
           <button
             type="button"
-            disabled={!owner || submitting || unchanged}
+            disabled={!owner || submitting || unchanged || !changeable}
             onClick={() => void submit()}
             className="mt-6 rounded-full bg-[#1a1a1a] px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white disabled:opacity-40"
           >
@@ -504,7 +633,11 @@ function ChangeMindPanel({
           <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
             Confidence history
           </p>
-          {history.length === 0 ? (
+          {historyError && history.length === 0 ? (
+            <p className="mt-3 text-[13px] text-[#8a6a32]">{historyError}</p>
+          ) : historyLoading && history.length === 0 ? (
+            <p className="mt-3 text-[13px] text-[#8a8a8a]">Loading history…</p>
+          ) : history.length === 0 ? (
             <p className="mt-3 text-[13px] text-[#8a8a8a]">No changes yet.</p>
           ) : (
             <ul className="mt-3 space-y-2">

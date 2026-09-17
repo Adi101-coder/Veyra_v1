@@ -199,33 +199,64 @@ export type ExecutionBatchDTO = {
   reconciledAt: string | null;
 };
 
+/** True when the position holds recorded fills (shares > 0). */
+export function hasFilledShares(dto: PredictionDTO) {
+  const shares = Number.parseFloat(dto.position?.shares ?? "0");
+  return Number.isFinite(shares) && shares > 0;
+}
+
+/** Maps API error codes to a readable one-line message; falls back to the server message. */
+export function describeBettingError(error: unknown, fallback: string) {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+  const serverMessage = error instanceof Error && error.message ? error.message : null;
+  switch (code) {
+    case "UNAUTHENTICATED":
+      return "Connect and sign in with your wallet to continue.";
+    case "MARKET_RESOLVED":
+      return serverMessage ?? "This market has resolved. Positions can no longer change.";
+    case "NOT_EXECUTABLE":
+      return serverMessage ?? "This position can't be adjusted right now.";
+    case "INSUFFICIENT_LIQUIDITY":
+      return serverMessage ?? "Not enough liquidity on the book for this size.";
+    case "CONCURRENT_UPDATE":
+      return "This position just changed elsewhere. Refresh and try again.";
+    case "RATE_LIMITED":
+      return "Too many requests. Wait a moment and try again.";
+    default:
+      return serverMessage ?? fallback;
+  }
+}
+
 export function predictionToWagerRow(
   dto: PredictionDTO,
   shorten: (value: string) => string,
 ): import("@/lib/markets").WagerRow {
-  const filled = dto.execution?.status === "filled" || dto.position?.status === "filled";
-  const partial = dto.execution?.status === "partial" || dto.position?.status === "partial";
-  const failed = dto.status === "failed" || dto.execution?.status === "failed";
+  // Only recorded fills lock a seat. Pending and failed orders stay open and
+  // unresolved; their state is surfaced through lockBy (execution/position status).
+  const locked = hasFilledShares(dto);
   const marketPct = Math.round(Number.parseFloat(dto.marketPrice) * 100);
   return {
     id: dto.id,
     stake: `$${dto.stakeUsd}`,
     gold: dto.position ? `${dto.position.shares} sh` : "—",
-    lockBy: dto.execution?.status ?? dto.status,
+    lockBy: dto.execution?.status ?? dto.position?.status ?? dto.status,
     mechanism: "Confidence",
-    resolution: failed ? "RESOLVED" : "PENDING",
-    expired: failed,
+    resolution: "PENDING",
+    expired: false,
     left: {
       wallet: shorten(dto.walletAddress),
       avatar: dto.walletAddress,
       belief: Math.round(dto.confidencePct),
-      note: filled || !partial ? "LOCKED" : "OPEN",
+      note: locked ? "LOCKED" : "OPEN",
     },
     right: {
       wallet: dto.outcome === "YES" ? "Book YES" : "Book NO",
       avatar: `${dto.marketId}-${dto.outcome}`,
       belief: Number.isFinite(marketPct) ? marketPct : 50,
-      note: filled ? "LOCKED" : "OPEN",
+      note: locked ? "LOCKED" : "OPEN",
     },
   };
 }
