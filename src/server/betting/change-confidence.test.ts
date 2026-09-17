@@ -175,11 +175,15 @@ describe("changeConfidence", () => {
     );
     const second = await changeConfidence(
       opened.id,
-      { confidencePct: 90, walletAddress: WALLET, idempotencyKey: "same-change-key" },
+      { confidencePct: 60, walletAddress: WALLET, idempotencyKey: "same-change-key" },
       context,
     );
     expect(second.history.id).toBe(first.history.id);
     expect(second.prediction.confidencePct).toBe(60);
+    // Reusing the key for a different confidence is rejected, not silently replayed.
+    await expect(
+      changeConfidence(opened.id, { confidencePct: 90, walletAddress: WALLET, idempotencyKey: "same-change-key" }, context),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
     expect(await listConfidenceHistory(opened.id, context)).toHaveLength(1);
   });
 

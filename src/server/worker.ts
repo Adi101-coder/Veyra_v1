@@ -4,6 +4,7 @@ import {
   createDefaultDeps,
   flushExecutions,
   processReputationJobs,
+  recoverStuckAdjustments,
   recoverStuckExecutions,
   reconcileExecutions,
   syncMarketResolutions,
@@ -20,7 +21,10 @@ import { runRobinhoodSettlementTick } from "@/server/chain";
  * A failing step is logged and does not block the others.
  */
 const STEPS = {
-  recover: async () => recoverStuckExecutions(createDefaultDeps()),
+  recover: async () => {
+    const deps = createDefaultDeps();
+    return (await recoverStuckExecutions(deps)) + (await recoverStuckAdjustments(deps));
+  },
   flush: async () => (await flushExecutions(createDefaultDeps())).length,
   reconcile: async () => (await reconcileExecutions(createDefaultDeps())).length,
   resolutions: async () => (await syncMarketResolutions(createDefaultDeps())).length,

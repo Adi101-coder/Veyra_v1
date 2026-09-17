@@ -30,7 +30,9 @@ import {
   type BettingStore,
   type ConfidenceHistoryRow,
   type PredictionBundle,
+  type ReconcileAdjustmentInput,
 } from "@/server/betting/repository";
+import { derivePositionStatus } from "@/server/betting/ledger";
 import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server/betting/mapper";
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
@@ -172,13 +174,37 @@ function bettingForecastSource(store: BettingStore): ForecastSource {
   return {
     async listByMarket(marketId, resolvedAt) {
       const rows = await store.listForScoring(marketId, resolvedAt);
-      return rows.map(bundleToForecast).filter((row): row is Forecast => row !== null);
+      return rows.map((row) => bundleToForecast(row, resolvedAt)).filter((row): row is Forecast => row !== null);
     },
   };
 }
 
 /** Scores only what actually executed: cost, proceeds and held shares come from fills. */
-function bundleToForecast(bundle: PredictionBundle): Forecast | null {
+/**
+ * Confidence in force at the resolution cutoff: the latest filled/noop change
+ * requested at or before the cutoff (the venue cannot fill after resolution, so a
+ * pre-cutoff request that filled is a real pre-resolution belief). Changes requested
+ * after the cutoff never affect scoring. A pre-cutoff adjustment still pending when
+ * the job runs is scored at the prior confidence; scores are not recomputed later.
+ */
+export function confidenceAtCutoff(
+  bundle: { confidenceBps: number; confidenceHistory?: { createdAt: Date; status: string; previousConfidenceBps: number; newConfidenceBps: number }[] },
+  cutoff: Date,
+) {
+  const rows = bundle.confidenceHistory;
+  if (!rows?.length) return bundle.confidenceBps;
+  let confidence = rows[0]!.previousConfidenceBps;
+  for (const row of rows) {
+    if (row.createdAt > cutoff) break;
+    if (row.status === "filled" || row.status === "noop") confidence = row.newConfidenceBps;
+  }
+  return confidence;
+}
+
+function bundleToForecast(
+  bundle: PredictionBundle & { confidenceHistory?: ConfidenceHistoryRow[] },
+  cutoff: Date,
+): Forecast | null {
   let costMicros = 0n;
   let proceedsMicros = 0n;
   for (const execution of bundle.position?.executions ?? []) {
@@ -194,7 +220,7 @@ function bundleToForecast(bundle: PredictionBundle): Forecast | null {
     marketId: bundle.marketId,
     category: bundle.market.category,
     predictedOutcome: bundle.outcome as Outcome,
-    confidenceBps: bundle.confidenceBps,
+    confidenceBps: confidenceAtCutoff(bundle, cutoff),
     notionalMicros: costMicros,
     payoutMicros: bundle.position?.sharesMicros ?? 0n,
     proceedsMicros,
@@ -541,6 +567,93 @@ export async function recoverStuckExecutions(deps: BettingDeps = createDefaultDe
   return result.recovered;
 }
 
+/**
+ * Worker entry point: positions left "adjusting" by a crashed request. Settles the
+ * adjustment from what the execution layer actually recorded, never from the plan:
+ *  - no pending history (crash before it was written): release the lock
+ *  - execution never enqueued: the adjustment failed; nothing reached the venue
+ *  - intent still queued/processing/submitted: left to execution recovery/reconcile
+ *  - intent terminal but history unsettled: settle from the intent's executed totals
+ */
+export async function recoverStuckAdjustments(deps: BettingDeps = createDefaultDeps(), leaseMs = 5 * 60 * 1000) {
+  const engine = getEngine(deps);
+  const stale = await deps.store.listStaleAdjustments(new Date(Date.now() - leaseMs));
+  let recovered = 0;
+  for (const row of stale) {
+    if (!row.historyId || !row.executionId) {
+      const bundle = await deps.store.getPrediction(row.predictionId);
+      if (!bundle?.position) continue;
+      if (row.historyId) {
+        await deps.store.reconcileAdjustment({
+          historyId: row.historyId,
+          executionId: null,
+          executionStatus: "noop",
+          polymarketOrderId: null,
+          responseJson: jsonSafe({ recovered: true }),
+          errorMessage: null,
+          submittedAt: new Date(),
+          fills: [],
+        });
+      } else {
+        await deps.store.releaseAdjustmentLock(
+          row.positionId,
+          derivePositionStatus(bundle.position.executions, bundle.position.sharesMicros),
+        );
+      }
+      recovered += 1;
+      continue;
+    }
+    const intent = await deps.executionStore!.findIntentByExecutionId(row.executionId);
+    const base = {
+      historyId: row.historyId,
+      executionId: row.executionId,
+      polymarketOrderId: null,
+      submittedAt: new Date(),
+      responseJson: jsonSafe({ recovered: true, intentStatus: intent?.status ?? null }),
+    };
+    if (!intent) {
+      await deps.store.reconcileAdjustment({
+        ...base,
+        executionStatus: "failed",
+        errorMessage: "Adjustment request stopped before execution was queued.",
+        fills: [],
+        historyErrorCode: "WORKER_ABORTED",
+      });
+      recovered += 1;
+      continue;
+    }
+    if (intent.status === "QUEUED") {
+      if (!(await engine.cancelQueued(row.executionId))) continue;
+      await deps.store.reconcileAdjustment({ ...base, executionStatus: "failed", errorMessage: "Adjustment cancelled after a crash.", fills: [], historyErrorCode: "WORKER_ABORTED" });
+      recovered += 1;
+      continue;
+    }
+    if (intent.status === "PROCESSING" || intent.status === "SUBMITTED") continue;
+    const executed = intent.executedSharesMicros;
+    await deps.store.reconcileAdjustment({
+      ...base,
+      executionStatus: intent.status === "RECONCILED" ? "filled" : intent.status === "PARTIAL" ? "partial" : "failed",
+      errorMessage: intent.errorMessage,
+      fills:
+        executed > 0n
+          ? [
+              {
+                venueTradeId: `intent:${intent.id}`,
+                priceBps: intent.avgPriceBps,
+                sharesMicros: executed,
+                notionalMicros: intent.executedNotionalMicros,
+                feeMicros: intent.feeMicros,
+                isSimulated: deps.executor.mode === "paper",
+                rawJson: jsonSafe({ recoveredFromIntent: intent.id }),
+              },
+            ]
+          : [],
+    });
+    recovered += 1;
+  }
+  return recovered;
+}
+
 /** Worker entry point: reconcile every batch still awaiting venue state. */
 export async function reconcileExecutions(deps: BettingDeps = createDefaultDeps()) {
   const results = await getEngine(deps).reconcileSubmitted();
@@ -560,72 +673,69 @@ export async function changeConfidence(
   if (!walletsMatch(bundle.walletAddress, input.walletAddress)) {
     throw new BettingError("FORBIDDEN", "This prediction belongs to another wallet.", 403);
   }
+  const newConfidenceBps = confidencePctToBps(input.confidencePct);
+
+  const replay = async (existing: ConfidenceHistoryRow) => {
+    // The same key must mean the same request; otherwise it is a client bug.
+    if (existing.newConfidenceBps !== newConfidenceBps) {
+      throw new BettingError(
+        "IDEMPOTENCY_KEY_REUSED",
+        "This idempotency key was already used for a different confidence.",
+        409,
+      );
+    }
+    const latest = await deps.store.getPrediction(predictionId);
+    return { prediction: toPredictionDTO(latest ?? bundle), history: toConfidenceHistoryDTO(existing) };
+  };
   if (input.idempotencyKey) {
     const existing = await deps.store.findHistoryByIdempotency(predictionId, input.idempotencyKey);
-    if (existing) {
-      const latest = await deps.store.getPrediction(predictionId);
-      return {
-        prediction: toPredictionDTO(latest ?? bundle),
-        history: toConfidenceHistoryDTO(existing),
-      };
-    }
+    if (existing) return replay(existing);
   }
 
-  const newConfidenceBps = confidencePctToBps(input.confidencePct);
-  const limits = loadConfidenceEngineConfig();
+  const config = loadConfidenceEngineConfig();
   // Same range the ConfidenceEngine enforces at placement.
-  if (newConfidenceBps < limits.minConfidenceBps || newConfidenceBps > limits.maxConfidenceBps) {
+  if (newConfidenceBps < config.minConfidenceBps || newConfidenceBps > config.maxConfidenceBps) {
     throw new BettingError(
       "CONFIDENCE_RANGE",
-      `Confidence must be between ${limits.minConfidenceBps / 100}% and ${limits.maxConfidenceBps / 100}%.`,
+      `Confidence must be between ${config.minConfidenceBps / 100}% and ${config.maxConfidenceBps / 100}%.`,
       422,
     );
   }
   if (newConfidenceBps === bundle.confidenceBps) {
     throw new BettingError("UNCHANGED", "Confidence is already at that value.", 422);
   }
-  if (
-    input.expectedConfidencePct != null &&
-    confidencePctToBps(input.expectedConfidencePct) !== bundle.confidenceBps
-  ) {
-    throw new BettingError(
-      "CONCURRENT_UPDATE",
-      "Confidence changed since this request was built. Refresh and try again.",
-      409,
-    );
+  if (input.expectedConfidencePct != null && confidencePctToBps(input.expectedConfidencePct) !== bundle.confidenceBps) {
+    throw new BettingError("CONCURRENT_UPDATE", "Confidence changed since this request was built. Refresh and try again.", 409);
   }
 
   const position = bundle.position;
   if (!position) throw new BettingError("NO_POSITION", "This prediction has no position to adjust.", 409);
   if (position.status === "adjusting") {
-    throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is already in flight.", 409);
+    throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is still being executed.", 409);
   }
-  if (position.status !== "filled" && position.status !== "partial" && position.status !== "closed") {
-    throw new BettingError(
-      "POSITION_NOT_READY",
-      "Wait until the current position has fills before changing confidence.",
-      409,
-    );
+  if (!ADJUSTABLE_POSITION_STATUSES.includes(position.status)) {
+    throw new BettingError("POSITION_NOT_READY", "Wait until the current position has fills before changing confidence.", 409);
   }
 
-  const locked = await deps.store.claimAdjustmentLock(position.id);
-  if (!locked) {
-    throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is already in flight.", 409);
+  // Atomic: only one adjustment can move a position from an adjustable status to "adjusting".
+  if (!(await deps.store.claimAdjustmentLock(position.id))) {
+    throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is still being executed.", 409);
   }
   const previousStatus = position.status;
-  // Re-read under the lock: fills may have been reconciled since the first read.
-  const lockedBundle = await deps.store.getPrediction(predictionId);
-  if (!lockedBundle?.position || lockedBundle.confidenceBps !== bundle.confidenceBps) {
-    await deps.store.releaseAdjustmentLock(position.id, previousStatus);
-    throw new BettingError("CONCURRENT_UPDATE", "Prediction changed; refresh and try again.", 409);
-  }
-  position.sharesMicros = lockedBundle.position.sharesMicros;
-  position.notionalMicros = lockedBundle.position.notionalMicros;
-  position.avgPriceBps = lockedBundle.position.avgPriceBps;
-  const config = loadConfidenceEngineConfig();
-  let settled = false;
+  let historyCreated = false;
 
   try {
+    // Re-read under the lock: fills or another change may have landed since the first read.
+    const locked = await deps.store.getPrediction(predictionId);
+    if (!locked?.position || locked.confidenceBps !== bundle.confidenceBps) {
+      throw new BettingError("CONCURRENT_UPDATE", "Prediction changed; refresh and try again.", 409);
+    }
+    const held = {
+      sharesMicros: locked.position.sharesMicros,
+      notionalMicros: locked.position.notionalMicros,
+      avgPriceBps: locked.position.avgPriceBps,
+    };
+
     const market = await resolveMarket(bundle.marketId, deps);
     if (!market) throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
     await assertMarketOpen(market, deps);
@@ -635,45 +745,14 @@ export async function changeConfidence(
     const livePrice = book.asks[0]?.priceBps ?? bundle.marketPriceBps;
     const quotedBps = input.quotedMarketPrice ? parsePriceBps(input.quotedMarketPrice, "floor") : undefined;
     if (isStalePrice(quotedBps, livePrice, config.maxStaleBps)) {
-      throw new BettingError(
-        "STALE_PRICE",
-        "The market moved since this quote. Refresh the book and try again.",
-        409,
-      );
+      throw new BettingError("STALE_PRICE", "The market moved since this quote. Refresh the book and try again.", 409);
     }
 
-    const held = {
-      sharesMicros: position.sharesMicros,
-      notionalMicros: position.notionalMicros,
-      avgPriceBps: position.avgPriceBps,
-    };
-    const target = targetPositionFromConfidence(
-      newConfidenceBps,
-      bundle.stakeMicros,
-      livePrice,
-      config,
-    );
+    const target = targetPositionFromConfidence(newConfidenceBps, bundle.stakeMicros, livePrice, config);
     const plan = planAdjustment(held, target, book, config);
-
     if (plan.side !== "NONE" && plan.fills.length === 0) {
-      throw new BettingError(
-        "INSUFFICIENT_LIQUIDITY",
-        "The order book cannot fill the required adjustment at the engine limit.",
-        422,
-      );
+      throw new BettingError("INSUFFICIENT_LIQUIDITY", "The order book cannot fill the required adjustment at the engine limit.", 422);
     }
-
-    const previousPositionJson = jsonSafe({
-      shares: formatShares(held.sharesMicros),
-      notionalUsd: formatUsd(held.notionalMicros),
-      avgPrice: formatPrice(held.avgPriceBps),
-      status: previousStatus,
-    });
-    const desiredPositionJson = jsonSafe({
-      shares: formatShares(target.sharesMicros),
-      notionalUsd: formatUsd(target.notionalMicros),
-      avgPrice: formatPrice(target.marketPriceBps),
-    });
 
     let created: { history: ConfidenceHistoryRow; executionId: string | null };
     try {
@@ -685,16 +764,26 @@ export async function changeConfidence(
           previousSharesMicros: held.sharesMicros,
           previousNotionalMicros: held.notionalMicros,
           previousAvgPriceBps: held.avgPriceBps,
-          previousPositionJson,
+          previousPositionJson: jsonSafe({
+            shares: formatShares(held.sharesMicros),
+            notionalUsd: formatUsd(held.notionalMicros),
+            avgPrice: formatPrice(held.avgPriceBps),
+            status: previousStatus,
+          }),
+          // Desired values are a plan recorded for audit; the position never takes them.
           desiredSharesMicros: target.sharesMicros,
           desiredNotionalMicros: target.notionalMicros,
           desiredAvgPriceBps: target.marketPriceBps,
-          desiredPositionJson,
+          desiredPositionJson: jsonSafe({
+            shares: formatShares(target.sharesMicros),
+            notionalUsd: formatUsd(target.notionalMicros),
+            avgPrice: formatPrice(target.marketPriceBps),
+          }),
           deltaSharesMicros: plan.signedDeltaSharesMicros,
           side: plan.side,
           marketPriceBps: livePrice,
           bookHash: snapshot.hash ?? null,
-          status: plan.side === "NONE" ? "noop" : "pending",
+          status: "pending",
           idempotencyKey: input.idempotencyKey,
           previousPositionStatus: previousStatus,
         },
@@ -724,63 +813,51 @@ export async function changeConfidence(
               },
       });
     } catch (error) {
-      if (input.idempotencyKey) {
-        const existing = await deps.store.findHistoryByIdempotency(
-          predictionId,
-          input.idempotencyKey,
-        );
+      // Lost a same-key race: release our lock and replay the winner's result.
+      if (input.idempotencyKey && isUniqueViolation(error)) {
+        const existing = await deps.store.findHistoryByIdempotency(predictionId, input.idempotencyKey);
         if (existing) {
           await deps.store.releaseAdjustmentLock(position.id, previousStatus);
-          settled = true;
-          const latest = await deps.store.getPrediction(predictionId);
-          return {
-            prediction: toPredictionDTO(latest ?? bundle),
-            history: toConfidenceHistoryDTO(existing),
-          };
+          return replay(existing);
         }
       }
       throw error;
     }
+    historyCreated = true;
+    const positionMeta = { edgeBps: target.edgeBps, kellyBps: target.sizedKellyBps, limitPriceBps: plan.limitPriceBps };
 
-    if (plan.side === "NONE") {
+    const settle = async (result: Omit<ReconcileAdjustmentInput, "historyId" | "executionId" | "submittedAt">) => {
       const updated = await deps.store.reconcileAdjustment({
         historyId: created.history.id,
-        executionId: null,
+        executionId: created.executionId,
+        submittedAt: new Date(),
+        ...result,
+      });
+      const history = (await deps.store.listHistory(predictionId)).find((row) => row.id === created.history.id);
+      return { prediction: toPredictionDTO(updated), history: toConfidenceHistoryDTO(history ?? created.history) };
+    };
+
+    if (!created.executionId) {
+      return settle({
         executionStatus: "noop",
         polymarketOrderId: null,
         responseJson: jsonSafe({ reason: "no inventory delta" }),
         errorMessage: null,
-        submittedAt: new Date(),
         fills: [],
-        position: {
-          ...held,
-          payoutMicros: (held.sharesMicros * 1_000_000n) / SHARE_SCALE,
-          status: previousStatus,
-        },
-        prediction: {
-          confidenceBps: newConfidenceBps,
-          marketPriceBps: livePrice,
-        },
-        historyStatus: "noop",
+        positionMeta,
       });
-      settled = true;
-      const history = (await deps.store.listHistory(predictionId)).find((row) => row.id === created.history.id);
-      return {
-        prediction: toPredictionDTO(updated),
-        history: toConfidenceHistoryDTO(history ?? created.history),
-      };
     }
 
     let processed;
     try {
       processed = await getEngine(deps).enqueueAndProcess({
-        executionId: created.executionId!,
+        executionId: created.executionId,
         positionId: position.id,
         predictionId,
         marketId: bundle.marketId,
         outcome: bundle.outcome as QuoteRequest["outcome"],
         tokenId: position.tokenId,
-        side: plan.side,
+        side: plan.side === "SELL" ? "SELL" : "BUY",
         sharesMicros: plan.deltaSharesMicros,
         notionalMicros: plan.notionalMicros,
         limitPriceBps: plan.limitPriceBps,
@@ -789,95 +866,67 @@ export async function changeConfidence(
         negRisk: snapshot.negRisk,
         quotedPriceBps: livePrice,
         bookHash: snapshot.hash,
-        idempotencyKey: input.idempotencyKey ? `adjust:${input.idempotencyKey}` : undefined,
+        idempotencyKey: `adjust:${created.executionId}`,
       });
     } catch (error) {
+      // The engine throws only before anything reached the venue.
+      await getEngine(deps).cancelQueued(created.executionId);
       const message = error instanceof Error ? error.message : "Execution failed";
-      const updated = await deps.store.reconcileAdjustment({
-        historyId: created.history.id,
-        executionId: created.executionId,
+      return settle({
         executionStatus: "failed",
         polymarketOrderId: null,
         responseJson: jsonSafe({ error: message }),
         errorMessage: message,
-        submittedAt: new Date(),
         fills: [],
-        position: {
-          ...held,
-          payoutMicros: (held.sharesMicros * 1_000_000n) / SHARE_SCALE,
-          status: previousStatus,
-        },
-        historyStatus: "failed",
         historyErrorCode: error instanceof BettingError ? error.code : "EXECUTION_FAILED",
         historyErrorMessage: message,
       });
-      settled = true;
-      const history = (await deps.store.listHistory(predictionId)).find((row) => row.id === created.history.id);
-      return {
-        prediction: toPredictionDTO(updated),
-        history: toConfidenceHistoryDTO(history ?? { ...created.history, status: "failed" }),
-      };
     }
 
-    const allocation = processed.allocation;
-    const filledShares = allocation?.executedSharesMicros ?? 0n;
-    const filledNotional = allocation?.executedNotionalMicros ?? 0n;
-    const fullyFilled = Boolean(allocation && allocation.status === "filled" && filledShares >= plan.deltaSharesMicros);
-    const awaiting = allocation?.status === "pending";
-    const failed = !awaiting && (!allocation || allocation.status === "failed" || filledShares <= 0n);
-    const nextHeld = failed
-      ? held
-      : applyFilledDelta(held, plan.side, filledShares, filledNotional);
     await applyForeignAllocations(deps, processed, created.executionId);
-
-    if (!allocation) await getEngine(deps).cancelQueued(created.executionId!);
-    const updated = await deps.store.reconcileAdjustment({
-      historyId: created.history.id,
-      executionId: created.executionId,
-      // "submitted" keeps the position locked (adjusting) until the venue order is
-      // reconciled by syncExecution / the reconcile worker.
-      executionStatus: awaiting ? "submitted" : failed ? "failed" : fullyFilled ? "filled" : "partial",
-      polymarketOrderId:
-        processed.batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null,
+    const allocation = processed.allocation;
+    if (!allocation) {
+      // Not handled by any batch this request. Make sure it can never run later.
+      const cancelled = await getEngine(deps).cancelQueued(created.executionId);
+      if (!cancelled && processed.intent.status !== "FAILED") {
+        // Claimed elsewhere and still in flight: leave it pending for the worker.
+        return settle({
+          executionStatus: "submitted",
+          polymarketOrderId: null,
+          responseJson: jsonSafe({ intentStatus: processed.intent.status }),
+          errorMessage: null,
+          fills: [],
+        });
+      }
+      return settle({
+        executionStatus: "failed",
+        polymarketOrderId: null,
+        responseJson: jsonSafe({ intentStatus: processed.intent.status }),
+        errorMessage: processed.intent.errorMessage ?? "Adjustment was not executed.",
+        fills: [],
+      });
+    }
+    const status = executionStatusFor(allocation);
+    return settle({
+      executionStatus: status,
+      polymarketOrderId: processed.batch?.slices.find((slice) => slice.polymarketOrderId)?.polymarketOrderId ?? null,
       responseJson: jsonSafe({ batchId: processed.batch?.id ?? null, metrics: processed.batch?.metrics }),
-      errorMessage: allocation?.errorMessage ?? null,
-      submittedAt: new Date(),
-      fills: allocation ? fillsFromAllocation(allocation) : [],
-      position: {
-        ...nextHeld,
-        payoutMicros: (nextHeld.sharesMicros * 1_000_000n) / SHARE_SCALE,
-        status: awaiting ? "adjusting" : failed ? previousStatus : nextHeld.sharesMicros > 0n ? "filled" : "closed",
-        edgeBps: target.edgeBps,
-        kellyBps: target.sizedKellyBps,
-        limitPriceBps: plan.limitPriceBps,
-      },
-      prediction: failed
-        ? undefined
-        : fullyFilled
-          ? { confidenceBps: newConfidenceBps, marketPriceBps: livePrice }
-          : undefined,
-      historyStatus: awaiting ? "pending" : failed ? "failed" : fullyFilled ? "filled" : "partial",
-      historyErrorCode: failed ? "EXECUTION_FAILED" : null,
-      historyErrorMessage: failed ? allocation?.errorMessage ?? null : null,
+      errorMessage: allocation.errorMessage ?? null,
+      fills: fillsFromAllocation(allocation),
+      positionMeta: status === "failed" ? undefined : positionMeta,
+      historyErrorCode: allocation.errorCode ?? null,
+      historyErrorMessage: allocation.errorMessage ?? null,
     });
-    settled = true;
-    const history = (await deps.store.listHistory(predictionId)).find((row) => row.id === created.history.id);
-    return {
-      prediction: toPredictionDTO(updated),
-      history: toConfidenceHistoryDTO(
-        history ?? {
-          ...created.history,
-          status: awaiting ? "pending" : failed ? "failed" : fullyFilled ? "filled" : "partial",
-        },
-      ),
-    };
   } catch (error) {
-    if (!settled) {
+    // Before the history row exists nothing was sent: release the lock unchanged.
+    if (!historyCreated) {
       await deps.store.releaseAdjustmentLock(position.id, previousStatus).catch(() => undefined);
     }
     throw error;
   }
 }
+
+const ADJUSTABLE_POSITION_STATUSES = ["filled", "partial", "closed"];
 
 export async function listConfidenceHistory(
   predictionId: string,

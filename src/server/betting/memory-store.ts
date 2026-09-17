@@ -195,12 +195,22 @@ export function memoryStore(): BettingStore {
     async claimAdjustmentLock(positionId) {
       const bundle = findBundleByPosition(positionId);
       if (!bundle?.position) return false;
-      if (bundle.position.status === "adjusting") return false;
+      if (!["filled", "partial", "closed"].includes(bundle.position.status)) return false;
       bundle.position.status = "adjusting";
+      bundle.position.updatedAt = new Date();
       return true;
+    },
+    async listStaleAdjustments(lockedBefore) {
+      return predictions
+        .filter((row) => row.position?.status === "adjusting" && row.position.updatedAt < lockedBefore)
+        .map((row) => {
+          const pending = history.filter((item) => item.predictionId === row.id && item.status === "pending").at(-1);
+          return { positionId: row.position!.id, predictionId: row.id, historyId: pending?.id ?? null, executionId: pending?.executionId ?? null };
+        });
     },
     async releaseAdjustmentLock(positionId, status) {
       const bundle = findBundleByPosition(positionId);
+      if (bundle?.position?.status !== "adjusting") return;
       if (bundle?.position) bundle.position.status = status;
     },
     async findHistoryByIdempotency(predictionId, key) {
@@ -262,47 +272,44 @@ export function memoryStore(): BettingStore {
       if (!row) throw new Error("missing history");
       const bundle = predictions.find((item) => item.id === row.predictionId);
       if (!bundle?.position) throw new Error("missing prediction");
-      row.status = input.historyStatus;
-      row.errorCode = input.historyErrorCode ?? null;
-      row.errorMessage = input.historyErrorMessage ?? null;
-      row.reconciledAt = new Date();
-      row.executionId = input.executionId;
+      if (row.status !== "pending") return bundle; // already settled: idempotent
+      const position = bundle.position;
+      let status: string;
       if (input.executionId) {
-        const execution = bundle.position.executions.find((item) => item.id === input.executionId);
-        if (execution) {
-          execution.status = input.executionStatus;
-          execution.polymarketOrderId = input.polymarketOrderId;
-          execution.responseJson = input.responseJson;
-          execution.errorMessage = input.errorMessage;
-          execution.submittedAt = input.submittedAt;
-          execution.fills = input.fills.map((fill, index) => ({
-            id: `adj_fill_${index}`,
+        const execution = position.executions.find((item) => item.id === input.executionId);
+        if (!execution) throw new Error("missing execution");
+        const fresh = unseenFills(execution.fills, input.fills);
+        execution.status = input.executionStatus;
+        execution.polymarketOrderId = input.polymarketOrderId ?? execution.polymarketOrderId;
+        execution.responseJson = input.responseJson;
+        execution.errorMessage = input.errorMessage;
+        execution.submittedAt = execution.submittedAt ?? input.submittedAt;
+        execution.fills.push(
+          ...fresh.map((fill, index) => ({
+            id: `fill_${input.executionId}_${execution.fills.length + index}`,
             executionId: input.executionId!,
-            venueTradeId: fill.venueTradeId,
-            priceBps: fill.priceBps,
-            sharesMicros: fill.sharesMicros,
-            notionalMicros: fill.notionalMicros,
-            feeMicros: fill.feeMicros,
-            isSimulated: fill.isSimulated,
+            ...fill,
             filledAt: new Date(),
-            rawJson: fill.rawJson,
-          }));
-        }
+          })),
+        );
+        const held = applyFillsToHeld(position, execution.side, fresh);
+        position.sharesMicros = held.sharesMicros;
+        position.notionalMicros = held.notionalMicros;
+        position.avgPriceBps = held.avgPriceBps;
+        position.payoutMicros = held.sharesMicros;
+        status = settledHistoryStatus(input.executionStatus) ?? "pending";
+      } else {
+        status = "noop";
       }
-      bundle.position.sharesMicros = input.position.sharesMicros;
-      bundle.position.notionalMicros = input.position.notionalMicros;
-      bundle.position.avgPriceBps = input.position.avgPriceBps;
-      bundle.position.payoutMicros = input.position.payoutMicros;
-      bundle.position.status = input.position.status;
-      if (input.position.edgeBps != null) bundle.position.edgeBps = input.position.edgeBps;
-      if (input.position.kellyBps != null) bundle.position.kellyBps = input.position.kellyBps;
-      if (input.position.limitPriceBps != null) bundle.position.limitPriceBps = input.position.limitPriceBps;
-      if (input.prediction) {
-        bundle.confidenceBps = input.prediction.confidenceBps;
-        bundle.marketPriceBps = input.prediction.marketPriceBps;
-        if (input.prediction.engineOutputJson) {
-          bundle.engineOutputJson = input.prediction.engineOutputJson;
-        }
+      position.status = derivePositionStatus(position.executions, position.sharesMicros);
+      if (input.positionMeta) Object.assign(position, input.positionMeta);
+      row.status = status;
+      row.reconciledAt = status === "pending" ? null : new Date();
+      row.errorCode = status === "failed" ? (input.historyErrorCode ?? "EXECUTION_FAILED") : null;
+      row.errorMessage = status === "failed" ? (input.historyErrorMessage ?? input.errorMessage) : null;
+      if (status === "filled" || status === "noop") {
+        bundle.confidenceBps = row.newConfidenceBps;
+        bundle.marketPriceBps = row.marketPriceBps;
         bundle.lockVersion += 1;
       }
       return bundle;
