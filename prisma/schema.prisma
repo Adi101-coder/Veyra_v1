@@ -104,6 +104,8 @@ model Execution {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   fills             Fill[]
+  intent            ExecutionIntent?
+  confidenceHistory ConfidenceHistory[]
 
   @@index([polymarketOrderId])
   @@index([positionId])
@@ -122,6 +124,7 @@ model Fill {
   filledAt       DateTime  @default(now())
   rawJson        String?
 
+  @@unique([executionId, venueTradeId])
   @@index([executionId])
 }
 
@@ -146,6 +149,7 @@ model ConfidenceHistory {
   status                  String
   idempotencyKey          String?
   executionId             String?
+  execution               Execution? @relation(fields: [executionId], references: [id])
   previousPositionStatus  String
   errorCode               String?
   errorMessage            String?
@@ -206,6 +210,7 @@ model ExecutionIntent {
   batchId                String?
   batch                  ExecutionBatch? @relation(fields: [batchId], references: [id])
   executionId            String          @unique
+  execution              Execution       @relation(fields: [executionId], references: [id])
   positionId             String
   predictionId           String?
   marketId               String

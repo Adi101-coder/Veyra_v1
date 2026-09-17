@@ -23,6 +23,7 @@ import {
   parseUsdMicros,
   SHARE_SCALE,
 } from "@/server/money";
+import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
 import {
   prismaBettingStore,
@@ -33,7 +34,6 @@ import {
 import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server/betting/mapper";
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
-  createExecutor,
   type ExecutionRequest,
   type ExecutorPort,
 } from "@/server/polymarket/executor";
@@ -123,20 +123,37 @@ export type BettingDeps = {
 };
 
 export function createDefaultDeps(): BettingDeps {
-  const executor = createExecutor();
-  const client = createPolymarketClient({ getBook: fetchClobBook });
-  const executionStore = prismaExecutionStore(getPrisma());
-  const prisma = getPrisma();
+  return createPrismaDeps(getPrisma(), { client: createPolymarketClient({ getBook: fetchClobBook }) });
+}
+
+/** Production wiring over one Prisma client; tests pass a mocked venue client. */
+export function createPrismaDeps(
+  prisma: PrismaClient,
+  venue: {
+    client: PolymarketClient;
+    executor?: ExecutorPort;
+    getCatalogMarket?: BettingDeps["getCatalogMarket"];
+    getLiveMarket?: BettingDeps["getLiveMarket"];
+    getResolution?: BettingDeps["getResolution"];
+  },
+): BettingDeps {
   const store = prismaBettingStore(prisma);
+  const executionStore = prismaExecutionStore(prisma);
+  const client = venue.client;
   return {
     store,
-    executor,
+    executor: venue.executor ?? {
+      mode: client.mode,
+      submit: (request) => client.submitOrder(request),
+      getOrder: (orderId) => client.getOrder(orderId),
+    },
     client,
     executionStore,
     engine: new ExecutionEngine(client, executionStore),
     reputation: new ReputationEngine(prismaReputationStore(prisma), bettingForecastSource(store)),
-    getCatalogMarket: getMarket,
-    getLiveMarket: fetchPolymarketMarket,
+    getCatalogMarket: venue.getCatalogMarket ?? getMarket,
+    getLiveMarket: venue.getLiveMarket ?? fetchPolymarketMarket,
+    getResolution: venue.getResolution,
     getBook: (tokenId) => client.getBook(tokenId),
   };
 }
