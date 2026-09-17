@@ -445,3 +445,51 @@ model ChainSettlement {
   @@index([status, nextAttemptAt])
   @@map("chain_settlements")
 }
+
+/// Exclusive, expiring lease for singleton background jobs (one holder at a time across processes).
+model JobLease {
+  name       String   @id
+  token      String
+  leaseUntil DateTime
+  updatedAt  DateTime @updatedAt
+
+  @@map("job_leases")
+}
+
+/// One read-only comparison of the internal ledger against the omnibus Polymarket account.
+model InventoryReconciliationRun {
+  id           String             @id @default(cuid())
+  status       String
+  network      String
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+  tradesSince  DateTime?
+  findingCount Int                @default(0)
+  fingerprint  String?
+  summaryJson  String?
+  errorMessage String?
+  findings     InventoryFinding[]
+
+  @@index([startedAt])
+  @@map("inventory_reconciliation_runs")
+}
+
+model InventoryFinding {
+  id           String                     @id @default(cuid())
+  runId        String
+  run          InventoryReconciliationRun @relation(fields: [runId], references: [id])
+  kind         String
+  severity     String
+  tokenId      String?
+  predictionId String?
+  executionId  String?
+  venueTradeId String?
+  expected     String?
+  actual       String?
+  detailJson   String
+  fingerprint  String
+
+  @@unique([runId, fingerprint])
+  @@index([runId, severity])
+  @@map("inventory_findings")
+}

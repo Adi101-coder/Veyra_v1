@@ -10,6 +10,8 @@ import {
   syncMarketResolutions,
 } from "@/server/betting/service";
 import { runRobinhoodSettlementTick } from "@/server/chain";
+import { getPrisma } from "@/server/db";
+import { runScheduledInventoryReconciliation } from "@/server/inventory/service";
 
 /**
  * Background jobs, in dependency order. Each step is idempotent and safe to run
@@ -29,6 +31,12 @@ const STEPS = {
   reconcile: async () => (await reconcileExecutions(createDefaultDeps())).length,
   resolutions: async () => (await syncMarketResolutions(createDefaultDeps())).length,
   reputation: async () => (await processReputationJobs(createDefaultDeps())).length,
+  // Read-only omnibus inventory check (disabled unless live credentials are set).
+  inventory: async () => {
+    const result = await runScheduledInventoryReconciliation(getPrisma());
+    if (result.status === "failed") throw new Error(result.error ?? "inventory reconciliation failed");
+    return result.status === "completed" ? 1 : 0;
+  },
   // Runs after reputation so newly scored predictions get settlement references.
   settlement: async () => {
     const result = await runRobinhoodSettlementTick();

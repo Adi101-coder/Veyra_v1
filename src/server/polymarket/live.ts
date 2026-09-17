@@ -405,3 +405,93 @@ export async function findLiveActivity(tokenId: string, since: Date) {
     tradeOrderIds: [...tradeOrderIds],
   };
 }
+
+/**
+ * Read-only omnibus inventory from Polymarket (see src/server/inventory). Balances
+ * come from GET /balance-allowance, refreshed first because the server caches them;
+ * the spec defines them as fixed-math strings with 6 decimals. Trades come from
+ * GET /data/trades (L2-scoped to this account), converted to THIS account's side:
+ * taker trades use the top-level fields; maker trades use only our maker_orders
+ * entries (matched by funder address or API-key owner) with their own asset/side.
+ */
+export async function createLiveInventoryVenue() {
+  const { AssetType } = await import("@polymarket/clob-client-v2");
+  const client = await sdkClient();
+  const signerAddress = (client.signer as { account?: { address?: string } } | undefined)?.account?.address ?? "";
+  // Balances and maker fills belong to the funder (proxy/safe) for signature types 1-3, else the signer.
+  const funder = (process.env.POLYMARKET_FUNDER_ADDRESS || signerAddress).toLowerCase();
+  const owner = (client.creds?.key ?? "").toLowerCase();
+  const baseUnits = (raw: string, what: string) => {
+    if (!/^\d+$/.test(raw)) throw new Error(`Unexpected ${what} balance format from Polymarket.`);
+    return BigInt(raw);
+  };
+  return {
+    network: process.env.POLYMARKET_CHAIN_ID === "80002" ? "polygon-amoy" : "polygon",
+    async getCollateralBalance() {
+      await client.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      const response = await client.getBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      return baseUnits(response.balance, "collateral");
+    },
+    async getTokenBalance(tokenId: string) {
+      await client.updateBalanceAllowance({ asset_type: AssetType.CONDITIONAL, token_id: tokenId });
+      const response = await client.getBalanceAllowance({ asset_type: AssetType.CONDITIONAL, token_id: tokenId });
+      return baseUnits(response.balance, "conditional token");
+    },
+    async listTrades(since: Date | null) {
+      const trades = (await client.getTrades(since ? { after: String(Math.floor(since.getTime() / 1000)) } : undefined)) as unknown as RawTrade[];
+      return tradesForAccount(trades, { funder, owner });
+    },
+  };
+}
+
+type RawTrade = TradeLike & {
+  asset_id?: string;
+  side?: string;
+  trader_side?: string;
+  match_time?: string;
+  maker_orders?: (NonNullable<TradeLike["maker_orders"]>[number] & { asset_id?: string; side?: string; maker_address?: string; owner?: string })[];
+};
+
+/** Exported for tests: this account's executions inside raw /data/trades rows. */
+export function tradesForAccount(trades: RawTrade[], account: { funder: string; owner: string }) {
+  const out = new Map<string, { tradeId: string; orderId: string; tokenId: string; side: "BUY" | "SELL"; sharesMicros: bigint; priceBps: number; status: string; matchedAt: Date }>();
+  const add = (row: { tradeId: string; orderId: string; tokenId: string; side: "BUY" | "SELL"; sharesMicros: bigint; priceBps: number; status: string; matchedAt: Date }) => {
+    if (row.sharesMicros <= 0n || !row.tokenId) return;
+    const key = `${row.tradeId}|${row.tokenId}|${row.side}`;
+    const existing = out.get(key);
+    if (existing) existing.sharesMicros += row.sharesMicros;
+    else out.set(key, { ...row });
+  };
+  for (const trade of trades) {
+    const matchedAt = new Date(Number(trade.match_time ?? 0) * (String(trade.match_time ?? "").length > 11 ? 1 : 1000));
+    const status = trade.status ?? "";
+    if ((trade.trader_side ?? "").toUpperCase() === "TAKER") {
+      add({
+        tradeId: trade.id,
+        orderId: trade.taker_order_id ?? "",
+        tokenId: trade.asset_id ?? "",
+        side: (trade.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY",
+        sharesMicros: micros(trade.size),
+        priceBps: priceBpsOf(trade.price),
+        status,
+        matchedAt,
+      });
+      continue;
+    }
+    for (const maker of trade.maker_orders ?? []) {
+      const ours =
+        (account.funder && (maker.maker_address ?? "").toLowerCase() === account.funder) ||
+        (account.owner && (maker.owner ?? "").toLowerCase() === account.owner);
+      if (!ours) continue;
+      const tokenId = maker.asset_id ?? trade.asset_id ?? "";
+      const topSide = (trade.side ?? "").toUpperCase() === "SELL" ? "SELL" : "BUY";
+      // Without an explicit maker side: same asset → opposite side; different asset
+      // (mint/merge match) → same side.
+      const side = maker.side
+        ? maker.side.toUpperCase() === "SELL" ? "SELL" : "BUY"
+        : tokenId === trade.asset_id ? (topSide === "BUY" ? "SELL" : "BUY") : topSide;
+      add({ tradeId: trade.id, orderId: maker.order_id ?? "", tokenId, side, sharesMicros: micros(maker.matched_amount), priceBps: priceBpsOf(maker.price), status, matchedAt });
+    }
+  }
+  return [...out.values()];
+}

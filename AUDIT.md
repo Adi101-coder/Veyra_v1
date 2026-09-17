@@ -208,3 +208,57 @@ Mutation-checked: ignoring fees, dropping the execution cutoff, disabling deferr
 - Fresh DB + running app: build succeeds; REST and SSE conviction are correct for the smoke flow (a flattened position gives 0 participants; resolved reference 100%). Full suite: 180 passed, 2 opt-in live skipped.
 
 **Remaining:** conviction reflects current holdings, so a position sold down before resolution contributes only its remaining cost basis. Live CLOB midpoints need network access; tests use injected references.
+
+## Omnibus inventory reconciliation (follow-up, 2026-09-17)
+
+**What it does:** a read-only comparison of the internal ledger against the omnibus Polymarket account (`src/server/inventory`). It writes only its own `inventory_reconciliation_runs` / `inventory_findings` rows (migration `…_inventory_reconciliation`, no table rebuilds) and never alters balances, positions or fills.
+
+**Authoritative source per dimension**
+- **Share balances:** CLOB `GET /balance-allowance` (CONDITIONAL, per token), refreshed first via `/balance-allowance/update` because the server caches it. The spec defines it as fixed-math strings with 6 decimals. Compared per token against the sum of all positions on that token.
+- **Fills:** `GET /data/trades` (L2-scoped) matched both ways against recorded `Fill.venueTradeId`.
+  - Joined `tradeIDs`, `trade:order` maker ids and `order:<id>` references are understood.
+  - Pro-rata splits across intents are summed per venue trade.
+  - Our side of a trade is the taker's top-level fields, or only our `maker_orders` entries (funder address or API-key owner) with their own asset/side, so mint/merge maker legs are handled.
+- **Cost basis:** each position is replayed from its own recorded fills (shares, cost basis, status).
+- **pUSD:** `GET /balance-allowance` (COLLATERAL) against an optional operator baseline plus recorded fill cash flows. Without a baseline it is reported as unverifiable, never guessed.
+
+**Findings:**
+- `missing_shares`, `unexpected_shares`
+- `venue_trade_not_in_ledger`, `ledger_fill_not_at_venue`
+- `excess_recorded_fill` (duplicates), `short_recorded_fill`
+- `position_shares_mismatch`, `cost_basis_mismatch`, `position_status_mismatch`
+- `mixed_simulated_fills`, `usdc_balance_discrepancy`
+- informational: `token_indeterminate` (orders still awaiting the venue), `not_reconcilable_simulated` (paper fills), `recovered_fill_unmatched_id`, `usdc_unverifiable`
+
+Paper fills are excluded, so a paper ledger is never reported as discrepant.
+
+**Operation**
+- **Enablement:** only in live mode with Polymarket API credentials; otherwise it returns `disabled`.
+- **Background job:** worker step `inventory`, at most every `VEYRA_INVENTORY_RECON_INTERVAL_MS`.
+- **Operator API:** `GET/POST /api/operator/inventory-reconciliation`.
+- **Concurrency:** a singleton `job_leases` lease; concurrent runs skip.
+- **Determinism:** findings and the run `fingerprint` are deterministic, so re-running over unchanged state gives the same fingerprint.
+
+**Tests:** migrated SQLite with a scripted venue that keeps its own trade log and balances. Scenarios:
+- consistent opposing YES/NO holdings (same wallet on both sides)
+- a venue trade missing from the ledger
+- a ledger fill the venue never executed
+- a duplicated fill
+- partial fills (exact, and under-recorded)
+- a flattened buy/sell
+- corrupted cost basis
+- paper-only fills
+- pending orders (indeterminate)
+- the pUSD baseline
+- three concurrent runs (one completes, two skip, identical fingerprint on re-run, ledger byte-identical)
+- a venue failure (run FAILED, lease released, next run succeeds)
+- maker/taker/mint-merge trade interpretation
+- reference parsing
+
+Mutation-checked: counting simulated fills, aggregating shares globally instead of per token, not summing duplicate fills per venue trade, and ignoring pending orders are each caught. Fresh DB + running app: the operator API is 403 without a token and `disabled` in paper mode; the worker step is healthy. Full suite: 194 passed, 2 opt-in live skipped.
+
+**Not verified — requires live credentials:** this has never run against a real Polymarket account (Veyra has not placed a live order). Must be confirmed on the first live run:
+- The size/price units of `/data/trades` (docs show decimal strings, the OpenAPI example shows a base-unit-like value; parsed as decimals, consistent with existing live fill parsing). A units error would surface as `short_recorded_fill`/`excess_recorded_fill` findings, not silently.
+- Whether `balance-allowance` excludes funds locked in open orders.
+- Which address it reports for signature type 3.
+- Data API `/positions` is deliberately not used (indexed, may lag).
