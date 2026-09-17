@@ -46,7 +46,7 @@ import { memoryReputationStore, prismaReputationStore } from "@/server/reputatio
 import type { Forecast, ForecastSource, ResolutionOutcome } from "@/server/reputation/types";
 import { fetchVenueResolution, type VenueResolution } from "@/server/polymarket/gamma";
 import { formatBrier } from "@/server/reputation/metrics";
-import { parseOutcome } from "@/server/betting/validation";
+import { parseOutcome, parseWalletAddress } from "@/server/betting/validation";
 
 function jsonSafe(value: unknown) {
   return JSON.stringify(value, (_key, item) => (typeof item === "bigint" ? item.toString() : item));
@@ -498,7 +498,11 @@ export async function listPredictions(
   filter: { marketId?: string; walletAddress?: string; limit?: number },
   deps: BettingDeps = createDefaultDeps(),
 ) {
-  const rows = await deps.store.listPredictions(filter);
+  const rows = await deps.store.listPredictions({
+    ...filter,
+    // Stored EVM addresses are lowercase; normalize user-supplied filters the same way.
+    walletAddress: filter.walletAddress ? parseWalletAddress(filter.walletAddress) : undefined,
+  });
   return rows.map(toPredictionDTO);
 }
 
