@@ -54,7 +54,7 @@ export function FeaturedEvent() {
 
   return (
     <section className="grid gap-3.5 lg:grid-cols-[minmax(0,1fr)_19.5rem]">
-      <article className={`${cardClass} px-5 py-5 sm:px-7 sm:py-6`}>
+      <article className={`${cardClass} min-w-0 px-5 py-5 sm:px-7 sm:py-6`}>
         <div className="mb-5 flex items-start justify-between gap-3">
           <div>
             <p className="flex items-center gap-2 text-[13px] font-medium text-[#8b887f]">
@@ -162,7 +162,7 @@ export function FeaturedEvent() {
         </div>
       </article>
 
-      <aside className={`${cardClass} px-5 py-5`}>
+      <aside className={`${cardClass} min-w-0 px-5 py-5`}>
         <p className="mb-5 flex items-center gap-2 text-[15px] font-semibold text-[#171717]">
           <Heart className="h-4 w-4 fill-[#c45c6a] text-[#c45c6a]" />
           Most Loved

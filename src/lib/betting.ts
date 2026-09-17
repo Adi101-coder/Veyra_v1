@@ -230,20 +230,48 @@ export function describeBettingError(error: unknown, fallback: string) {
   const serverMessage = error instanceof Error && error.message ? error.message : null;
   switch (code) {
     case "UNAUTHENTICATED":
-      return "Connect and sign in with your wallet to continue.";
-    case "MARKET_RESOLVED":
-      return serverMessage ?? "This market has resolved. Positions can no longer change.";
-    case "NOT_EXECUTABLE":
-      return serverMessage ?? "This position can't be adjusted right now.";
-    case "INSUFFICIENT_LIQUIDITY":
-      return serverMessage ?? "Not enough liquidity on the book for this size.";
+      return "Connect and verify your wallet to continue.";
+    case "INVALID_SIGNATURE":
+    case "INVALID_NONCE":
+      return "Wallet verification failed. Please try again.";
+    case "FORBIDDEN":
+      return "This wallet can't change that position.";
+    case "CSRF":
+      return "Your session check failed. Refresh the page and try again.";
     case "CONCURRENT_UPDATE":
-      return "This position just changed elsewhere. Refresh and try again.";
+      return "Another change on this position is still executing. Try again in a moment.";
+    case "POSITION_NOT_READY":
+      return "Your position is still being filled. You can change confidence once it has fills.";
+    case "IDEMPOTENCY_KEY_REUSED":
+      return "This request was already submitted with different details. Refresh and try again.";
+    case "STALE_PRICE":
+      return "The market moved. Review the new quote and try again.";
+    case "STALE_BOOK":
+      return "Market prices are out of date. Wait a moment and try again.";
+    case "WIDE_SPREAD":
+      return "The market spread is too wide to trade fairly right now.";
+    case "CONFIDENCE_RANGE":
+      return serverMessage ?? "Choose a confidence within the allowed range.";
+    case "MARKET_RESOLVED":
+      return "This market has resolved. Positions can no longer change.";
+    case "MARKET_CLOSED":
+      return "This market is no longer accepting orders.";
+    case "NOT_EXECUTABLE":
+      return "This position can't be traded right now.";
+    case "INSUFFICIENT_LIQUIDITY":
+      return "Not enough liquidity at a fair price right now.";
+    case "UNCHANGED":
+      return "Confidence is already at that value.";
     case "RATE_LIMITED":
       return "Too many requests. Wait a moment and try again.";
     default:
       return serverMessage ?? fallback;
   }
+}
+
+/** Engine quote rejections carry the same error codes; reuse the friendly copy. */
+export function describeQuoteRejection(rejection: { code: string; message: string }) {
+  return describeBettingError(Object.assign(new Error(rejection.message), { code: rejection.code }), rejection.message);
 }
 
 export function predictionToWagerRow(

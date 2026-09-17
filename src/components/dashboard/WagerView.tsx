@@ -5,8 +5,11 @@ import Link from "next/link";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { Shell } from "@/components/Shell";
 import { useWallet } from "@/components/wallet/WalletProvider";
+import { StatusChip } from "@/components/status/StatusChip";
+import { WalletSignatureNote } from "@/components/status/WalletSignatureNote";
 import {
   describeBettingError,
+  describeQuoteRejection,
   hasFilledShares,
   predictionToWagerRow,
   type ConfidenceHistoryDTO,
@@ -220,9 +223,20 @@ export function WagerView({
               <Meta
                 label="Order"
                 value={
-                  orderId
-                    ? shortenKey(orderId, 4, 4)
-                    : (prediction?.execution?.status ?? prediction?.status ?? "—")
+                  orderId ? (
+                    <span className="inline-flex flex-wrap items-center gap-2">
+                      {shortenKey(orderId, 4, 4)}
+                      {prediction?.execution?.status ? (
+                        <StatusChip kind="execution" status={prediction.execution.status} />
+                      ) : null}
+                    </span>
+                  ) : prediction?.execution?.status ? (
+                    <StatusChip kind="execution" status={prediction.execution.status} />
+                  ) : prediction?.status ? (
+                    <StatusChip kind="order" status={prediction.status} />
+                  ) : (
+                    "—"
+                  )
                 }
               />
               {prediction?.settlement ? <SettlementMeta settlement={prediction.settlement} /> : null}
@@ -308,19 +322,16 @@ export function WagerView({
 
 /** Robinhood Chain settlement reference; only a confirmed receipt reads as settled. */
 function SettlementMeta({ settlement }: { settlement: NonNullable<PredictionDTO["settlement"]> }) {
-  const label =
-    settlement.status === "confirmed"
-      ? "Settled"
-      : settlement.status === "reverted" || settlement.status === "failed"
-        ? "Settlement failed"
-        : "Settling";
+  const label = <StatusChip kind="settlement" status={settlement.status} />;
   return (
     <div>
       <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">Robinhood Chain</p>
       <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
         {settlement.txHash && settlement.explorerUrl ? (
           <a href={settlement.explorerUrl} target="_blank" rel="noreferrer" className="underline decoration-[#c9c4b8]">
-            {label} · {shortenKey(settlement.txHash, 4, 4)}
+            <span className="inline-flex flex-wrap items-center gap-2">
+              {label} {shortenKey(settlement.txHash, 4, 4)}
+            </span>
           </a>
         ) : (
           label
@@ -330,7 +341,7 @@ function SettlementMeta({ settlement }: { settlement: NonNullable<PredictionDTO[
   );
 }
 
-function Meta({ label, value }: { label: string; value: string }) {
+function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
       <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">{label}</p>
@@ -631,7 +642,9 @@ function ChangeMindPanel({
             })}
           </div>
           {quoteError && !unchanged ? (
-            <p className="mt-4 text-[13px] text-[#8a6a32]">{quoteError}</p>
+            <p role="status" aria-live="polite" className="mt-4 text-[13px] text-[#8a6a32]">
+              {quoteError}
+            </p>
           ) : null}
           {owner && !changeable ? (
             <p className="mt-4 text-[13px] text-[#8a8a8a]">
@@ -640,7 +653,7 @@ function ChangeMindPanel({
           ) : null}
           {quote && !quote.accepted && !unchanged ? (
             <p className="mt-4 text-[13px] text-[#8a6a32]">
-              {quote.rejection?.message ?? "No edge at this confidence. Submitting will flatten the position."}
+              {quote.rejection ? describeQuoteRejection(quote.rejection) : "No edge at this confidence. Submitting will flatten the position."}
             </p>
           ) : null}
           <button
@@ -651,7 +664,15 @@ function ChangeMindPanel({
           >
             {submitting ? "Adjusting…" : owner ? "Update confidence" : "Owner wallet required"}
           </button>
-          {message ? <p className="mt-3 text-[13px] text-[#5a5a5a]">{message}</p> : null}
+          {owner && changeable ? (
+            <WalletSignatureNote
+              className="mt-2"
+              hint="Updating asks your wallet for a one-time signature (no gas)."
+            />
+          ) : null}
+          <div aria-live="polite">
+            {message ? <p className="mt-3 text-[13px] text-[#5a5a5a]">{message}</p> : null}
+          </div>
         </div>
 
         <div>
@@ -676,7 +697,8 @@ function ChangeMindPanel({
                   </p>
                   <p className="mt-1 font-mono text-[11px] text-[#6e6e6e]">
                     {row.side} {row.deltaShares} sh · {row.previousPosition.shares} →{" "}
-                    {row.desiredPosition.shares} · {row.status}
+                    {row.desiredPosition.shares} ·{" "}
+                    <StatusChip kind="confidence" status={row.status} />
                   </p>
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#9a9a9a]">
                     book {row.marketPrice} · {new Date(row.createdAt).toLocaleString()}

@@ -10,6 +10,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/markets", label: "Markets" },
   { href: "/activity", label: "Activity" },
+  { href: "/reputation", label: "Reputation" },
   { href: "/write", label: "Write" },
 ] as const;
 
@@ -59,7 +60,7 @@ export function DashboardHeader() {
         <ConnectWalletButton />
       </Shell>
       <Shell className="flex items-center gap-6 pb-3 lg:hidden">
-        <NavLinks className="flex items-center gap-5" />
+        <NavLinks className="-mx-1 flex min-w-0 items-center gap-5 overflow-x-auto px-1 pb-px" />
       </Shell>
     </header>
   );

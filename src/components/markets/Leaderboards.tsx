@@ -13,8 +13,8 @@ function Rank({ rank }: { rank: number }) {
 export function Leaderboards() {
   return (
     <section className="grid gap-3.5 lg:grid-cols-2">
-      <article className={`${cardClass} px-5 py-5`}>
-        <div className="mb-2 flex items-center justify-between">
+      <article className={`${cardClass} min-w-0 px-5 py-5`}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <h2 className="text-[18px] font-semibold tracking-[-0.03em] text-[#171717] sm:text-[20px]">
             Top Traders
           </h2>
@@ -47,8 +47,8 @@ export function Leaderboards() {
         </button>
       </article>
 
-      <article className={`${cardClass} px-5 py-5`}>
-        <div className="mb-2 flex items-center justify-between">
+      <article className={`${cardClass} min-w-0 px-5 py-5`}>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
           <h2 className="text-[18px] font-semibold tracking-[-0.03em] text-[#171717] sm:text-[20px]">
             Biggest Positions
           </h2>
