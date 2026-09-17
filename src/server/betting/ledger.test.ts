@@ -52,3 +52,20 @@ describe("position ledger", () => {
     expect(settledHistoryStatus("rejected")).toBe("failed");
   });
 });
+
+describe("confidence at the resolution cutoff", () => {
+  it("uses the latest filled/noop change requested at or before the cutoff", async () => {
+    const { confidenceAtCutoff } = await import("@/server/betting/service");
+    const at = (iso: string) => new Date(iso);
+    const cutoff = at("2026-09-17T12:00:00Z");
+    const history = [
+      { createdAt: at("2026-09-17T09:00:00Z"), status: "filled", previousConfidenceBps: 8000, newConfidenceBps: 6000 },
+      { createdAt: at("2026-09-17T10:00:00Z"), status: "failed", previousConfidenceBps: 6000, newConfidenceBps: 9000 },
+      { createdAt: at("2026-09-17T11:00:00Z"), status: "partial", previousConfidenceBps: 6000, newConfidenceBps: 4000 },
+      { createdAt: at("2026-09-17T13:00:00Z"), status: "filled", previousConfidenceBps: 6000, newConfidenceBps: 2000 },
+    ];
+    expect(confidenceAtCutoff({ confidenceBps: 2000, confidenceHistory: history }, cutoff)).toBe(6000);
+    expect(confidenceAtCutoff({ confidenceBps: 2000, confidenceHistory: history }, at("2026-09-17T08:00:00Z"))).toBe(8000);
+    expect(confidenceAtCutoff({ confidenceBps: 7000 }, cutoff)).toBe(7000);
+  });
+});

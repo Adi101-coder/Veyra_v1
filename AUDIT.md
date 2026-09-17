@@ -122,3 +122,28 @@ Branch `audit/end-to-end` (9 commits on top of `main`). Baseline before audit: 7
 **Running app (fresh DB, all migrations):** build succeeds; HTTP flow unchanged; execution batches `RECONCILED` with leases released and slices recorded → `filled`; all worker steps healthy.
 
 **Remaining:** live timeouts, pacing and orphan-activity lookup need a funded Polymarket account. The orphan check is deliberately conservative (any unattributed activity on the token blocks auto-close). Aggregation uses the strictest limit in a batch, so looser-limit intents may under-fill. Staleness compares against the best ask for both sides, matching how quotes are recorded today.
+
+## Change Your Mind hardening (follow-up, 2026-09-17)
+
+**Fixed**
+- **Positions written from caller-computed totals:** `reconcileAdjustment` took absolute position values computed in the request. It now applies only the recorded fills through the position ledger inside the transaction (deduped by venue trade id). It is idempotent, and confidence moves to the new value only when the adjustment execution is `filled` (or a no-op). Desired target values are stored on the history row for audit only.
+- **Lock could be taken from any status and release could clobber:** the lock is now taken only from `filled`/`partial`/`closed`. Release only undoes its own `adjusting`, never a status another writer settled.
+- **Idempotency key reuse with a different confidence silently replayed:** now returns 409 `IDEMPOTENCY_KEY_REUSED`. Same-key races replay the winner.
+- **Concurrent fill writers (worker + user sync)** failed on the unique fill constraint. Both fill-writing transactions now retry on unique/busy conflicts and re-read the recorded fills.
+- **Crashed requests left positions `adjusting` forever:** the worker's `recover` step releases locks with no history. It fails adjustments that were never queued (nothing sent), leaves in-flight intents to execution recovery/reconcile, and settles terminal intents from their recorded executed totals.
+- **Scoring could use a confidence set after resolution:** reputation now scores the confidence from the latest filled/no-op change requested at or before the resolution cutoff.
+
+**Tests:** Prisma suite with an invariant check after every scenario (position shares = BUY fills − SELL fills; confidence = last settled value). Scenarios covered:
+- rapid 80→60→40 changes
+- five concurrent adjustments (exactly one executes, one venue order)
+- concurrent same-key requests
+- partial fills
+- resting adjustments reconciled by two workers plus a user sync racing (fills recorded once)
+- rejected adjustments
+- adjusting while the opening order is still pending
+- the market resolving while an adjustment rests (venue cancel → failed, scored at 80%, later changes 409)
+- crash after taking the lock, and crash after writing history but before queueing
+
+Mutation-checked: letting partial fills move confidence, and a non-exclusive lock, are each caught. Five consecutive runs had no flakes. Full suite: 169 passed, 2 opt-in live skipped.
+
+**Remaining:** a pre-cutoff adjustment still pending when the reputation job runs is scored at the prior confidence (scores are not recomputed). Adjustments are one at a time per position by design (concurrent requests get 409 `CONCURRENT_UPDATE`; the UI shows the message).
