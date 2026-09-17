@@ -247,13 +247,13 @@ describe("Smart Execution: venue failures", () => {
   });
 
   it("a reconciler cannot touch a batch while its run is still sending", async () => {
-    let other: ExecutionEngine;
+    const ref: { other?: ExecutionEngine } = {};
     let midRun: unknown;
     const { engine, store, client } = setup(async (r) => {
-      midRun = await other.reconcileSubmitted();
+      midRun = await ref.other!.reconcileSubmitted();
       return fill(r);
     });
-    other = new ExecutionEngine(client, store, defaultExecutionEngineConfig);
+    ref.other = new ExecutionEngine(client, store, defaultExecutionEngineConfig);
     const processed = await engine.enqueueAndProcess(intent("BUY", 2_000_000n));
     expect(midRun).toEqual([]);
     expect(processed.allocation).toMatchObject({ status: "filled", executedSharesMicros: 2_000_000n });

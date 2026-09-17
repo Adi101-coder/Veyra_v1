@@ -233,14 +233,14 @@ describe("Smart Execution across concurrent workers (Prisma)", () => {
   });
 
   it("crash recovery leaves a live run alone and only fails intents of dead runs", async () => {
-    let observer: ExecutionEngine;
+    const ref: { observer?: ExecutionEngine } = {};
     let recoveredDuringRun: Awaited<ReturnType<ExecutionEngine["recoverStuck"]>> | undefined;
     const live = createPolymarketClient({
       mode: "live",
       getBook: async () => book(),
       submitOrder: async (request) => {
         // Negative lease: every claim looks expired, but the run's batch lease is held and renewed.
-        recoveredDuringRun = await observer.recoverStuck(-1_000);
+        recoveredDuringRun = await ref.observer!.recoverStuck(-1_000);
         return {
           mode: "live",
           status: "filled",
@@ -251,7 +251,7 @@ describe("Smart Execution across concurrent workers (Prisma)", () => {
         };
       },
     });
-    observer = worker(live);
+    ref.observer = worker(live);
     const processed = await worker(live).enqueueAndProcess(await intentRow("BUY", 2_000_000n));
     expect(recoveredDuringRun?.allocations).toEqual([]);
     expect(processed.allocation).toMatchObject({ status: "filled", executedSharesMicros: 2_000_000n });
