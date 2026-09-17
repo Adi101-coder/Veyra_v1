@@ -141,8 +141,8 @@ export function memoryReputationStore(): ReputationStore {
       jobs.push(job);
       return job;
     },
-    async claimJob() {
-      const now = Date.now();
+    async claimJob(at) {
+      const now = (at ?? new Date()).getTime();
       const job = jobs.find(
         (item) => item.status === "QUEUED" && (!("availableAt" in item) || !item.availableAt || (item.availableAt as Date).getTime() <= now),
       );
@@ -411,13 +411,14 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
         processedAt: row.processedAt,
       };
     },
-    async claimJob() {
-      const staleBefore = new Date(Date.now() - JOB_LEASE_MS);
+    async claimJob(at) {
+      const now = at ?? new Date();
+      const staleBefore = new Date(now.getTime() - JOB_LEASE_MS);
       for (let attempt = 0; attempt < 10; attempt += 1) {
         const candidate = await prisma.reputationJob.findFirst({
           where: {
             OR: [
-              { status: "QUEUED", OR: [{ availableAt: null }, { availableAt: { lte: new Date() } }] },
+              { status: "QUEUED", OR: [{ availableAt: null }, { availableAt: { lte: now } }] },
               { status: "PROCESSING", claimedAt: { lt: staleBefore } },
             ],
           },
@@ -426,7 +427,7 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
         if (!candidate) return null;
         const updated = await prisma.reputationJob.updateMany({
           where: { id: candidate.id, status: candidate.status, claimedAt: candidate.claimedAt },
-          data: { status: "PROCESSING", claimedAt: new Date() },
+          data: { status: "PROCESSING", claimedAt: now },
         });
         // Lost the race to another worker: look for the next job instead of stopping.
         if (updated.count !== 1) continue;

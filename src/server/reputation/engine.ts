@@ -34,11 +34,17 @@ export class ReputationEngine {
 
   async processJobs() {
     const processed = [];
+    const requeuedThisPass = new Set<string>();
     for (;;) {
-      // claimJob skips rows another worker won and reclaims stale PROCESSING rows.
-      const job = await this.store.claimJob();
-      if (!job) break;
       const now = this.options.now?.() ?? Date.now();
+      // claimJob skips rows another worker won and reclaims stale PROCESSING rows.
+      const job = await this.store.claimJob(new Date(now));
+      if (!job) break;
+      if (requeuedThisPass.has(job.id)) {
+        // Never spin on a job this pass already deferred or retried.
+        await this.store.requeueJob(job.id, { errorMessage: job.errorMessage ?? "Deferred", availableAt: new Date(now + (this.options.retryDelayMs ?? 60_000)), countAttempt: false });
+        break;
+      }
       const retryDelay = this.options.retryDelayMs ?? 60_000;
       try {
         if (job.resolvedOutcome !== "INVALID") {
@@ -52,6 +58,7 @@ export class ReputationEngine {
               availableAt: new Date(now + retryDelay),
               countAttempt: false,
             });
+            requeuedThisPass.add(job.id);
             processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, deferred: true });
             continue;
           }
@@ -72,6 +79,7 @@ export class ReputationEngine {
             availableAt: new Date(now + retryDelay * 2 ** (attempts - 1)),
             countAttempt: true,
           });
+          requeuedThisPass.add(job.id);
         }
         processed.push({ jobId: job.id, marketId: job.marketId, scored: 0, error: message });
       }

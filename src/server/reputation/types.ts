@@ -84,7 +84,8 @@ export type ReputationStore = {
   getReputation(walletAddress: string): Promise<ReputationSnapshot | null>;
   listScores(walletAddress: string): Promise<PredictionScoreRow[]>;
   enqueueJob(marketId: string, resolvedOutcome: ResolutionOutcome): Promise<ReputationJobRow>;
-  claimJob(): Promise<ReputationJobRow | null>;
+  /** `now` is the caller's clock so engine and store agree on lease/availability. */
+  claimJob(now?: Date): Promise<ReputationJobRow | null>;
   finishJob(id: string, status: "DONE" | "FAILED", errorMessage?: string): Promise<void>;
   /** Puts a claimed job back in the queue, not claimable before `availableAt`. */
   requeueJob(id: string, input: { errorMessage: string; availableAt: Date; countAttempt: boolean }): Promise<void>;

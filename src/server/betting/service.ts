@@ -234,7 +234,10 @@ function bundleToForecast(
   }
   // Zero-fill predictions (failed, rejected, never reconciled) are not scored.
   if (boughtShares <= 0n) return null;
-  if (proceedsMicros < 0n) proceedsMicros = 0n;
+  // Impossible for consistent fills: fail the job loudly instead of scoring garbage.
+  if (heldShares < 0n || proceedsMicros < 0n) {
+    throw new Error(`Inconsistent fills for prediction ${bundle.id}: held ${heldShares}, proceeds ${proceedsMicros}.`);
+  }
   return {
     predictionId: bundle.id,
     walletAddress: bundle.walletAddress,
@@ -244,7 +247,7 @@ function bundleToForecast(
     confidenceBps: confidenceAtCutoff(bundle, cutoff),
     notionalMicros: costMicros,
     // Shares held from pre-cutoff fills (each pays $1 if correct), not the live position.
-    payoutMicros: heldShares > 0n ? heldShares : 0n,
+    payoutMicros: heldShares,
     proceedsMicros,
   };
 }

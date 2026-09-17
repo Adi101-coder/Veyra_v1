@@ -178,4 +178,8 @@ The ledger assertion is unclamped (SELL fills exceeding BUY fills fail). Mutatio
 
 Mutation-checked: ignoring fees, dropping the execution cutoff, disabling deferral and removing late-open recording are each caught. Four consecutive runs had no flakes. Full suite: 180 passed, 2 opt-in live skipped.
 
+**Also fixed after review:** the job store's claim now uses the engine's clock, so lease and availability checks agree and timing tests are deterministic. A pass never re-claims a job it just deferred or retried. Negative held shares or proceeds now fail the job loudly instead of being clamped to zero.
+
+**Migration risk:** `…_reputation_job_retry` is the first SQLite table-rebuild migration. It was safe because `reputation_jobs` has no CHECK constraints (verified: Prediction 3, Position 3, Execution 2, Fill 3 and chain_settlements 4 CHECKs survive a fresh `migrate deploy`). The money CHECK constraints on `Prediction`, `Position`, `Execution` and `Fill` exist only in migration SQL, not in `schema.prisma`. Any future change that makes Prisma rebuild one of those tables will silently drop them unless the generated SQL is edited to re-add them.
+
 **Remaining:** `totalPredictions` counts opened (filled) predictions, including those on markets later voided or still open. Scoring metrics (accuracy, Brier, calibration, ROI) use only resolved, scored predictions. Scores are final once written; a disputed Polymarket re-resolution is not re-scored.

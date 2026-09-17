@@ -295,17 +295,19 @@ describe("Prediction reputation (Prisma)", () => {
     await w.resolve(m);
 
     let clock = Date.now();
-    const engine = w.engine(undefined, { now: () => clock, retryDelayMs: 1_000 });
+    const engine = w.engine(undefined, { now: () => clock, retryDelayMs: 60_000 });
     expect(await engine.processJobs()).toMatchObject([{ deferred: true }]);
+    clock += 30_000;
     expect(await engine.processJobs()).toEqual([]); // not claimable before availableAt
+    clock += 31_000;
+    expect(await engine.processJobs()).toMatchObject([{ deferred: true }]); // still pending: deferred again
     expect(await prisma.predictionScore.count({ where: { marketId: m } })).toBe(0);
 
     // The resting order filled before resolution; reconciliation records it.
     const execution = await prisma.execution.findFirstOrThrow({ where: { position: { predictionId: opened.id } } });
     w.orders.set(`rest-${seq}`, { ...venueFill({ side: "BUY", sharesMicros: execution.sizeSharesMicros } as VenueOrderRequest), polymarketOrderId: `rest-${seq}` });
     await reconcileExecutions(w.deps());
-    clock += 2_000;
-    await prisma.reputationJob.updateMany({ where: { marketId: m }, data: { availableAt: new Date(0) } });
+    clock += 61_000;
     await engine.processJobs();
     const score = await prisma.predictionScore.findUniqueOrThrow({ where: { predictionId: opened.id } });
     expect(score.payoutMicros).toBe(execution.sizeSharesMicros);
@@ -379,14 +381,14 @@ describe("Prediction reputation (Prisma)", () => {
       },
     };
     let clock = Date.now();
-    await w.engine(flaky, { now: () => clock, retryDelayMs: 1_000 }).processJobs();
+    await w.engine(flaky, { now: () => clock, retryDelayMs: 60_000 }).processJobs();
     let job = await prisma.reputationJob.findUniqueOrThrow({ where: { marketId: m } });
     expect(job).toMatchObject({ status: "QUEUED", attempts: 1 });
     expect(await prisma.predictionScore.count({ where: { marketId: m } })).toBe(2);
 
     // A worker then crashes holding the claim (PROCESSING with an old claimedAt).
     await prisma.reputationJob.update({ where: { id: job.id }, data: { status: "PROCESSING", claimedAt: new Date(Date.now() - 60 * 60 * 1000) } });
-    clock += 5_000;
+    clock += 61 * 60 * 1000;
     await w.engine(undefined, { now: () => clock }).processJobs();
     job = await prisma.reputationJob.findUniqueOrThrow({ where: { marketId: m } });
     expect(job.status).toBe("DONE");
@@ -402,11 +404,18 @@ describe("Prediction reputation (Prisma)", () => {
     await w.resolve(m);
     const broken: ReputationStore = { ...prismaReputationStore(prisma), applyResolution: async () => { throw new Error("disk full"); } };
     let clock = Date.now();
-    for (let i = 0; i < 3; i += 1) {
-      await w.engine(broken, { now: () => clock, retryDelayMs: 1, maxAttempts: 3 }).processJobs();
-      clock += 10_000;
-      await prisma.reputationJob.updateMany({ where: { marketId: m, status: "QUEUED" }, data: { availableAt: new Date(0) } });
-    }
+    const pass = () => w.engine(broken, { now: () => clock, retryDelayMs: 60_000, maxAttempts: 3 }).processJobs();
+    await pass(); // attempt 1 -> requeued for +60s
+    expect(await prisma.reputationJob.findUniqueOrThrow({ where: { marketId: m } })).toMatchObject({ status: "QUEUED", attempts: 1 });
+    clock += 30_000;
+    expect(await pass()).toEqual([]); // backoff respected across passes
+    clock += 31_000;
+    await pass(); // attempt 2 -> requeued for +120s
+    expect(await prisma.reputationJob.findUniqueOrThrow({ where: { marketId: m } })).toMatchObject({ status: "QUEUED", attempts: 2 });
+    clock += 60_000;
+    expect(await pass()).toEqual([]);
+    clock += 61_000;
+    await pass(); // attempt 3 -> FAILED
     expect(await prisma.reputationJob.findUniqueOrThrow({ where: { marketId: m } })).toMatchObject({ status: "FAILED", attempts: 2 });
     await w.resolve(m); // re-enqueue resets the failed job
     await w.engine().processJobs();
