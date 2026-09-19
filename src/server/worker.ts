@@ -14,6 +14,11 @@ import { getPrisma } from "@/server/db";
 import { runScheduledInventoryReconciliation } from "@/server/inventory/service";
 import { runVotingTick } from "@/server/voting/lifecycle";
 import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement";
+import { releaseTerminalHolds } from "@/server/treasury/holds";
+import { payoutResolvedPositions } from "@/server/treasury/payouts";
+import { creditSellFills } from "@/server/treasury/sells";
+import { reconcileSolvency } from "@/server/treasury/solvency";
+import { watchDeposits } from "@/server/treasury/watcher";
 
 /**
  * Background jobs, in dependency order. Each step is idempotent and safe to run
@@ -32,13 +37,34 @@ const STEPS = {
   },
   flush: async () => (await flushExecutions(createDefaultDeps())).length,
   reconcile: async () => (await reconcileExecutions(createDefaultDeps())).length,
+  // Cash: release unused holds and credit SELL proceeds. After reconcile so fills exist.
+  treasury: async () => {
+    const released = await releaseTerminalHolds();
+    const sold = await creditSellFills();
+    return released.released + sold.credited;
+  },
   resolutions: async () => (await syncMarketResolutions(createDefaultDeps())).length,
   reputation: async () => (await processReputationJobs(createDefaultDeps())).length,
+  payouts: async () => {
+    const result = await payoutResolvedPositions();
+    return result.paid + result.fees;
+  },
   // Read-only omnibus inventory check (disabled unless live credentials are set).
   inventory: async () => {
     const result = await runScheduledInventoryReconciliation(getPrisma());
     if (result.status === "failed") throw new Error(result.error ?? "inventory reconciliation failed");
     return result.status === "completed" ? 1 : 0;
+  },
+  solvency: async () => {
+    const report = await reconcileSolvency();
+    if (!report.ready) {
+      console.error("[worker] solvency incident", { findings: report.findings });
+    }
+    return report.findings.length;
+  },
+  deposits: async () => {
+    const result = await watchDeposits();
+    return result.credited + result.reversed;
   },
   // Daily voting: close due rounds, finalize closed ones into pools, open the next.
   voting: async () => {

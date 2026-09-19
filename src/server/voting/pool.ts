@@ -50,7 +50,18 @@ export async function getPoolMarket(
   prisma: PrismaClient = getPrisma(),
 ): Promise<CatalogMarket | null> {
   const row = await prisma.market.findFirst({ where: { id, source: VEYRA_POOL_SOURCE } });
-  return row ? poolToCatalogMarket(row) : null;
+  if (!row) return null;
+  const proposer = await proposerForPool(id, prisma);
+  return { ...poolToCatalogMarket(row), proposerWallet: proposer ?? undefined };
+}
+
+/** Wallet that proposed the question this pool was created from. */
+export async function proposerForPool(marketId: string, prisma: PrismaClient = getPrisma()) {
+  const row = await prisma.voteProposal.findFirst({
+    where: { marketId },
+    select: { proposerWallet: true },
+  });
+  return row?.proposerWallet.toLowerCase() ?? null;
 }
 
 /** Every open Veyra-native pool, newest first, for listing alongside the catalog. */

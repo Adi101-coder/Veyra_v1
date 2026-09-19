@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Item, Reveal, Stagger, motion } from "@/components/motion";
@@ -44,14 +44,16 @@ function CountUp({
   suffix: string;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [display, setDisplay] = useState("0");
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
+    const write = (text: string) => {
+      node.textContent = `${text}${suffix}`;
+    };
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce) {
-      setDisplay(value.toFixed(decimals));
+      write(value.toFixed(decimals));
       return;
     }
 
@@ -64,26 +66,22 @@ function CountUp({
         const tick = (now: number) => {
           const t = Math.min(1, (now - start) / 1100);
           const eased = 1 - (1 - t) ** 3;
-          setDisplay((value * eased).toFixed(decimals));
+          write((value * eased).toFixed(decimals));
           if (t < 1) frame = requestAnimationFrame(tick);
         };
         frame = requestAnimationFrame(tick);
       },
       { threshold: 0.4 },
     );
+    write("0");
     observer.observe(node);
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
     };
-  }, [decimals, value]);
+  }, [decimals, suffix, value]);
 
-  return (
-    <span ref={ref}>
-      {display}
-      {suffix}
-    </span>
-  );
+  return <span ref={ref} />;
 }
 
 export function CommunityView() {

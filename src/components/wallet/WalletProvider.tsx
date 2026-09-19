@@ -218,6 +218,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [address, chain]);
 
   useEffect(() => {
+    // Restore is async by nature (provider handshake). The saved id is only known after mount.
     const saved = window.localStorage.getItem(STORAGE_KEY) as WalletId | null;
     if (!saved) return;
     restoreWalletSession(saved)
@@ -278,7 +279,10 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   }, [provider, walletId]);
 
   useEffect(() => {
-    void refreshActivity();
+    const frame = requestAnimationFrame(() => {
+      void refreshActivity();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [refreshActivity]);
 
   // Network detection for EVM wallets. Betting does not depend on the wallet's

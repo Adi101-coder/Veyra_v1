@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getMarket, yesChance, type Market as CatalogMarket } from "@/lib/markets";
-import { getPoolMarket, poolSyntheticBook } from "@/server/voting/pool";
+import { getPoolMarket, poolSyntheticBook, proposerForPool } from "@/server/voting/pool";
 import { poolBook } from "@/server/pools/book";
 import { VEYRA_POOL_SOURCE } from "@/server/voting/config";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
@@ -341,6 +341,18 @@ async function resolveBook(
   return live;
 }
 
+async function assertNotPoolProposer(market: CatalogMarket, walletAddress: string) {
+  if (market.source !== VEYRA_POOL_SOURCE) return;
+  const proposer = (market.proposerWallet ?? (await proposerForPool(market.id)))?.toLowerCase() ?? null;
+  if (proposer && proposer === walletAddress.toLowerCase()) {
+    throw new BettingError(
+      "PROPOSER_CANNOT_TRADE",
+      "The proposer cannot trade their own pool while Veyra is the counterparty.",
+      403,
+    );
+  }
+}
+
 async function assertMarketOpen(market: CatalogMarket, deps: BettingDeps) {
   const stored = await deps.store.getMarket(market.id);
   if (stored?.resolvedAt || stored?.status === "resolved" || market.status === "resolved") {
@@ -441,6 +453,7 @@ export async function placePrediction(
 
   const { market, snapshot, output, stakeMicros, config } = await runEngine(input, deps);
   await assertMarketOpen(market, deps);
+  await assertNotPoolProposer(market, input.walletAddress);
   assertExecutable(snapshot, deps);
   await deps.store.upsertMarket(catalogToUpsert(market));
 
@@ -794,6 +807,7 @@ export async function changeConfidence(
     const market = await resolveMarket(bundle.marketId, deps);
     if (!market) throw new BettingError("MARKET_NOT_FOUND", "Market not found.", 404);
     await assertMarketOpen(market, deps);
+    await assertNotPoolProposer(market, input.walletAddress);
     const snapshot = await resolveBook(market, bundle.outcome as QuoteRequest["outcome"], deps);
     assertExecutable(snapshot, deps);
     const book = snapshotToEngineBook(snapshot);

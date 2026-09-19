@@ -264,6 +264,10 @@ export function describeBettingError(error: unknown, fallback: string) {
       return "Confidence is already at that value.";
     case "RATE_LIMITED":
       return "Too many requests. Wait a moment and try again.";
+    case "INSUFFICIENT_FUNDS":
+      return "Not enough deposited USDC for this order. Deposit from Balances, then try again.";
+    case "PROPOSER_CANNOT_TRADE":
+      return "You proposed this pool, so you cannot trade it while Veyra is the counterparty.";
     default:
       return serverMessage ?? fallback;
   }

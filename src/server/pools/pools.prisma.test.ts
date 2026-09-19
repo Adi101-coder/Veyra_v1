@@ -152,7 +152,7 @@ describe("Veyra pool liquidity (Prisma)", () => {
     await seedFund(prisma, 1_000n * USD, "seed-1");
     await prisma.market.update({
       where: { id: MARKET },
-      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date() },
+      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date(), payoutsAuthorizedAt: new Date() },
     });
     expect(await fundPendingPools(prisma)).toEqual([]);
   });
@@ -216,7 +216,7 @@ describe("Veyra pool liquidity (Prisma)", () => {
     // Market resolved and scored: two winners, one loser.
     await prisma.market.update({
       where: { id: MARKET },
-      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date() },
+      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date(), payoutsAuthorizedAt: new Date() },
     });
     await prisma.reputationJob.create({
       data: { marketId: MARKET, resolvedOutcome: "YES", status: "DONE" },
@@ -274,7 +274,7 @@ describe("Veyra pool liquidity (Prisma)", () => {
     await openPoolLiquidity(prisma, MARKET, null, CONFIG);
     await prisma.market.update({
       where: { id: MARKET },
-      data: { status: "resolved", resolvedOutcome: "NO", resolvedAt: new Date() },
+      data: { status: "resolved", resolvedOutcome: "NO", resolvedAt: new Date(), payoutsAuthorizedAt: new Date() },
     });
     await prisma.reputationJob.create({
       data: { marketId: MARKET, resolvedOutcome: "NO", status: "DONE" },
@@ -295,7 +295,7 @@ describe("Veyra pool liquidity (Prisma)", () => {
     await openPoolLiquidity(prisma, MARKET, null, CONFIG);
     await prisma.market.update({
       where: { id: MARKET },
-      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date() },
+      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date(), payoutsAuthorizedAt: new Date() },
     });
     // Job still queued: taking a fee now would use a partial set of positions.
     await prisma.reputationJob.create({

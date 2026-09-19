@@ -46,7 +46,7 @@ export function Rules() {
                     alt={rule.alt}
                     width={160}
                     height={120}
-                    className="relative max-h-full w-auto bg-white object-contain"
+                    className="relative max-h-full w-auto object-contain"
                   />
                 </div>
                 <h3 className="text-[15px] font-medium tracking-[-0.03em] text-[#1a1a1a] sm:text-base">

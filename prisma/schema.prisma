@@ -28,6 +28,8 @@ model Market {
   accepting           Boolean              @default(true)
   resolvedOutcome     String?
   resolvedAt          DateTime?
+  /// Operator (or elapsed dispute window) has authorized cash payouts for this pool.
+  payoutsAuthorizedAt DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   predictions         Prediction[]
@@ -698,4 +700,25 @@ model FundsHold {
   @@index([walletAddress, status])
   @@index([status])
   @@map("funds_holds")
+}
+
+/// User-requested withdrawal. Debited immediately so the same dollars cannot be
+/// bet or withdrawn twice; an operator sends USDC from a wallet the server does
+/// not control, then marks the request complete or failed.
+model TreasuryWithdrawal {
+  id            String    @id @default(cuid())
+  walletAddress String
+  destAddress   String
+  asset         String    @default("USDC")
+  amountMicros  BigInt
+  status        String    @default("PENDING")
+  txHash        String?
+  errorMessage  String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  completedAt   DateTime?
+
+  @@index([status, createdAt])
+  @@index([walletAddress, createdAt])
+  @@map("treasury_withdrawals")
 }

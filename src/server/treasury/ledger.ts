@@ -141,6 +141,16 @@ async function applyDelta(
       refId: entry.refId,
     },
   });
+  // Debits cannot upsert: Postgres checks the INSERT row of ON CONFLICT before
+  // applying the update, so a negative create value trips the non-negative CHECK
+  // even when a funded row already exists.
+  if (entry.deltaBase < 0n) {
+    const updated = await tx.treasuryBalance.update({
+      where: { walletAddress_asset: { walletAddress: entry.walletAddress, asset: entry.asset } },
+      data: { balanceBase: { increment: entry.deltaBase } },
+    });
+    return updated.balanceBase;
+  }
   const balance = await tx.treasuryBalance.upsert({
     where: { walletAddress_asset: { walletAddress: entry.walletAddress, asset: entry.asset } },
     create: {
@@ -193,4 +203,45 @@ export async function auditBalances(prisma: PrismaClient) {
     }));
 
   return { checked: balances.length, discrepancies };
+}
+
+/**
+ * Reverses a credited deposit whose on-chain transfer disappeared (reorg).
+ * Debits the same amount, referenced by the deposit id, so a replay is a no-op.
+ */
+export async function reverseDeposit(prisma: PrismaClient, depositId: string) {
+  const deposit = await prisma.treasuryDeposit.findUnique({ where: { id: depositId } });
+  if (!deposit || deposit.status !== "CREDITED") {
+    return { reversed: false };
+  }
+  const claim = await prisma.treasuryDeposit.updateMany({
+    where: { id: deposit.id, status: "CREDITED" },
+    data: { status: "REVERSED" },
+  });
+  if (claim.count !== 1) return { reversed: false };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "treasury_balances" WHERE "walletAddress" = ${deposit.walletAddress} AND "asset" = ${deposit.asset} FOR UPDATE`;
+      const balance = await tx.treasuryBalance.findUnique({
+        where: { walletAddress_asset: { walletAddress: deposit.walletAddress, asset: deposit.asset } },
+      });
+      if ((balance?.balanceBase ?? 0n) < deposit.amountBase) {
+        throw new BettingError("INSUFFICIENT_FUNDS", "Balance does not cover reversing this deposit.", 402);
+      }
+      await applyDelta(tx, {
+        walletAddress: deposit.walletAddress,
+        asset: deposit.asset,
+        decimals: deposit.decimals,
+        deltaBase: -deposit.amountBase,
+        kind: "REVERSAL",
+        refType: "TreasuryDeposit",
+        refId: `${deposit.id}:reorg`,
+      });
+    });
+  } catch (error) {
+    await prisma.treasuryDeposit.update({ where: { id: deposit.id }, data: { status: "CREDITED" } });
+    throw error;
+  }
+  return { reversed: true };
 }

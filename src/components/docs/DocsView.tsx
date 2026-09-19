@@ -105,7 +105,6 @@ export function DocsView() {
       .map((id) => document.getElementById(id))
       .filter((node): node is HTMLElement => Boolean(node));
     if (!nodes.length) {
-      setActiveToc(article.toc[0]?.id ?? article.id);
       return;
     }
 

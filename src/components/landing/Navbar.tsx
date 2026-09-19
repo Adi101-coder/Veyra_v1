@@ -42,7 +42,8 @@ export function Navbar() {
   const pathname = usePathname();
   const reduce = useReducedMotion();
   const [scrolled, setScrolled] = useState(false);
-  const [mobile, setMobile] = useState(false);
+  const [openForPath, setOpenForPath] = useState<string | null>(null);
+  const mobile = openForPath === pathname;
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 12);
@@ -50,10 +51,6 @@ export function Navbar() {
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
-
-  useEffect(() => {
-    setMobile(false);
-  }, [pathname]);
 
   useEffect(() => {
     document.body.style.overflow = mobile ? "hidden" : "";
@@ -121,7 +118,7 @@ export function Navbar() {
           type="button"
           className="text-[#f5f5f5] lg:hidden"
           aria-label="Open menu"
-          onClick={() => setMobile(true)}
+          onClick={() => setOpenForPath(pathname)}
         >
           <IconMenu className="h-6 w-6" />
         </button>
@@ -138,7 +135,7 @@ export function Navbar() {
           >
             <div className="flex h-[72px] items-center justify-between px-5">
               <span className="text-[15px] font-medium">{siteConfig.name}</span>
-              <button type="button" aria-label="Close menu" onClick={() => setMobile(false)}>
+              <button type="button" aria-label="Close menu" onClick={() => setOpenForPath(null)}>
                 <IconClose className="h-6 w-6" />
               </button>
             </div>
@@ -152,7 +149,7 @@ export function Navbar() {
                 >
                   <Link
                     href={item.href}
-                    onClick={() => setMobile(false)}
+                    onClick={() => setOpenForPath(null)}
                     className={`block border-b border-white/5 py-4 no-underline ${
                       isActive(pathname, item.href) ? "text-white" : "text-[#cfcfcf]"
                     }`}

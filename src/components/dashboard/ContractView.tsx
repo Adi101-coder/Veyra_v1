@@ -66,7 +66,13 @@ function SectionMark() {
 export function ContractView({ market }: { market: Market }) {
   const isVeyraPool = market.source === "veyra";
   const sourceLabel =
-    market.source === "polymarket" ? "Polymarket" : isVeyraPool ? "Veyra pool · community voted" : "Demo · paper only";
+    market.source === "polymarket"
+      ? "Polymarket"
+      : isVeyraPool
+        ? market.proposerWallet
+          ? `Veyra pool · proposed by ${market.proposerWallet.slice(0, 6)}…${market.proposerWallet.slice(-4)}`
+          : "Veyra pool · community voted"
+        : "Demo · paper only";
   const liquidityLabel =
     typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)
       ? `$${Math.round(market.liquidityUsd).toLocaleString("en-US")}`
@@ -586,7 +592,12 @@ function CreateWagerCard({
             : `Order: ${statusLabel("order", fill)}. Shares appear once fills are recorded.`,
       );
     } catch (error) {
-      setMessage(describeBettingError(error, "Could not place prediction."));
+      const text = describeBettingError(error, "Could not place prediction.");
+      setMessage(
+        error && typeof error === "object" && "code" in error && error.code === "INSUFFICIENT_FUNDS"
+          ? `${text} Open Balances to deposit.`
+          : text,
+      );
     } finally {
       inFlight.current = false;
       setSubmitting(false);

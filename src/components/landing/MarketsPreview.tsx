@@ -65,6 +65,7 @@ export function MarketsPreview() {
                     alt={plate.alt}
                     width={280}
                     height={280}
+                    unoptimized
                     className="h-[180px] w-auto object-contain invert"
                   />
                 </div>

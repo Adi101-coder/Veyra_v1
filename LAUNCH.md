@@ -63,7 +63,9 @@ It must return HTTP 200 and `"ready": true`. Check:
 - [ ] Record the funder pUSD balance from readiness (`collateralMicros`) and the current time into `VEYRA_OMNIBUS_USDC_BASELINE_MICROS` / `VEYRA_OMNIBUS_USDC_BASELINE_AT`, then restart.
 
 ## 6. Small live test (required before opening to users)
-Keep `VEYRA_MAX_STAKE_USD` low (e.g. 5–100).
+Keep `VEYRA_MAX_STAKE_USD` low (e.g. 5–100). Keep
+`VEYRA_CUSTODY_ENABLED=false` — this is a venue-format test, not a real-money test.
+Set `POLYMARKET_EXECUTION_MODE=live` only for this operator-controlled run.
 - [ ] Connect a real wallet and sign in (one signature, no gas).
 - [ ] Place one small wager on a liquid Polymarket market. The position shows **Filled** or **Partially filled** only after the venue reports the fill.
 - [ ] Change confidence once (SELL or BUY delta) and confirm confidence history shows **Applied**.
@@ -83,13 +85,15 @@ funds**, unlike Polymarket markets where the counterparty is another trader.
 - [ ] A pool the fund cannot cover stays unquotable and reports `AWAITING_LIQUIDITY`
   rather than showing a price. That is intended: an unfunded pool has no counterparty.
 - [ ] Resolve a pool with `POST /api/operator/pools/resolve` (`marketId`, `outcome`).
-  Pools have no venue oracle, so an operator decides; the worker then scores
-  reputation and settles the pool from those scores.
+  Pools have no venue oracle, so an operator decides. Cash payouts and liquidity
+  close wait for `VEYRA_POOL_DISPUTE_WINDOW_HOURS` or
+  `POST /api/operator/pools/finalize`.
 - [ ] Pools trade in paper mode. No real money moves until execution is switched on
   for them, and that needs the custody and regulatory position settled first.
 
 ## 7. Operate
-- [ ] Monitor `GET /api/operator/readiness` and `GET /api/operator/inventory-reconciliation` (alert on `ready: false` or any `error` finding).
+- [ ] Monitor `GET /api/operator/readiness`, `GET /api/operator/inventory-reconciliation`, and `GET /api/operator/treasury/report` solvency (alert on `ready: false` or any `error` finding).
+- [ ] If function logs show `prepared statement "s0" already exists`, add `?pgbouncer=true` to the pooled `DATABASE_URL` only. Keep `DIRECT_URL` unpooled.
 - [ ] Alert on `checks.worker.detail.batchesAwaitingVenueOver1h > 0` (orders needing manual reconciliation).
 - [ ] Raise `VEYRA_MAX_STAKE_USD` only after reconciliation stays clean.
 

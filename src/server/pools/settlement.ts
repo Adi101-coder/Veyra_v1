@@ -3,6 +3,7 @@ import "server-only";
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
 import { closePoolLiquidity, openPoolLiquidity } from "@/server/pools/fund";
+import { poolPayoutsOpen } from "@/server/treasury/dispute";
 import { VEYRA_POOL_SOURCE } from "@/server/voting/config";
 
 /**
@@ -37,6 +38,7 @@ export async function settleResolvedPools(
   for (const pool of open) {
     const market = await prisma.market.findUnique({ where: { id: pool.marketId } });
     if (!market?.resolvedAt) continue;
+    if (!poolPayoutsOpen(market)) continue;
 
     // Only settle once scoring for this market has finished, otherwise the fee
     // would be taken on a partial set of positions.

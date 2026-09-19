@@ -3,7 +3,7 @@ import { getPrisma } from "@/server/db";
 import { jsonError } from "@/server/http";
 import { poolInventory } from "@/server/pools/book";
 import { marginalPriceBps } from "@/server/pools/lmsr";
-import { listPoolMarkets } from "@/server/voting/pool";
+import { listPoolMarkets, proposerForPool } from "@/server/voting/pool";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +41,7 @@ export async function GET() {
             funded,
             yesPriceBps,
             feeBps: funding?.feeBps ?? null,
+            proposerWallet: (await proposerForPool(market.id, prisma)) ?? market.proposerWallet ?? null,
           };
         }),
     );

@@ -49,6 +49,11 @@ export function PoolsSection() {
               <p className="mt-2 line-clamp-2 min-h-[2.6em] text-[15px] leading-tight font-medium text-[#171717]">
                 {pool.title}
               </p>
+              {pool.proposerWallet ? (
+                <p className="mt-2 font-mono text-[10px] tracking-[0.04em] text-[#9a9a9a]">
+                  Proposed by {pool.proposerWallet.slice(0, 6)}…{pool.proposerWallet.slice(-4)}
+                </p>
+              ) : null}
               <div className="mt-3 flex items-center justify-between">
                 {pool.funded && pool.yesPriceBps != null ? (
                   <>

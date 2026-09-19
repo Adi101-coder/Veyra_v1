@@ -3,7 +3,10 @@ import type { PrismaClient } from "@prisma/client";
 import { createTestDatabase } from "@/server/testing/db";
 import { loadSupportedAssets, walletsAreSeparate } from "@/server/treasury/config";
 import { accountingSeparationReport, exposureFor } from "@/server/treasury/exposure";
-import { auditBalances, balancesFor, creditDeposit } from "@/server/treasury/ledger";
+import { auditBalances, balancesFor, creditDeposit, reverseDeposit } from "@/server/treasury/ledger";
+import { CASH_ASSET, creditCash } from "@/server/treasury/funds";
+import { applyConfirmedDeposits } from "@/server/treasury/watcher";
+import { failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
 
 let prisma: PrismaClient;
 let database: ReturnType<typeof createTestDatabase>;
@@ -34,6 +37,7 @@ beforeEach(async () => {
   await prisma.treasuryLedgerEntry.deleteMany();
   await prisma.treasuryBalance.deleteMany();
   await prisma.treasuryDeposit.deleteMany();
+  await prisma.treasuryWithdrawal.deleteMany();
 });
 
 describe("Treasury custody ledger (Prisma)", () => {
@@ -205,5 +209,47 @@ describe("Treasury custody ledger (Prisma)", () => {
     // Treasury balances are not netted against venue exposure.
     const report = await accountingSeparationReport(prisma, ENV);
     expect(report.executionLedger.openPositions).toBe(1);
+  });
+
+  it("debits a withdrawal immediately and reverses it if the operator fails the send", async () => {
+    await prisma.treasuryWithdrawal.deleteMany();
+    await creditCash(prisma, {
+      walletAddress: USER,
+      amountMicros: 50_000_000n,
+      kind: "DEPOSIT",
+      refType: "Test",
+      refId: "wd-seed",
+    });
+    const row = await requestWithdrawal(prisma, {
+      walletAddress: USER,
+      destAddress: "0x5555555555555555555555555555555555555555",
+      amountMicros: 10_000_000n,
+    });
+    const usdc = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: USER, asset: CASH_ASSET } },
+    });
+    expect(usdc.balanceBase).toBe(40_000_000n);
+    await failWithdrawal(prisma, { id: row.id });
+    const after = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: USER, asset: CASH_ASSET } },
+    });
+    expect(after.balanceBase).toBe(50_000_000n);
+    expect((await prisma.treasuryWithdrawal.findUniqueOrThrow({ where: { id: row.id } })).status).toBe("FAILED");
+  });
+
+  it("credits a watched deposit once and can reverse a reorg", async () => {
+    const transfer = {
+      walletAddress: USER,
+      asset: "NVDA",
+      chainId: 137,
+      txHash: txHash(9),
+      logIndex: 0,
+      amountBase: 3_000n,
+    };
+    expect((await applyConfirmedDeposits(prisma, [transfer, transfer], ENV)).credited).toBe(1);
+    const deposit = await prisma.treasuryDeposit.findFirstOrThrow({ where: { txHash: transfer.txHash } });
+    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: true });
+    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: false });
+    expect((await prisma.treasuryDeposit.findUniqueOrThrow({ where: { id: deposit.id } })).status).toBe("REVERSED");
   });
 });

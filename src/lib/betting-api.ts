@@ -251,7 +251,19 @@ export type PoolSummary = {
   funded: boolean;
   yesPriceBps: number | null;
   feeBps: number | null;
+  proposerWallet: string | null;
 };
+
+export async function requestWithdrawal(input: { destAddress: string; amountMicros: string }) {
+  return authedWrite<{ id: string; status: string; amountMicros: string; destAddress: string }>(
+    "/api/treasury/withdrawals",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+}
 
 export async function listPools() {
   const response = await fetch("/api/pools", { cache: "no-store" });

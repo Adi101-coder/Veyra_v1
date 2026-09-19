@@ -4,6 +4,7 @@ import { getPrisma } from "@/server/db";
 import { jsonError } from "@/server/http";
 import { accountingSeparationReport } from "@/server/treasury/exposure";
 import { auditBalances } from "@/server/treasury/ledger";
+import { reconcileSolvency } from "@/server/treasury/solvency";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +14,12 @@ export async function GET(request: Request) {
   try {
     requireOperator(request);
     const prisma = getPrisma();
-    const [separation, audit] = await Promise.all([
+    const [separation, audit, solvency] = await Promise.all([
       accountingSeparationReport(prisma),
       auditBalances(prisma),
+      reconcileSolvency(prisma),
     ]);
-    return NextResponse.json({ ...separation, audit });
+    return NextResponse.json({ ...separation, audit, solvency });
   } catch (error) {
     return jsonError(error);
   }

@@ -543,6 +543,17 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
               },
             })
           : null;
+        if (execution && input.execution && input.execution.side === "BUY" && settlesInCash(input.execution.mode)) {
+          const position = await tx.position.findUniqueOrThrow({
+            where: { id: input.execution.positionId },
+            select: { walletAddress: true },
+          });
+          await reserveFunds(tx, {
+            walletAddress: position.walletAddress,
+            executionId: execution.id,
+            amountMicros: input.execution.notionalMicros,
+          });
+        }
         const history = await tx.confidenceHistory.create({
           data: {
             ...input.history,

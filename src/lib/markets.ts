@@ -50,6 +50,7 @@ export type Market = {
   source?: "local" | "polymarket" | "veyra";
   conditionId?: string;
   clobTokenIds?: string[];
+  proposerWallet?: string;
 };
 
 export const coreMarkets: Market[] = [

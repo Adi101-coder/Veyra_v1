@@ -4,15 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { Shell } from "@/components/Shell";
-import { FeaturedEvent } from "@/components/markets/FeaturedEvent";
-import { PacksRow } from "@/components/markets/PacksRow";
-import { Leaderboards } from "@/components/markets/Leaderboards";
-import { TrendingPositions } from "@/components/markets/TrendingPositions";
-import { SportSection } from "@/components/markets/SportSection";
-import { EsportsSection } from "@/components/markets/EsportsSection";
 import { cardClass, SampleBadge } from "@/components/markets/primitives";
 import { PoolsSection } from "@/components/markets/PoolsSection";
-import { showSampleSections } from "@/lib/sample-sections";
 import {
   channelMarketFilter,
   feedChannels,
@@ -23,21 +16,26 @@ import { categoryLabel, markets, type Market } from "@/lib/markets";
 export function MarketsView() {
   const [channel, setChannel] = useState<FeedChannel>("all");
   const [query, setQuery] = useState("");
-  const samples = showSampleSections();
 
   // The live Polymarket feed. Previously this page rendered only the static sample
   // catalog, so real markets were reachable from the dashboard but not from here.
   const [live, setLive] = useState<Market[] | null>(null);
+  const [feedSource, setFeedSource] = useState<"polymarket" | "local" | null>(null);
   useEffect(() => {
     let cancelled = false;
     fetch("/api/markets", { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
       .then((json: { source?: string; markets?: Market[] } | null) => {
         if (cancelled) return;
-        setLive(json?.source === "polymarket" && json.markets?.length ? json.markets : []);
+        const rows = json?.markets?.length ? json.markets : [];
+        setLive(rows);
+        setFeedSource(json?.source === "polymarket" ? "polymarket" : "local");
       })
       .catch(() => {
-        if (!cancelled) setLive([]);
+        if (!cancelled) {
+          setLive([]);
+          setFeedSource("local");
+        }
       });
     return () => {
       cancelled = true;
@@ -52,11 +50,6 @@ export function MarketsView() {
     return list.filter((market) => market.title.toLowerCase().includes(q));
   }, [channel, query]);
 
-  const showHero = channel === "all" || channel === "sport";
-  const showPacks = channel === "all" || channel === "sport";
-  const showBoards = channel === "all";
-  const showSport = channel === "all" || channel === "sport";
-  const showEsports = channel === "all" || channel === "esports";
   const showCatalog = channel !== "all" && channel !== "sport" && channel !== "esports";
 
   return (
@@ -96,21 +89,16 @@ export function MarketsView() {
 
         <div className="flex flex-col gap-11">
           <PoolsSection />
-          {/* Sample-feed sections: hidden unless explicitly enabled (see sample-sections.ts). */}
-          {samples && showHero ? <FeaturedEvent /> : null}
-          {samples && showPacks ? <PacksRow /> : null}
-          {samples && showBoards ? (
-            <>
-              <Leaderboards />
-              <TrendingPositions />
-            </>
+          {channel === "all" && live && live.length === 0 ? (
+            <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
+              No live Polymarket markets and no Veyra pools yet. Open Dashboard to
+              trade a catalog market, or Vote to create a pool.
+            </p>
           ) : null}
-          {samples && showSport ? <SportSection /> : null}
-          {samples && showEsports ? <EsportsSection /> : null}
           {channel === "all" && live && live.length > 0 ? (
             <section>
               <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">
-                Live markets
+                {feedSource === "polymarket" ? "Live markets" : "Catalog markets"}
               </h2>
               <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
                 {live

@@ -304,6 +304,7 @@ trades Polymarket. They are never netted against each other.
 |---|---|---|---|
 | GET | `/api/treasury/balances` | session | `{ walletAddress, balances: [{ asset, balanceBase, decimals }] }` |
 | GET | `/api/treasury/exposure` | session | Positions backing that wallet's venue exposure. |
+| GET/POST | `/api/treasury/withdrawals` | session | List / queue a withdrawal. Debits immediately; an operator sends USDC. |
 
 `balanceBase` is an integer string in the asset's own base units — divide by
 `10 ** decimals` for display, and keep the raw value for any maths. Deposits are
@@ -323,8 +324,10 @@ credential.
 | GET/POST | `/api/operator/inventory-reconciliation` | Read-only ledger vs venue report. |
 | GET/POST | `/api/operator/liquidity` | Read fund balances / add operator capital. |
 | POST | `/api/operator/pools/resolve` | `{ marketId, outcome }` — pools have no oracle, an operator decides. |
+| POST | `/api/operator/pools/finalize` | Authorize pool payouts after the dispute window (or immediately). |
 | POST | `/api/operator/treasury/deposits` | Credit a confirmed on-chain deposit. |
-| GET | `/api/operator/treasury/report` | Wallet separation and balance audit. |
+| GET/POST | `/api/operator/treasury/withdrawals` | Manual send queue: list pending, `complete` with txHash, or `fail` (reverses the debit). |
+| GET | `/api/operator/treasury/report` | Wallet separation, balance audit, and cash solvency. |
 | POST | `/api/markets/[id]/resolve` | Resolve a market. |
 | POST | `/api/executions/flush`, `/api/reputation/flush`, `/api/jobs/run` | Kick background work. |
 | GET | `/api/health` | Public. Load-balancer probe. |
@@ -376,6 +379,7 @@ curl -X POST -H "Authorization: Bearer $VEYRA_OPERATOR_TOKEN" \
    the auditable ones; a second implementation will drift.
 7. **Pools trade in paper mode today.** Fills are simulated. The flow is real end to
    end, the money is not.
-8. **The markets page still shows sample data** (`SAMPLE DATA` badges, placeholder
-   leaderboards in `src/components/markets/primitives.tsx`). Those are not wired to
-   the backend — don't assume a number on screen came from an API.
+8. **`INSUFFICIENT_FUNDS` is HTTP 402.** Send the user to Balances to deposit. The
+   proposer of a Veyra pool cannot trade it (`PROPOSER_CANNOT_TRADE`).
+9. **Pool payouts wait for a dispute window** (`VEYRA_POOL_DISPUTE_WINDOW_HOURS`,
+   default 24) or `POST /api/operator/pools/finalize`.

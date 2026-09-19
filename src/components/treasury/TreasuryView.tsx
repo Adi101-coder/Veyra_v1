@@ -7,6 +7,7 @@ import { describeBettingError } from "@/lib/betting";
 import {
   getTreasuryBalances,
   getTreasuryExposure,
+  requestWithdrawal,
   type TreasuryBalance,
   type TreasuryExposure,
 } from "@/lib/betting-api";
@@ -43,6 +44,10 @@ export function TreasuryView() {
   const [balances, setBalances] = useState<TreasuryBalance[] | null>(null);
   const [exposure, setExposure] = useState<TreasuryExposure | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dest, setDest] = useState("");
+  const [amount, setAmount] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawNote, setWithdrawNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!address || !hasSession) return;
@@ -120,6 +125,60 @@ export function TreasuryView() {
               No deposits yet. Deposits are credited once the transfer confirms on-chain.
             </p>
           )}
+        </section>
+
+        <section className="mt-10">
+          <p className={labelClass}>Withdraw USDC</p>
+          <p className="mt-2 max-w-[34rem] text-[13px] leading-5 text-[#8a8a8a]">
+            Funds are held immediately. An operator sends USDC from a wallet this
+            server does not control.
+          </p>
+          <form
+            className="mt-3 flex flex-col gap-2 sm:flex-row"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const dollars = Number.parseFloat(amount);
+              if (!Number.isFinite(dollars) || dollars <= 0) {
+                setWithdrawNote("Enter a positive USDC amount.");
+                return;
+              }
+              setWithdrawing(true);
+              setWithdrawNote(null);
+              try {
+                const result = await requestWithdrawal({
+                  destAddress: dest,
+                  amountMicros: BigInt(Math.round(dollars * 1_000_000)).toString(),
+                });
+                setWithdrawNote(`Queued ${result.id}. Status: ${result.status}.`);
+                setAmount("");
+              } catch (err: unknown) {
+                setWithdrawNote(describeBettingError(err, "Could not request a withdrawal."));
+              } finally {
+                setWithdrawing(false);
+              }
+            }}
+          >
+            <input
+              value={dest}
+              onChange={(event) => setDest(event.target.value)}
+              placeholder="Destination 0x…"
+              className="h-11 flex-1 rounded-[14px] border border-[rgba(26,26,26,0.08)] bg-white px-4 text-[13px] outline-none"
+            />
+            <input
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+              placeholder="Amount"
+              className="h-11 w-full rounded-[14px] border border-[rgba(26,26,26,0.08)] bg-white px-4 text-[13px] outline-none sm:w-28"
+            />
+            <button
+              type="submit"
+              disabled={withdrawing}
+              className="h-11 rounded-[14px] bg-[#171717] px-4 text-[13px] font-medium text-white disabled:opacity-50"
+            >
+              {withdrawing ? "Sending…" : "Request"}
+            </button>
+          </form>
+          {withdrawNote ? <p className="mt-2 font-mono text-[12px] text-[#6e6e6e]">{withdrawNote}</p> : null}
         </section>
 
         <section className="mt-10">

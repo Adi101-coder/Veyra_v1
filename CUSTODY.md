@@ -2,10 +2,9 @@
 
 What has to be built before Veyra can take real funds, and in what order.
 
-Status: **spec, not built.** Today there is no balance check anywhere in the
-placement path — orders execute against the omnibus wallet, which is Veyra's own
-capital, so in live mode every user bet would be funded by the house. This document
-is the plan to fix that.
+Status: **holds, release, CYM cash, payouts, solvency report, withdrawals, and
+deposit watcher are built**, behind `VEYRA_CUSTODY_ENABLED` (default off). Live
+venue orders still must not be opened to users until the gates in §9.
 
 Companion docs: `AUDIT.md` (what each subsystem guarantees today), `API.md` (the HTTP
 surface), `LAUNCH.md` (deployment).

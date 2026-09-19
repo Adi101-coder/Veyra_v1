@@ -25,7 +25,9 @@ export function createTestDatabase(prefix: string) {
     env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url },
     stdio: "pipe",
   });
-  const prisma = new PrismaClient({ datasources: { db: { url } } });
+  const clientUrl = new URL(url);
+  clientUrl.searchParams.set("connection_limit", "2");
+  const prisma = new PrismaClient({ datasources: { db: { url: clientUrl.toString() } } });
   return {
     prisma,
     url,
