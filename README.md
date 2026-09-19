@@ -3,6 +3,7 @@
 Confidence-based prediction markets on top of Polymarket, with Robinhood Chain settlement
 references. Next.js App Router (TypeScript, Tailwind), Prisma + PostgreSQL, vitest.
 
+- `API.md` — the HTTP API, for frontend work. Start here if you are building UI.
 - `LAUNCH.md` — deployment checklist (Vercel and self-hosted).
 - `AUDIT.md` — what each subsystem guarantees, and what still needs live credentials.
 
