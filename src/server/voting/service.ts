@@ -4,9 +4,8 @@ import { requireWallet } from "@/server/auth";
 import { getPrisma } from "@/server/db";
 import { BettingError } from "@/server/errors";
 import { parseWalletAddress } from "@/server/betting/validation";
-import { loadVotingConfig } from "@/server/voting/config";
-import { openRound } from "@/server/voting/store";
-import { castVote, liveTally, submitProposal } from "@/server/voting/store";
+import { loadVotingConfig, normalizeCategory } from "@/server/voting/config";
+import { castVote, getOpenRound, liveTally, openRound, submitProposal } from "@/server/voting/store";
 
 /** Request-facing wrappers over the voting store. */
 
@@ -19,7 +18,8 @@ export function parseProposalBody(body: unknown) {
   if (title.length > MAX_TITLE) {
     throw new BettingError("INVALID_PROPOSAL", `Keep the question under ${MAX_TITLE} characters.`, 400);
   }
-  const category = typeof raw.category === "string" && raw.category.trim() ? raw.category.trim() : "community";
+  // Store a real catalog category so the pool created later is renderable.
+  const category = normalizeCategory(typeof raw.category === "string" ? raw.category : undefined);
   const tag = typeof raw.tag === "string" && raw.tag.trim() ? raw.tag.trim() : "community";
   const resolvesAt = typeof raw.resolvesAt === "string" && raw.resolvesAt.trim() ? raw.resolvesAt.trim() : null;
   if (resolvesAt && Number.isNaN(new Date(resolvesAt).getTime())) {
@@ -36,13 +36,14 @@ export function parseVoteBody(body: unknown) {
 }
 
 /**
- * The round users act on. Opening on read keeps the first request of a new day
- * from finding nothing, and is safe: the partial unique index allows only one.
+ * The round users act on. Read-only: the worker owns the round schedule, so a page
+ * load never creates one. Between the last round finalizing and the next tick
+ * (at most one worker interval) this returns a null round.
  */
 export async function currentRound(walletAddress?: string) {
   const prisma = getPrisma();
-  const config = loadVotingConfig();
-  const { round } = await openRound(prisma, config);
+  const round = await getOpenRound(prisma);
+  if (!round) return { round: null, proposals: [], myVotes: [], votesRemaining: null };
   const proposals = await prisma.voteProposal.findMany({
     where: { roundId: round.id },
     include: { _count: { select: { votes: true } } },
@@ -87,6 +88,8 @@ export async function proposeQuestion(request: Request, body: unknown) {
   const wallet = parseWalletAddress(requireWallet(request));
   const prisma = getPrisma();
   const config = loadVotingConfig();
+  // A write may open the round if the worker has not ticked yet; the partial
+  // unique index keeps that to exactly one round.
   const { round } = await openRound(prisma, config);
   const input = parseProposalBody(body);
   const proposal = await submitProposal(

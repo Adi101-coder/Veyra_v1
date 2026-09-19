@@ -1,5 +1,7 @@
 import "server-only";
 
+import { categories, type CategoryId } from "@/lib/markets";
+
 /**
  * Daily voting configuration. Values are read once per call so tests can vary them,
  * and every value that affects a round in flight is copied onto the round row when
@@ -32,8 +34,18 @@ export function loadVotingConfig(env: NodeJS.ProcessEnv = process.env): VotingCo
     selectionCount: int(env.VEYRA_VOTING_SELECTION_COUNT, 5, 1, 50),
     votesPerWallet: int(env.VEYRA_VOTING_VOTES_PER_WALLET, 3, 1, 50),
     proposalsPerWallet: int(env.VEYRA_VOTING_PROPOSALS_PER_WALLET, 3, 1, 50),
-    defaultCategory: (env.VEYRA_VOTING_DEFAULT_CATEGORY ?? "community").trim() || "community",
+    defaultCategory: normalizeCategory(env.VEYRA_VOTING_DEFAULT_CATEGORY),
   };
+}
+
+/**
+ * Proposal categories must be real catalog categories, otherwise the pool cannot be
+ * rendered or coloured. Anything unrecognised falls back to "culture".
+ */
+export function normalizeCategory(value: string | undefined): Exclude<CategoryId, "all"> {
+  const wanted = (value ?? "").trim().toLowerCase();
+  const match = categories.find((c) => c.id === wanted && c.id !== "all");
+  return (match?.id ?? "culture") as Exclude<CategoryId, "all">;
 }
 
 /** Pools created from winning proposals are Veyra-native, not Polymarket-backed. */

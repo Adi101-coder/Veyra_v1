@@ -97,14 +97,13 @@ export async function finalizeClosedRounds(
     // A crash between close and finalize leaves the results unwritten; make sure
     // they exist before selecting from them.
     await freezeResults(prisma, id);
-    const created = await createPoolsForRound(prisma, id, config);
+    await createPoolsForRound(prisma, id, config);
 
     const claim = await prisma.votingRound.updateMany({
       where: { id, status: "CLOSED" },
       data: { status: "FINALIZED", finalizedAt: now },
     });
     if (claim.count === 1) finalized += 1;
-    void created;
   }
   return finalized;
 }

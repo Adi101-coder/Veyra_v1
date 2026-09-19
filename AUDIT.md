@@ -347,8 +347,14 @@ Veyra-native pools.
   (`veyra-<proposalId>`), so re-running finalization upserts the same rows.
 - Pools are created with `source: "veyra"` and no CLOB tokens, so they never enter
   the live Polymarket execution path (`resolveBook` in `betting/service.ts`).
+- **Pools are reachable, not just stored.** `getMarket` only searches the static
+  catalog array, so a database-created pool was invisible to `resolveMarket` — the
+  five winners would have been dead rows. `resolveMarket` now falls back to a
+  database lookup (`voting/pool.ts`) that maps a stored pool onto `CatalogMarket`,
+  with a real category, accent and YES/NO seats. The test asserts reachability
+  through `resolveMarket`, not a row count, and reverting the fallback fails it.
 
-**Tests:** 12 scenarios — concurrent round opening, concurrent votes against the
+**Tests:** 13 scenarios — concurrent round opening, concurrent votes against the
 budget, concurrent votes from many wallets, duplicate votes and proposals, closing,
 frozen tally vs late votes, four-way tie ordering, duplicate finalization, a round
 left CLOSED by a crashed worker, five workers ticking together, an unvoted round, and
@@ -382,6 +388,10 @@ separation gate or the deposit idempotency each fails a test.
 by an operator/watcher that has already confirmed the transfer, never by the
 depositing user. Withdrawals are not implemented; the ledger supports the entry kind
 but no endpoint moves funds out.
+
+`GET /api/voting/round` is read-only: the worker owns the round schedule, so a page
+load never creates a round. Between a round finalizing and the next tick it reports
+a null round.
 
 ### New endpoints
 - `GET /api/voting/round`, `POST /api/voting/proposals`, `POST /api/voting/votes`

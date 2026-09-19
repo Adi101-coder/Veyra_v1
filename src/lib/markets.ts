@@ -47,7 +47,7 @@ export type Market = {
   volume24hrUsd?: number;
   liquidityUsd?: number;
   live?: boolean;
-  source?: "local" | "polymarket";
+  source?: "local" | "polymarket" | "veyra";
   conditionId?: string;
   clobTokenIds?: string[];
 };

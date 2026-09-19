@@ -10,6 +10,9 @@ import {
   runVotingTick,
 } from "@/server/voting/lifecycle";
 import { castVote, openRound, submitProposal } from "@/server/voting/store";
+import { getPoolMarket, listPoolMarkets } from "@/server/voting/pool";
+import { resolveMarket } from "@/server/betting/service";
+import { getMarket } from "@/lib/markets";
 
 let prisma: PrismaClient;
 let database: ReturnType<typeof createTestDatabase>;
@@ -246,6 +249,43 @@ describe("Daily voting rounds (Prisma)", () => {
     expect(await prisma.market.count({ where: { source: "veyra" } })).toBe(CONFIG.selectionCount);
     const stored = await prisma.votingRound.findUniqueOrThrow({ where: { id: round.id } });
     expect(stored.status).toBe("FINALIZED");
+  });
+
+  it("makes every created pool reachable, not just present in the table", async () => {
+    const opened = new Date("2026-09-18T00:00:00Z");
+    const { round, proposals } = await roundWithProposals(2, opened);
+    await prisma.vote.create({
+      data: { roundId: round.id, proposalId: proposals[0]!.id, walletAddress: wallet(31) },
+    });
+    await runVotingTick(prisma, CONFIG, new Date(opened.getTime() + CONFIG.roundMs + 1));
+
+    const poolId = poolIdForProposal(proposals[0]!.id);
+    // The static catalog does not know this pool: only the database lookup does.
+    expect(getMarket(poolId)).toBeNull();
+
+    const pool = await getPoolMarket(poolId, prisma);
+    expect(pool).not.toBeNull();
+    expect(pool!.title).toBe(proposals[0]!.title);
+    expect(pool!.source).toBe("veyra");
+    // Real category and a YES/NO pair, so the pool can actually be rendered.
+    expect(pool!.seats.map((s) => s.side)).toEqual(["lands", "misses"]);
+    expect(pool!.accent).toMatch(/^#/);
+
+    // ...and the path the app uses to resolve a market by id finds it.
+    const resolved = await resolveMarket(poolId, {
+      store: null as never,
+      executor: null as never,
+      getCatalogMarket: getMarket,
+      getPoolMarket: (id) => getPoolMarket(id, prisma),
+      getLiveMarket: async () => null,
+      getBook: async () => {
+        throw new Error("a Veyra pool must not reach the venue book");
+      },
+    });
+    expect(resolved?.id).toBe(poolId);
+    expect(resolved?.clobTokenIds ?? []).toEqual([]);
+
+    expect((await listPoolMarkets(prisma)).map((m) => m.id)).toEqual([poolId]);
   });
 
   it("finishes a round left CLOSED by a crashed worker", async () => {

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getMarket, yesChance, type Market as CatalogMarket } from "@/lib/markets";
+import { getPoolMarket } from "@/server/voting/pool";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
 import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome } from "@/lib/betting";
 import { ConfidenceEngine } from "@/server/confidence/engine";
@@ -122,6 +123,8 @@ export type BettingDeps = {
   store: BettingStore;
   executor: ExecutorPort;
   getCatalogMarket: (id: string) => CatalogMarket | null;
+  /** Veyra-native pools, which live in the database rather than the catalog. */
+  getPoolMarket?: (id: string) => Promise<CatalogMarket | null>;
   getLiveMarket: (id: string) => Promise<CatalogMarket | null>;
   getBook: (tokenId: string) => Promise<OrderBookSnapshot>;
   getResolution?: (marketId: string) => Promise<VenueResolution | null>;
@@ -151,6 +154,7 @@ export function createPrismaDeps(
     client: PolymarketClient;
     executor?: ExecutorPort;
     getCatalogMarket?: BettingDeps["getCatalogMarket"];
+    getPoolMarket?: BettingDeps["getPoolMarket"];
     getLiveMarket?: BettingDeps["getLiveMarket"];
     getResolution?: BettingDeps["getResolution"];
   },
@@ -170,6 +174,7 @@ export function createPrismaDeps(
     engine: new ExecutionEngine(client, executionStore),
     reputation: new ReputationEngine(prismaReputationStore(prisma), bettingForecastSource(store)),
     getCatalogMarket: venue.getCatalogMarket ?? getMarket,
+    getPoolMarket: venue.getPoolMarket ?? ((id: string) => getPoolMarket(id)),
     getLiveMarket: venue.getLiveMarket ?? fetchPolymarketMarket,
     getResolution: venue.getResolution,
     getBook: (tokenId) => client.getBook(tokenId),
@@ -276,6 +281,12 @@ export async function resolveMarket(id: string, deps: BettingDeps) {
   const local = deps.getCatalogMarket(id);
   if (local && local.source !== "polymarket" && !local.clobTokenIds?.length) {
     return local;
+  }
+  if (!local) {
+    // Veyra-native pools (created by a voting round) live in the database rather
+    // than the static catalog, so the catalog lookup above misses them.
+    const pool = deps.getPoolMarket ? await deps.getPoolMarket(id).catch(() => null) : null;
+    if (pool) return pool;
   }
   const live = await deps.getLiveMarket(id).catch(() => null);
   return live ?? local;
