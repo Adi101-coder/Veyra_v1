@@ -1,9 +1,8 @@
 import "server-only";
 
 import type { Market as MarketRow, PrismaClient } from "@prisma/client";
-import type { Outcome } from "@/lib/betting";
 import { categoryColor, type Market as CatalogMarket } from "@/lib/markets";
-import { syntheticBookFromMarket } from "@/server/confidence/book";
+import { parsePoolTokenId, poolBook } from "@/server/pools/book";
 import { getPrisma } from "@/server/db";
 import { normalizeCategory, VEYRA_POOL_SOURCE } from "@/server/voting/config";
 
@@ -72,8 +71,11 @@ export async function listPoolMarkets(prisma: PrismaClient = getPrisma()): Promi
  * database rows, so their book needs this async lookup.
  */
 export async function poolSyntheticBook(tokenId: string, prisma: PrismaClient = getPrisma()) {
-  const match = /^synthetic:(.+):(YES|NO)$/.exec(tokenId);
-  if (!match) return null;
-  const pool = await getPoolMarket(match[1]!, prisma);
-  return pool ? syntheticBookFromMarket(pool, match[2] as Outcome) : null;
+  const parsed = parsePoolTokenId(tokenId);
+  if (!parsed) return null;
+  const pool = await getPoolMarket(parsed.marketId, prisma);
+  if (!pool) return null;
+  // A funded pool quotes its own AMM curve. An unfunded one is NOT quotable: it has
+  // no counterparty, so any price would be fiction.
+  return poolBook(prisma, parsed.marketId, parsed.outcome);
 }

@@ -11,6 +11,7 @@ import {
 } from "@/server/voting/lifecycle";
 import { castVote, openRound, submitProposal } from "@/server/voting/store";
 import { getPoolMarket, listPoolMarkets, poolSyntheticBook } from "@/server/voting/pool";
+import { openPoolLiquidity, seedFund } from "@/server/pools/fund";
 import { resolveMarket } from "@/server/betting/service";
 import { getMarket } from "@/lib/markets";
 
@@ -42,6 +43,8 @@ beforeEach(async () => {
   await prisma.voteProposal.deleteMany();
   await prisma.votingRound.deleteMany();
   await prisma.market.deleteMany({ where: { source: "veyra" } });
+  await prisma.poolLiquidity.deleteMany();
+  await prisma.liquidityFundEntry.deleteMany();
 });
 
 async function roundWithProposals(count: number, now = new Date()) {
@@ -287,12 +290,20 @@ describe("Daily voting rounds (Prisma)", () => {
 
     expect((await listPoolMarkets(prisma)).map((m) => m.id)).toEqual([poolId]);
 
-    // A pool token must have a paper book, or placing a wager on a pool fails with
-    // "No orderbook exists for the requested token id" after being accepted.
+    // With an empty liquidity fund the pool has no counterparty, so it must refuse
+    // to quote rather than show an invented price.
+    expect(await poolSyntheticBook(`synthetic:${poolId}:YES`, prisma)).toBeNull();
+
+    // Funded, it quotes its own AMM curve.
+    await seedFund(prisma, 1_000_000_000n, `test-seed-${poolId}`);
+    await openPoolLiquidity(prisma, poolId, round.id);
     const book = await poolSyntheticBook(`synthetic:${poolId}:YES`, prisma);
     expect(book).not.toBeNull();
     expect(book!.asks.length).toBeGreaterThan(0);
     expect(book!.source).not.toBe("polymarket");
+    // A fresh pool prices both sides at even odds.
+    expect(book!.lastTradePrice).toBe("0.5000");
+
     expect(await poolSyntheticBook(`synthetic:not-a-pool:YES`, prisma)).toBeNull();
     expect(await poolSyntheticBook("0xnotsynthetic", prisma)).toBeNull();
   });

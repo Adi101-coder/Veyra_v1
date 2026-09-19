@@ -2,6 +2,8 @@ import "server-only";
 
 import { getMarket, yesChance, type Market as CatalogMarket } from "@/lib/markets";
 import { getPoolMarket, poolSyntheticBook } from "@/server/voting/pool";
+import { poolBook } from "@/server/pools/book";
+import { VEYRA_POOL_SOURCE } from "@/server/voting/config";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
 import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome } from "@/lib/betting";
 import { ConfidenceEngine } from "@/server/confidence/engine";
@@ -310,6 +312,19 @@ async function resolveBook(
     // paper-traded against a clearly labelled synthetic book.
     if (market.source === "polymarket") {
       throw new BettingError("NO_ORDER_BOOK", "This Polymarket market has no CLOB token for that outcome.", 422);
+    }
+    if (market.source === VEYRA_POOL_SOURCE) {
+      // A Veyra pool quotes its own AMM curve. Without liquidity it has no
+      // counterparty, so it must refuse rather than show an invented price.
+      const book = await poolBook(getPrisma(), market.id, outcome);
+      if (!book) {
+        throw new BettingError(
+          "POOL_NOT_FUNDED",
+          "This pool has no liquidity yet. It opens once the liquidity fund can cover it.",
+          409,
+        );
+      }
+      return book;
     }
     return syntheticBookFromMarket(market, outcome);
   }

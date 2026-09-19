@@ -635,3 +635,43 @@ model TreasuryBalance {
   @@unique([walletAddress, asset])
   @@map("treasury_balances")
 }
+
+/// Liquidity allocated to one Veyra-native pool. `b` is fixed when the pool opens,
+/// so its bounded subsidy (b * ln 2) is known and reserved up front. Share
+/// inventory is NOT stored here: it is derived from recorded fills, so the ledger
+/// stays the single source of truth.
+model PoolLiquidity {
+  id              String    @id @default(cuid())
+  marketId        String    @unique
+  /// LMSR liquidity parameter, USDC micros.
+  bMicros         BigInt
+  /// Reserved from the fund for this pool: b * ln(2), the worst case it can lose.
+  allocatedMicros BigInt
+  roundId         String?
+  status          String    @default("ACTIVE")
+  /// Fee taken on trader profit at resolution, in bps, frozen when the pool opens.
+  feeBps          Int
+  openedAt        DateTime  @default(now())
+  closedAt        DateTime?
+
+  @@index([status])
+  @@map("pool_liquidity")
+}
+
+/// Append-only liquidity fund. Fees flow in, pool allocations flow out, and the
+/// unallocated remainder is the reserve. Balances are derived from these rows.
+model LiquidityFundEntry {
+  id          String   @id @default(cuid())
+  /// Signed micros: positive adds to the fund, negative reserves or spends it.
+  deltaMicros BigInt
+  kind        String
+  refType     String
+  refId       String
+  memo        String?
+  createdAt   DateTime @default(now())
+
+  /// One entry per cause, so a retried job cannot double-count a fee or allocation.
+  @@unique([refType, refId, kind])
+  @@index([createdAt])
+  @@map("liquidity_fund_entries")
+}

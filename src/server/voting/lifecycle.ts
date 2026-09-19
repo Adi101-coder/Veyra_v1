@@ -8,6 +8,7 @@ import {
   VEYRA_POOL_SOURCE,
   type VotingConfig,
 } from "@/server/voting/config";
+import { openPoolLiquidity } from "@/server/pools/fund";
 import { openRound, rankProposals } from "@/server/voting/store";
 
 /**
@@ -146,6 +147,10 @@ export async function createPoolsForRound(
       where: { id: winner.proposalId, marketId: null },
       data: { marketId },
     });
+    // Open the pool's AMM by reserving its bounded worst case from the liquidity
+    // fund. If the fund cannot cover it the pool stays unfunded and unquotable
+    // rather than quoting a price nobody stands behind.
+    await openPoolLiquidity(prisma, marketId, roundId);
   }
   return marketIds;
 }
