@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Outcome } from "@/lib/betting";
 import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 import { withUniqueRetry } from "@/server/prisma-retry";
+import { reserveFunds, settlesInCash } from "@/server/treasury/funds";
 
 export type StoredFill = {
   /** Required: fills are deduplicated per execution by this id. */
@@ -214,6 +215,58 @@ export type BettingStore = {
   listHistory(predictionId: string): Promise<ConfidenceHistoryRow[]>;
 };
 
+/** The row shape for a new prediction, shared by the funded and unfunded paths. */
+function predictionData(input: CreatePredictionInput): Prisma.PredictionUncheckedCreateInput {
+  return {
+    walletAddress: input.walletAddress,
+    marketId: input.marketId,
+    outcome: input.outcome,
+    confidenceBps: input.confidenceBps,
+    stakeMicros: input.stakeMicros,
+    marketPriceBps: input.marketPriceBps,
+    engineVersion: input.engineVersion,
+    engineInputJson: input.engineInputJson,
+    engineOutputJson: input.engineOutputJson,
+    idempotencyKey: input.idempotencyKey,
+    status: input.status,
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+    position: input.position
+      ? {
+          create: {
+            marketId: input.position.marketId,
+            walletAddress: input.position.walletAddress,
+            outcome: input.position.outcome,
+            side: input.position.side,
+            tokenId: input.position.tokenId,
+            sharesMicros: input.position.sharesMicros,
+            limitPriceBps: input.position.limitPriceBps,
+            avgPriceBps: input.position.avgPriceBps,
+            notionalMicros: input.position.notionalMicros,
+            payoutMicros: input.position.payoutMicros,
+            edgeBps: input.position.edgeBps,
+            kellyBps: input.position.kellyBps,
+            status: input.position.status,
+            executions: {
+              create: {
+                venue: input.position.execution.venue,
+                mode: input.position.execution.mode,
+                status: input.position.execution.status,
+                tokenId: input.position.execution.tokenId,
+                side: input.position.execution.side,
+                orderType: input.position.execution.orderType,
+                limitPriceBps: input.position.execution.limitPriceBps,
+                sizeSharesMicros: input.position.execution.sizeSharesMicros,
+                notionalMicros: input.position.execution.notionalMicros,
+                requestJson: input.position.execution.requestJson,
+              },
+            },
+          },
+        }
+      : undefined,
+  };
+}
+
 export function prismaBettingStore(prisma: PrismaClient): BettingStore {
   return {
     async upsertMarket(market) {
@@ -308,56 +361,36 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
     },
 
     createPrediction(input) {
-      return prisma.prediction.create({
-        data: {
-          walletAddress: input.walletAddress,
-          marketId: input.marketId,
-          outcome: input.outcome,
-          confidenceBps: input.confidenceBps,
-          stakeMicros: input.stakeMicros,
-          marketPriceBps: input.marketPriceBps,
-          engineVersion: input.engineVersion,
-          engineInputJson: input.engineInputJson,
-          engineOutputJson: input.engineOutputJson,
-          idempotencyKey: input.idempotencyKey,
-          status: input.status,
-          errorCode: input.errorCode,
-          errorMessage: input.errorMessage,
-          position: input.position
-            ? {
-                create: {
-                  marketId: input.position.marketId,
-                  walletAddress: input.position.walletAddress,
-                  outcome: input.position.outcome,
-                  side: input.position.side,
-                  tokenId: input.position.tokenId,
-                  sharesMicros: input.position.sharesMicros,
-                  limitPriceBps: input.position.limitPriceBps,
-                  avgPriceBps: input.position.avgPriceBps,
-                  notionalMicros: input.position.notionalMicros,
-                  payoutMicros: input.position.payoutMicros,
-                  edgeBps: input.position.edgeBps,
-                  kellyBps: input.position.kellyBps,
-                  status: input.position.status,
-                  executions: {
-                    create: {
-                      venue: input.position.execution.venue,
-                      mode: input.position.execution.mode,
-                      status: input.position.execution.status,
-                      tokenId: input.position.execution.tokenId,
-                      side: input.position.execution.side,
-                      orderType: input.position.execution.orderType,
-                      limitPriceBps: input.position.execution.limitPriceBps,
-                      sizeSharesMicros: input.position.execution.sizeSharesMicros,
-                      notionalMicros: input.position.execution.notionalMicros,
-                      requestJson: input.position.execution.requestJson,
-                    },
-                  },
-                },
-              }
-            : undefined,
-        },
-        include: bundleInclude,
+      // With custody off nothing needs to move, so this stays a single create on the
+      // path that has been audited and load-tested. Only a funded order opens a
+      // transaction, and then funds are reserved inside it: INSUFFICIENT_FUNDS rolls
+      // the whole thing back, order row included, so a user can never hold an order
+      // they could not fund.
+      const needsCash =
+        Boolean(input.position) && settlesInCash(input.position?.execution.mode ?? "paper");
+      if (!needsCash) {
+        return prisma.prediction.create({
+          data: predictionData(input),
+          include: bundleInclude,
+        });
+      }
+      return prisma.$transaction(async (tx) => {
+        const bundle = await tx.prediction.create({
+          data: predictionData(input),
+          include: bundleInclude,
+        });
+
+        // Live orders are funded by the user who placed them. Paper orders are
+        // simulated, so they never touch a real balance (see treasury/funds.ts).
+        const execution = bundle.position?.executions[0];
+        if (execution && settlesInCash(execution.mode) && input.position) {
+          await reserveFunds(tx, {
+            walletAddress: input.walletAddress,
+            executionId: execution.id,
+            amountMicros: input.position.execution.notionalMicros,
+          });
+        }
+        return bundle;
       });
     },
 

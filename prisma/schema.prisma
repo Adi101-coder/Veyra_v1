@@ -675,3 +675,27 @@ model LiquidityFundEntry {
   @@index([createdAt])
   @@map("liquidity_fund_entries")
 }
+
+/// Funds reserved against one open order.
+///
+/// Placing an order debits the wallet's balance immediately and writes this row as
+/// the receipt, so the non-negative CHECK on treasury_balances is a real safety net
+/// rather than something that fires mid-race. Whatever the order does not spend is
+/// released back once it reaches a terminal state. A release only ever returns
+/// money, so a delayed or crashed release is conservative.
+model FundsHold {
+  id            String    @id @default(cuid())
+  walletAddress String
+  /// One hold per execution: a re-driven execution finds this row instead of
+  /// reserving a second time.
+  executionId   String    @unique
+  amountMicros  BigInt
+  spentMicros   BigInt    @default(0)
+  status        String    @default("ACTIVE")
+  createdAt     DateTime  @default(now())
+  settledAt     DateTime?
+
+  @@index([walletAddress, status])
+  @@index([status])
+  @@map("funds_holds")
+}

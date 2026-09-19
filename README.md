@@ -7,6 +7,7 @@ references. Next.js App Router (TypeScript, Tailwind), Prisma + PostgreSQL, vite
 - `LAUNCH.md` — deployment checklist (Vercel and self-hosted).
 - `AUDIT.md` — what each subsystem guarantees, and what still needs live credentials.
 - `CUSTODY.md` — what must be built before Veyra can hold real user funds.
+- `TODO.md` — what is left, in priority order. Start here to pick up the work.
 
 ## Layout
 
