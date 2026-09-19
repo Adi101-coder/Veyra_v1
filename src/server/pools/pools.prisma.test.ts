@@ -3,6 +3,7 @@ import type { PrismaClient } from "@prisma/client";
 import { createTestDatabase } from "@/server/testing/db";
 import { loadPoolConfig, type PoolConfig } from "@/server/pools/config";
 import { poolBook, poolInventory, poolState } from "@/server/pools/book";
+import { getPoolMarket } from "@/server/voting/pool";
 import { closePoolLiquidity, fundBalances, openPoolLiquidity, seedFund } from "@/server/pools/fund";
 import { maxLossMicros } from "@/server/pools/lmsr";
 import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement";
@@ -177,6 +178,30 @@ describe("Veyra pool liquidity (Prisma)", () => {
     // Both sides quote a real ladder.
     expect(yes!.asks.length).toBeGreaterThan(0);
     expect(yes!.bids.length).toBeGreaterThan(0);
+  });
+
+  it("is reachable through every lookup a client uses", async () => {
+    // Four separate places resolve a market by id, and each one has missed pools at
+    // some point: resolveMarket, the contract page, GET /api/markets/[id] and the
+    // book endpoint. They all funnel through getPoolMarket / poolBook, so assert
+    // both answer for a real pool.
+    await seedFund(prisma, 1_000n * USD, "seed-1");
+    await openPoolLiquidity(prisma, MARKET, null, CONFIG);
+
+    const market = await getPoolMarket(MARKET, prisma);
+    expect(market).not.toBeNull();
+    expect(market!.source).toBe("veyra");
+    expect(market!.seats.map((s) => s.side)).toEqual(["lands", "misses"]);
+
+    for (const outcome of ["YES", "NO"] as const) {
+      const book = await poolBook(prisma, MARKET, outcome, CONFIG);
+      expect(book!.asks.length).toBeGreaterThan(0);
+      expect(book!.source).toBe("synthetic");
+    }
+
+    // An unknown id resolves to nothing rather than inventing a market.
+    expect(await getPoolMarket("veyra-nope", prisma)).toBeNull();
+    expect(await poolBook(prisma, "veyra-nope", "YES", CONFIG)).toBeNull();
   });
 
   it("takes the fee from reputation's PnL and books the pool's mirror result", async () => {
