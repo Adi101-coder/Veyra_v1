@@ -10,7 +10,7 @@ references. Next.js App Router (TypeScript, Tailwind), Prisma + PostgreSQL, vite
 ## Layout
 
 - `src/app` — routes and API handlers (`src/app/api/**/route.ts`)
-- `src/components` — U
+- `src/components` — UI
 - `src/server` — betting engine, Polymarket client, execution, reputation, conviction,
   inventory reconciliation, chain settlement, background worker
 - `prisma/schema.prisma` — data model and migrations
