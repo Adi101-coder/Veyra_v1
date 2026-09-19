@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { Shell } from "@/components/Shell";
@@ -11,16 +11,38 @@ import { TrendingPositions } from "@/components/markets/TrendingPositions";
 import { SportSection } from "@/components/markets/SportSection";
 import { EsportsSection } from "@/components/markets/EsportsSection";
 import { cardClass, SampleBadge } from "@/components/markets/primitives";
+import { PoolsSection } from "@/components/markets/PoolsSection";
+import { showSampleSections } from "@/lib/sample-sections";
 import {
   channelMarketFilter,
   feedChannels,
   type FeedChannel,
 } from "@/lib/market-feed";
-import { categoryLabel, markets } from "@/lib/markets";
+import { categoryLabel, markets, type Market } from "@/lib/markets";
 
 export function MarketsView() {
   const [channel, setChannel] = useState<FeedChannel>("all");
   const [query, setQuery] = useState("");
+  const samples = showSampleSections();
+
+  // The live Polymarket feed. Previously this page rendered only the static sample
+  // catalog, so real markets were reachable from the dashboard but not from here.
+  const [live, setLive] = useState<Market[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/markets", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: { source?: string; markets?: Market[] } | null) => {
+        if (cancelled) return;
+        setLive(json?.source === "polymarket" && json.markets?.length ? json.markets : []);
+      })
+      .catch(() => {
+        if (!cancelled) setLive([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const catalog = useMemo(() => {
     if (channel === "all") return [];
@@ -73,16 +95,58 @@ export function MarketsView() {
         </div>
 
         <div className="flex flex-col gap-11">
-          {showHero ? <FeaturedEvent /> : null}
-          {showPacks ? <PacksRow /> : null}
-          {showBoards ? (
+          <PoolsSection />
+          {/* Sample-feed sections: hidden unless explicitly enabled (see sample-sections.ts). */}
+          {samples && showHero ? <FeaturedEvent /> : null}
+          {samples && showPacks ? <PacksRow /> : null}
+          {samples && showBoards ? (
             <>
               <Leaderboards />
               <TrendingPositions />
             </>
           ) : null}
-          {showSport ? <SportSection /> : null}
-          {showEsports ? <EsportsSection /> : null}
+          {samples && showSport ? <SportSection /> : null}
+          {samples && showEsports ? <EsportsSection /> : null}
+          {channel === "all" && live && live.length > 0 ? (
+            <section>
+              <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">
+                Live markets
+              </h2>
+              <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
+                {live
+                  .filter((market) =>
+                    query.trim() ? market.title.toLowerCase().includes(query.trim().toLowerCase()) : true,
+                  )
+                  .slice(0, 24)
+                  .map((market) => {
+                    const yes = market.seats.find((seat) => seat.side === "lands")?.chance ?? 50;
+                    return (
+                      <li key={market.id}>
+                        <Link
+                          href={`/contract/${encodeURIComponent(market.id)}`}
+                          className={`${cardClass} block px-5 py-5`}
+                        >
+                          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                            {categoryLabel(market.category)}
+                          </p>
+                          <p className="mt-2 line-clamp-2 min-h-[2.6em] text-[15px] leading-tight font-medium text-[#171717]">
+                            {market.title}
+                          </p>
+                          <div className="mt-3 flex items-center justify-between">
+                            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#8b887f]">
+                              Yes
+                            </span>
+                            <span className="text-[18px] font-semibold tabular-nums text-[#171717]">
+                              {Math.round(yes)}%
+                            </span>
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+              </ul>
+            </section>
+          ) : null}
           {showCatalog ? (
             <section>
               <h2 className="mb-4 flex items-center gap-2 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">

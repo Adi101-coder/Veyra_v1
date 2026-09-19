@@ -149,3 +149,111 @@ export async function getMarketConviction(marketId: string) {
   });
   return readJson<MarketConviction>(response);
 }
+
+// --- Daily voting -----------------------------------------------------------
+
+export type VotingProposal = {
+  id: string;
+  title: string;
+  category: string;
+  tag: string;
+  resolvesAt: string | null;
+  proposerWallet: string;
+  voteCount: number;
+  rank: number | null;
+  createdAt: string;
+};
+
+export type VotingRound = {
+  round: {
+    id: string;
+    status: string;
+    opensAt: string;
+    closesAt: string;
+    selectionCount: number;
+    votesPerWallet: number;
+  } | null;
+  proposals: VotingProposal[];
+  myVotes: string[];
+  votesRemaining: number | null;
+};
+
+export async function getVotingRound() {
+  const response = await fetch("/api/voting/round", { cache: "no-store", credentials: "same-origin" });
+  return readJson<VotingRound>(response);
+}
+
+export async function proposeQuestion(input: { title: string; category?: string; tag?: string; resolvesAt?: string }) {
+  const json = await authedWrite<{ proposal: { id: string } }>("/api/voting/proposals", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return json.proposal;
+}
+
+/** Voting twice for the same proposal is a no-op: `recorded` comes back false. */
+export async function castVote(proposalId: string) {
+  return authedWrite<{ recorded: boolean; votesUsed: number; votesRemaining: number }>("/api/voting/votes", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ proposalId }),
+  });
+}
+
+export type RoundHistory = {
+  round: { id: string; status: string; closesAt: string; finalizedAt: string | null; selectionCount: number };
+  results: { rank: number; proposalId: string; title: string; voteCount: number; selected: boolean; marketId: string | null }[];
+};
+
+export async function getRoundHistory(roundId: string) {
+  const response = await fetch(`/api/voting/rounds/${encodeURIComponent(roundId)}`, { cache: "no-store" });
+  return readJson<RoundHistory>(response);
+}
+
+export async function listRounds() {
+  const response = await fetch("/api/voting/rounds", { cache: "no-store" });
+  return readJson<{ rounds: { id: string; status: string; opensAt: string; closesAt: string; finalizedAt: string | null }[] }>(response);
+}
+
+// --- Treasury ---------------------------------------------------------------
+
+export type TreasuryBalance = { asset: string; balanceBase: string; decimals: number };
+
+export async function getTreasuryBalances() {
+  const response = await fetch("/api/treasury/balances", { cache: "no-store", credentials: "same-origin" });
+  return readJson<{ walletAddress: string; balances: TreasuryBalance[] }>(response);
+}
+
+export type TreasuryExposure = {
+  walletAddress: string;
+  positions: {
+    predictionId: string;
+    marketId: string;
+    outcome: string;
+    status: string;
+    sharesMicros: string;
+    notionalMicros: string;
+  }[];
+  totalNotionalMicros: string;
+};
+
+export async function getTreasuryExposure() {
+  const response = await fetch("/api/treasury/exposure", { cache: "no-store", credentials: "same-origin" });
+  return readJson<TreasuryExposure>(response);
+}
+
+export type PoolSummary = {
+  id: string;
+  title: string;
+  category: string;
+  tag: string;
+  funded: boolean;
+  yesPriceBps: number | null;
+  feeBps: number | null;
+};
+
+export async function listPools() {
+  const response = await fetch("/api/pools", { cache: "no-store" });
+  return readJson<{ pools: PoolSummary[] }>(response);
+}

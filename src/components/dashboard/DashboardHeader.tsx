@@ -9,7 +9,9 @@ import { Shell } from "@/components/Shell";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/markets", label: "Markets" },
+  { href: "/vote", label: "Vote" },
   { href: "/activity", label: "Activity" },
+  { href: "/balances", label: "Balances" },
   { href: "/reputation", label: "Reputation" },
   { href: "/write", label: "Write" },
 ] as const;
