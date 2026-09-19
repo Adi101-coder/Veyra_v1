@@ -11,51 +11,51 @@ datasource db {
 }
 
 model Market {
-  id            String   @id
-  title         String
-  category      String
-  tag           String
-  status        String
-  source        String
-  conditionId   String?
-  clobTokenYes  String?
-  clobTokenNo   String?
-  yesPriceBps   Int      @default(5000)
-  volumeUsd     Float    @default(0)
-  liquidityUsd  Float    @default(0)
-  resolvesAt    String?
-  imageUrl      String?
-  accepting     Boolean  @default(true)
-  resolvedOutcome String?
-  resolvedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  predictions   Prediction[]
+  id                  String               @id
+  title               String
+  category            String
+  tag                 String
+  status              String
+  source              String
+  conditionId         String?
+  clobTokenYes        String?
+  clobTokenNo         String?
+  yesPriceBps         Int                  @default(5000)
+  volumeUsd           Float                @default(0)
+  liquidityUsd        Float                @default(0)
+  resolvesAt          String?
+  imageUrl            String?
+  accepting           Boolean              @default(true)
+  resolvedOutcome     String?
+  resolvedAt          DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  predictions         Prediction[]
   convictionSnapshots ConvictionSnapshot[]
 }
 
 model Prediction {
-  id               String    @id @default(cuid())
-  walletAddress    String
-  marketId         String
-  market           Market    @relation(fields: [marketId], references: [id])
-  outcome          String
-  confidenceBps    Int
-  stakeMicros      BigInt
-  marketPriceBps   Int
-  engineVersion    String
-  engineInputJson  String
-  engineOutputJson String
-  idempotencyKey   String?
-  status           String
-  errorCode        String?
-  errorMessage     String?
-  createdAt        DateTime  @default(now())
-  lockVersion      Int       @default(0)
-  position         Position?
+  id                String              @id @default(cuid())
+  walletAddress     String
+  marketId          String
+  market            Market              @relation(fields: [marketId], references: [id])
+  outcome           String
+  confidenceBps     Int
+  stakeMicros       BigInt
+  marketPriceBps    Int
+  engineVersion     String
+  engineInputJson   String
+  engineOutputJson  String
+  idempotencyKey    String?
+  status            String
+  errorCode         String?
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+  lockVersion       Int                 @default(0)
+  position          Position?
   confidenceHistory ConfidenceHistory[]
-  score            PredictionScore?
-  chainSettlements ChainSettlement[]
+  score             PredictionScore?
+  chainSettlements  ChainSettlement[]
 
   @@unique([walletAddress, idempotencyKey])
   @@index([marketId, createdAt])
@@ -88,10 +88,10 @@ model Position {
 }
 
 model Execution {
-  id                String    @id @default(cuid())
+  id                String              @id @default(cuid())
   positionId        String
-  position          Position  @relation(fields: [positionId], references: [id])
-  venue             String    @default("polymarket")
+  position          Position            @relation(fields: [positionId], references: [id])
+  venue             String              @default("polymarket")
   mode              String
   status            String
   tokenId           String
@@ -105,8 +105,8 @@ model Execution {
   responseJson      String?
   errorMessage      String?
   submittedAt       DateTime?
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
   fills             Fill[]
   intent            ExecutionIntent?
   confidenceHistory ConfidenceHistory[]
@@ -133,32 +133,32 @@ model Fill {
 }
 
 model ConfidenceHistory {
-  id                      String    @id @default(cuid())
-  predictionId            String
-  prediction              Prediction @relation(fields: [predictionId], references: [id])
-  previousConfidenceBps   Int
-  newConfidenceBps        Int
-  previousSharesMicros    BigInt
-  previousNotionalMicros  BigInt
-  previousAvgPriceBps     Int
-  previousPositionJson    String
-  desiredSharesMicros     BigInt
-  desiredNotionalMicros   BigInt
-  desiredAvgPriceBps      Int
-  desiredPositionJson     String
-  deltaSharesMicros       BigInt
-  side                    String
-  marketPriceBps          Int
-  bookHash                String?
-  status                  String
-  idempotencyKey          String?
-  executionId             String?
-  execution               Execution? @relation(fields: [executionId], references: [id])
-  previousPositionStatus  String
-  errorCode               String?
-  errorMessage            String?
-  createdAt               DateTime  @default(now())
-  reconciledAt            DateTime?
+  id                     String     @id @default(cuid())
+  predictionId           String
+  prediction             Prediction @relation(fields: [predictionId], references: [id])
+  previousConfidenceBps  Int
+  newConfidenceBps       Int
+  previousSharesMicros   BigInt
+  previousNotionalMicros BigInt
+  previousAvgPriceBps    Int
+  previousPositionJson   String
+  desiredSharesMicros    BigInt
+  desiredNotionalMicros  BigInt
+  desiredAvgPriceBps     Int
+  desiredPositionJson    String
+  deltaSharesMicros      BigInt
+  side                   String
+  marketPriceBps         Int
+  bookHash               String?
+  status                 String
+  idempotencyKey         String?
+  executionId            String?
+  execution              Execution? @relation(fields: [executionId], references: [id])
+  previousPositionStatus String
+  errorCode              String?
+  errorMessage           String?
+  createdAt              DateTime   @default(now())
+  reconciledAt           DateTime?
 
   @@unique([predictionId, idempotencyKey])
   @@index([predictionId, createdAt])
@@ -274,36 +274,36 @@ model ExecutionSlice {
 }
 
 model UserReputation {
-  walletAddress         String   @id
-  totalPredictions      Int      @default(0)
-  resolvedPredictions   Int      @default(0)
-  correctPredictions    Int      @default(0)
-  confidenceSumBps      BigInt   @default(0)
-  brierSumMicros        BigInt   @default(0)
-  notionalSumMicros     BigInt   @default(0)
-  pnlSumMicros          BigInt   @default(0)
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  categories            UserReputationCategory[]
-  bins                  CalibrationBin[]
-  scores                PredictionScore[]
+  walletAddress       String                   @id
+  totalPredictions    Int                      @default(0)
+  resolvedPredictions Int                      @default(0)
+  correctPredictions  Int                      @default(0)
+  confidenceSumBps    BigInt                   @default(0)
+  brierSumMicros      BigInt                   @default(0)
+  notionalSumMicros   BigInt                   @default(0)
+  pnlSumMicros        BigInt                   @default(0)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  categories          UserReputationCategory[]
+  bins                CalibrationBin[]
+  scores              PredictionScore[]
 
   @@map("user_reputation")
 }
 
 model UserReputationCategory {
-  id                    String   @id @default(cuid())
-  walletAddress         String
-  reputation            UserReputation @relation(fields: [walletAddress], references: [walletAddress])
-  category              String
-  totalPredictions      Int      @default(0)
-  resolvedPredictions   Int      @default(0)
-  correctPredictions    Int      @default(0)
-  confidenceSumBps      BigInt   @default(0)
-  brierSumMicros        BigInt   @default(0)
-  notionalSumMicros     BigInt   @default(0)
-  pnlSumMicros          BigInt   @default(0)
-  updatedAt             DateTime @updatedAt
+  id                  String         @id @default(cuid())
+  walletAddress       String
+  reputation          UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  category            String
+  totalPredictions    Int            @default(0)
+  resolvedPredictions Int            @default(0)
+  correctPredictions  Int            @default(0)
+  confidenceSumBps    BigInt         @default(0)
+  brierSumMicros      BigInt         @default(0)
+  notionalSumMicros   BigInt         @default(0)
+  pnlSumMicros        BigInt         @default(0)
+  updatedAt           DateTime       @updatedAt
 
   @@unique([walletAddress, category])
   @@index([walletAddress])
@@ -311,14 +311,14 @@ model UserReputationCategory {
 }
 
 model CalibrationBin {
-  id                 String   @id @default(cuid())
-  walletAddress      String
-  reputation         UserReputation @relation(fields: [walletAddress], references: [walletAddress])
-  binIndex           Int
-  sampleCount        Int      @default(0)
-  sumConfidenceBps   BigInt   @default(0)
-  correctCount       Int      @default(0)
-  updatedAt          DateTime @updatedAt
+  id               String         @id @default(cuid())
+  walletAddress    String
+  reputation       UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  binIndex         Int
+  sampleCount      Int            @default(0)
+  sumConfidenceBps BigInt         @default(0)
+  correctCount     Int            @default(0)
+  updatedAt        DateTime       @updatedAt
 
   @@unique([walletAddress, binIndex])
   @@index([walletAddress])
@@ -326,24 +326,24 @@ model CalibrationBin {
 }
 
 model PredictionScore {
-  id                String    @id @default(cuid())
-  predictionId      String    @unique
-  prediction        Prediction @relation(fields: [predictionId], references: [id])
-  walletAddress     String
-  reputation        UserReputation @relation(fields: [walletAddress], references: [walletAddress])
-  marketId          String
-  category          String
-  predictedOutcome  String
-  resolvedOutcome   String
-  confidenceBps     Int
-  impliedYesBps     Int
-  correct           Boolean
-  brierMicros       BigInt
-  notionalMicros    BigInt
-  payoutMicros      BigInt
-  pnlMicros         BigInt
-  resolvedAt        DateTime
-  createdAt         DateTime  @default(now())
+  id               String         @id @default(cuid())
+  predictionId     String         @unique
+  prediction       Prediction     @relation(fields: [predictionId], references: [id])
+  walletAddress    String
+  reputation       UserReputation @relation(fields: [walletAddress], references: [walletAddress])
+  marketId         String
+  category         String
+  predictedOutcome String
+  resolvedOutcome  String
+  confidenceBps    Int
+  impliedYesBps    Int
+  correct          Boolean
+  brierMicros      BigInt
+  notionalMicros   BigInt
+  payoutMicros     BigInt
+  pnlMicros        BigInt
+  resolvedAt       DateTime
+  createdAt        DateTime       @default(now())
 
   @@index([walletAddress, resolvedAt])
   @@index([marketId])
@@ -351,16 +351,16 @@ model PredictionScore {
 }
 
 model ReputationJob {
-  id               String    @id @default(cuid())
-  marketId         String    @unique
-  resolvedOutcome  String
-  status           String
-  errorMessage     String?
-  createdAt        DateTime  @default(now())
-  claimedAt        DateTime?
-  attempts         Int       @default(0)
-  availableAt      DateTime?
-  processedAt      DateTime?
+  id              String    @id @default(cuid())
+  marketId        String    @unique
+  resolvedOutcome String
+  status          String
+  errorMessage    String?
+  createdAt       DateTime  @default(now())
+  claimedAt       DateTime?
+  attempts        Int       @default(0)
+  availableAt     DateTime?
+  processedAt     DateTime?
 
   @@index([status, createdAt])
   @@map("reputation_jobs")
@@ -376,21 +376,21 @@ model ReputationOpen {
 }
 
 model ConvictionSnapshot {
-  id                             String   @id @default(cuid())
-  marketId                       String
-  market                         Market   @relation(fields: [marketId], references: [id])
-  engineVersion                  String
-  participants                   Int
-  capitalMicros                  BigInt
-  averageConfidenceBps           Int?
-  capitalWeightedConfidenceBps   Int?
-  convictionBps                  Int?
-  polymarketProbabilityBps       Int?
-  divergenceBps                  Int?
-  distributionJson               String
-  inputsHash                     String?
-  bucketStart                    DateTime?
-  createdAt                      DateTime @default(now())
+  id                           String    @id @default(cuid())
+  marketId                     String
+  market                       Market    @relation(fields: [marketId], references: [id])
+  engineVersion                String
+  participants                 Int
+  capitalMicros                BigInt
+  averageConfidenceBps         Int?
+  capitalWeightedConfidenceBps Int?
+  convictionBps                Int?
+  polymarketProbabilityBps     Int?
+  divergenceBps                Int?
+  distributionJson             String
+  inputsHash                   String?
+  bucketStart                  DateTime?
+  createdAt                    DateTime  @default(now())
 
   @@unique([marketId, bucketStart])
   @@index([marketId, createdAt])
@@ -412,37 +412,37 @@ model AuthNonce {
 /// The attestation transaction carries an ABI-encoded summary of the scored,
 /// fill-backed prediction. A reference is only "confirmed" from a mined receipt.
 model ChainSettlement {
-  id                  String     @id @default(cuid())
-  predictionId        String
-  prediction          Prediction @relation(fields: [predictionId], references: [id])
-  chainId             Int
-  network             String
-  kind                String
-  status              String
-  payloadHash         String
-  calldata            String
-  fromAddress         String?
-  toAddress           String?
-  nonce               Int?
-  txHash              String?    @unique
-  rawTx               String?
-  gasLimit            String?
-  maxFeePerGasWei     String?
-  blockNumber         BigInt?
-  blockHash           String?
-  gasUsed             BigInt?
+  id                   String     @id @default(cuid())
+  predictionId         String
+  prediction           Prediction @relation(fields: [predictionId], references: [id])
+  chainId              Int
+  network              String
+  kind                 String
+  status               String
+  payloadHash          String
+  calldata             String
+  fromAddress          String?
+  toAddress            String?
+  nonce                Int?
+  txHash               String?    @unique
+  rawTx                String?
+  gasLimit             String?
+  maxFeePerGasWei      String?
+  blockNumber          BigInt?
+  blockHash            String?
+  gasUsed              BigInt?
   effectiveGasPriceWei String?
-  confirmations       Int        @default(0)
-  attempts            Int        @default(0)
-  lastErrorKind       String?
-  lastError           String?
-  nextAttemptAt       DateTime?
-  claimToken          String?
-  claimedAt           DateTime?
-  submittedAt         DateTime?
-  confirmedAt         DateTime?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  confirmations        Int        @default(0)
+  attempts             Int        @default(0)
+  lastErrorKind        String?
+  lastError            String?
+  nextAttemptAt        DateTime?
+  claimToken           String?
+  claimedAt            DateTime?
+  submittedAt          DateTime?
+  confirmedAt          DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
 
   @@unique([predictionId, chainId, kind])
   @@index([status, nextAttemptAt])
@@ -495,4 +495,143 @@ model InventoryFinding {
   @@unique([runId, fingerprint])
   @@index([runId, severity])
   @@map("inventory_findings")
+}
+
+/// One 24h voting round. A partial unique index (see the migration) allows at most
+/// one OPEN round at a time, so concurrent workers cannot open a second one.
+model VotingRound {
+  id             String              @id @default(cuid())
+  status         String              @default("OPEN")
+  opensAt        DateTime            @default(now())
+  closesAt       DateTime
+  /// How many proposals become pools when the round finalizes.
+  selectionCount Int                 @default(5)
+  /// Per-wallet vote budget, frozen on the round so changing config cannot
+  /// retroactively invalidate votes already cast.
+  votesPerWallet Int                 @default(3)
+  closedAt       DateTime?
+  finalizedAt    DateTime?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  proposals      VoteProposal[]
+  votes          Vote[]
+  results        VotingRoundResult[]
+
+  @@index([status, closesAt])
+  @@map("voting_rounds")
+}
+
+model VoteProposal {
+  id              String              @id @default(cuid())
+  roundId         String
+  round           VotingRound         @relation(fields: [roundId], references: [id])
+  title           String
+  /// Lowercased, whitespace-collapsed title. Unique per round: the same question
+  /// cannot be proposed twice and split the vote.
+  normalizedTitle String
+  category        String
+  tag             String
+  resolvesAt      String?
+  proposerWallet  String
+  /// Set when the proposal wins and its pool is created. Never reassigned.
+  marketId        String?
+  createdAt       DateTime            @default(now())
+  votes           Vote[]
+  results         VotingRoundResult[]
+
+  @@unique([roundId, normalizedTitle])
+  @@index([roundId, createdAt])
+  @@map("vote_proposals")
+}
+
+model Vote {
+  id            String       @id @default(cuid())
+  roundId       String
+  round         VotingRound  @relation(fields: [roundId], references: [id])
+  proposalId    String
+  proposal      VoteProposal @relation(fields: [proposalId], references: [id])
+  walletAddress String
+  createdAt     DateTime     @default(now())
+
+  /// One vote per wallet per proposal. The per-round budget is enforced in a
+  /// transaction that locks the round row.
+  @@unique([roundId, walletAddress, proposalId])
+  @@index([proposalId])
+  @@index([roundId, walletAddress])
+  @@map("votes")
+}
+
+/// The frozen tally, written once when the round closes. Ranking is never
+/// recomputed from votes afterwards, so the selection stays auditable.
+model VotingRoundResult {
+  id         String       @id @default(cuid())
+  roundId    String
+  round      VotingRound  @relation(fields: [roundId], references: [id])
+  proposalId String
+  proposal   VoteProposal @relation(fields: [proposalId], references: [id])
+  rank       Int
+  voteCount  Int
+  selected   Boolean
+  createdAt  DateTime     @default(now())
+
+  @@unique([roundId, proposalId])
+  @@unique([roundId, rank])
+  @@index([roundId, rank])
+  @@map("voting_round_results")
+}
+
+/// An observed on-chain deposit into the treasury wallet. Unique per
+/// (chainId, txHash, logIndex) so replaying the same transfer credits once.
+model TreasuryDeposit {
+  id            String   @id @default(cuid())
+  walletAddress String
+  asset         String
+  chainId       Int
+  txHash        String
+  logIndex      Int
+  /// Amount in the asset's own base units; `decimals` records the scale so the
+  /// value round-trips exactly without ever becoming a float.
+  amountBase    BigInt
+  decimals      Int
+  status        String   @default("CREDITED")
+  observedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([chainId, txHash, logIndex])
+  @@index([walletAddress, asset])
+  @@map("treasury_deposits")
+}
+
+/// Append-only ledger. Balances are derived from these rows, never edited in place.
+model TreasuryLedgerEntry {
+  id            String   @id @default(cuid())
+  walletAddress String
+  asset         String
+  /// Signed change in base units: positive credits the user, negative debits.
+  deltaBase     BigInt
+  decimals      Int
+  kind          String
+  /// What caused this entry (e.g. a TreasuryDeposit id), for audit.
+  refType       String
+  refId         String
+  createdAt     DateTime @default(now())
+
+  /// One entry per cause: re-running a credit is a no-op, not a double credit.
+  @@unique([refType, refId, kind])
+  @@index([walletAddress, asset, createdAt])
+  @@map("treasury_ledger_entries")
+}
+
+/// Running balance per (wallet, asset), maintained in the same transaction as the
+/// ledger entry that changes it.
+model TreasuryBalance {
+  id            String   @id @default(cuid())
+  walletAddress String
+  asset         String
+  balanceBase   BigInt   @default(0)
+  decimals      Int
+  updatedAt     DateTime @updatedAt
+
+  @@unique([walletAddress, asset])
+  @@map("treasury_balances")
 }

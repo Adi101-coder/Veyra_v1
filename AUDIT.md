@@ -315,3 +315,77 @@ transaction pooler can fail at runtime with `prepared statement "s0" already exi
 every local test passes; if that appears in the function logs, `DATABASE_URL` needs
 `?pgbouncer=true`. The transaction and `FOR UPDATE` semantics themselves are unaffected by
 transaction pooling.
+
+## Daily voting and two-wallet accounting (2026-09-19)
+
+### Daily voting
+
+One round every 24 hours: `OPEN -> CLOSED -> FINALIZED`. Users propose questions and
+vote; when the round closes the tally is frozen and the top proposals become
+Veyra-native pools.
+
+- **One open round, guaranteed.** A partial unique index
+  (`voting_round_single_open ... WHERE "status" = 'OPEN'`) means concurrent workers
+  cannot open a second round; the loser sees P2002 and reads back the winner's row.
+  No lease needed.
+- **The vote budget is enforced under a row lock.** A per-wallet budget is a count
+  check, which races by nature, so `castVote` locks the round row
+  (`SELECT ... FOR UPDATE`) before counting. Without it two concurrent votes both
+  read `used = N-1` and both commit; the test proves this.
+- **Duplicate votes are a no-op, not an error.** Unique
+  `(roundId, walletAddress, proposalId)`, so a retried request never double-counts.
+  Duplicate proposals are blocked by unique `(roundId, normalizedTitle)`, so the same
+  question cannot split its own vote.
+- **Freezing is a row, not a query.** `voting_round_results` is written once at close
+  and never recomputed. Votes arriving afterwards (by any path) cannot change the
+  ranking or the selection.
+- **Ties are deterministic and auditable:** votes desc, then earlier submission, then
+  id. The resolved rank is stored, so the tiebreak can be checked after the fact.
+- **Close and finalize are separate, re-drivable steps.** A worker that crashes after
+  the CLOSED claim leaves a round the next tick finishes; a single combined step
+  would strand it forever. Pool ids are derived from the proposal id
+  (`veyra-<proposalId>`), so re-running finalization upserts the same rows.
+- Pools are created with `source: "veyra"` and no CLOB tokens, so they never enter
+  the live Polymarket execution path (`resolveBook` in `betting/service.ts`).
+
+**Tests:** 12 scenarios — concurrent round opening, concurrent votes against the
+budget, concurrent votes from many wallets, duplicate votes and proposals, closing,
+frozen tally vs late votes, four-way tie ordering, duplicate finalization, a round
+left CLOSED by a crashed worker, five workers ticking together, an unvoted round, and
+history retention. Mutation-checked: removing the round lock, the atomic close claim,
+or the freeze each fails a test.
+
+### Two-wallet architecture
+
+1. **Deposit/treasury wallet** — `VEYRA_TREASURY_ADDRESS`, address only. There is
+   deliberately **no treasury private key env var**, and `validateEnvironment`
+   errors if one is set. The server therefore cannot move deposited funds at all,
+   which is what makes "never use this wallet for Polymarket execution" structural
+   rather than a convention. Ownership lives in an append-only ledger
+   (`treasury_ledger_entries`) with a derived balance per (wallet, asset), plus a
+   CHECK that a custodial balance can never go negative.
+2. **Polymarket execution wallet** — the existing omnibus signer, funded separately.
+   Each user's share of it is the internal position/fill ledger, which changes only
+   from recorded venue fills.
+
+Boot fails if the two addresses are equal. Deposits are idempotent per
+`(chainId, txHash, logIndex)`, so a watcher replaying a log credits exactly once, and
+amounts are BigInt base units with the asset's `decimals` recorded — never floats.
+The operator report exposes addresses and per-ledger totals only, and asserts in test
+that no key material can appear in it.
+
+**Tests:** 9 scenarios plus 5 env-validation tests. Mutation-checked: removing the
+separation gate or the deposit idempotency each fails a test.
+
+**Not built (deliberately):** no smart contracts, and no on-chain deposit watcher —
+`POST /api/operator/treasury/deposits` is the trusted ingress, so crediting is driven
+by an operator/watcher that has already confirmed the transfer, never by the
+depositing user. Withdrawals are not implemented; the ledger supports the entry kind
+but no endpoint moves funds out.
+
+### New endpoints
+- `GET /api/voting/round`, `POST /api/voting/proposals`, `POST /api/voting/votes`
+- `GET /api/voting/rounds`, `GET /api/voting/rounds/[id]` (frozen audit trail)
+- `GET /api/treasury/balances`, `GET /api/treasury/exposure` (signed-in wallet)
+- `POST /api/operator/treasury/deposits`, `GET /api/operator/treasury/report`
+

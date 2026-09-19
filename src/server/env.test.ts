@@ -72,6 +72,59 @@ describe("production environment preflight", () => {
   });
 });
 
+describe("two-wallet separation", () => {
+  const base = {
+    NODE_ENV: "production",
+    DATABASE_URL: "postgresql://veyra@db/veyra",
+    DIRECT_URL: "postgresql://veyra@db/veyra",
+    VEYRA_SESSION_SECRET: "s".repeat(40),
+    VEYRA_OPERATOR_TOKEN: "o".repeat(30),
+    POLYMARKET_EXECUTION_MODE: "paper",
+  };
+
+  it("refuses to boot when deposits and execution share one address", () => {
+    const shared = "0x" + "ab".repeat(20);
+    const report = validateEnvironment({
+      ...base,
+      VEYRA_TREASURY_ADDRESS: shared,
+      POLYMARKET_FUNDER_ADDRESS: shared.toUpperCase(),
+    });
+    expect(report.errors.join("\n")).toMatch(/must be different wallets/);
+  });
+
+  it("accepts two distinct wallets", () => {
+    const report = validateEnvironment({
+      ...base,
+      VEYRA_TREASURY_ADDRESS: "0x" + "ab".repeat(20),
+      POLYMARKET_FUNDER_ADDRESS: "0x" + "cd".repeat(20),
+    });
+    expect(report.errors).toEqual([]);
+    expect(report.configured.treasuryWallet).toBe(true);
+  });
+
+  it("refuses a treasury private key: the treasury wallet is watch-only", () => {
+    const report = validateEnvironment({
+      ...base,
+      VEYRA_TREASURY_ADDRESS: "0x" + "ab".repeat(20),
+      VEYRA_TREASURY_PRIVATE_KEY: "0x" + "11".repeat(32),
+    });
+    expect(report.errors.join("\n")).toMatch(/watch-only/);
+  });
+
+  it("requires a treasury address once deposit assets are listed", () => {
+    const report = validateEnvironment({
+      ...base,
+      VEYRA_TREASURY_ASSETS: "NVDA:0x3333333333333333333333333333333333333333:137:18",
+    });
+    expect(report.errors.join("\n")).toMatch(/VEYRA_TREASURY_ADDRESS is required/);
+  });
+
+  it("rejects a malformed treasury address", () => {
+    const report = validateEnvironment({ ...base, VEYRA_TREASURY_ADDRESS: "0xnope" });
+    expect(report.errors.join("\n")).toMatch(/valid EVM address/);
+  });
+});
+
 describe("serverless deployments", () => {
   it("rejects an in-process worker on Vercel and asks for a cron secret", () => {
     const report = validateEnvironment({

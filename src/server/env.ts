@@ -113,6 +113,29 @@ export function validateEnvironment(env: Env): EnvReport {
     errors.push(error instanceof ChainConfigError ? error.message : "Invalid Robinhood Chain configuration.");
   }
 
+  // Two-wallet separation. The treasury wallet is watch-only by design: there is
+  // no treasury private key env var, so the execution path cannot spend user
+  // deposits. The one thing that can break the separation is pointing both roles
+  // at the same address.
+  const treasury = (env.VEYRA_TREASURY_ADDRESS ?? "").trim().toLowerCase();
+  if (treasury && !EVM_ADDRESS.test(treasury)) {
+    errors.push("VEYRA_TREASURY_ADDRESS must be a valid EVM address.");
+  }
+  if (set(env.VEYRA_TREASURY_PRIVATE_KEY)) {
+    errors.push(
+      "VEYRA_TREASURY_PRIVATE_KEY must not be set: the treasury wallet is watch-only so deposits can never be spent by the server.",
+    );
+  }
+  const funder = (env.POLYMARKET_FUNDER_ADDRESS ?? "").trim().toLowerCase();
+  if (treasury && funder && treasury === funder) {
+    errors.push(
+      "VEYRA_TREASURY_ADDRESS and POLYMARKET_FUNDER_ADDRESS must be different wallets: user deposits and Polymarket execution funds must never share an address.",
+    );
+  }
+  if (set(env.VEYRA_TREASURY_ASSETS) && !treasury) {
+    errors.push("VEYRA_TREASURY_ADDRESS is required when VEYRA_TREASURY_ASSETS lists deposit assets.");
+  }
+
   // Inventory reconciliation baseline must be complete or absent
   if (set(env.VEYRA_OMNIBUS_USDC_BASELINE_MICROS) !== set(env.VEYRA_OMNIBUS_USDC_BASELINE_AT)) {
     errors.push("Set both VEYRA_OMNIBUS_USDC_BASELINE_MICROS and VEYRA_OMNIBUS_USDC_BASELINE_AT, or neither.");
@@ -126,6 +149,8 @@ export function validateEnvironment(env: Env): EnvReport {
     warnings,
     configured: {
       database: set(env.DATABASE_URL),
+      treasuryWallet: set(env.VEYRA_TREASURY_ADDRESS),
+      treasuryAssets: set(env.VEYRA_TREASURY_ASSETS),
       directDatabase: set(env.DIRECT_URL),
       cronSecret: set(env.CRON_SECRET),
       sessionSecret: set(env.VEYRA_SESSION_SECRET),

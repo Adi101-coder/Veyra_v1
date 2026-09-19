@@ -12,6 +12,7 @@ import {
 import { runRobinhoodSettlementTick } from "@/server/chain";
 import { getPrisma } from "@/server/db";
 import { runScheduledInventoryReconciliation } from "@/server/inventory/service";
+import { runVotingTick } from "@/server/voting/lifecycle";
 
 /**
  * Background jobs, in dependency order. Each step is idempotent and safe to run
@@ -20,6 +21,7 @@ import { runScheduledInventoryReconciliation } from "@/server/inventory/service"
  *   2. reconcile  – re-read venue orders still SUBMITTED and record real fills
  *   3. resolutions – enqueue scoring for markets Gamma reports as resolved
  *   4. reputation – score resolved markets exactly once
+ *   5. voting     – advance the 24h round lifecycle (OPEN -> CLOSED -> FINALIZED)
  * A failing step is logged and does not block the others.
  */
 const STEPS = {
@@ -36,6 +38,11 @@ const STEPS = {
     const result = await runScheduledInventoryReconciliation(getPrisma());
     if (result.status === "failed") throw new Error(result.error ?? "inventory reconciliation failed");
     return result.status === "completed" ? 1 : 0;
+  },
+  // Daily voting: close due rounds, finalize closed ones into pools, open the next.
+  voting: async () => {
+    const result = await runVotingTick(getPrisma());
+    return result.closed + result.finalized + result.opened;
   },
   // Runs after reputation so newly scored predictions get settlement references.
   settlement: async () => {
