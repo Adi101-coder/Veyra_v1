@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
   ],
   agentRules: false,
   images: {
+    // Next's optimizer fetches remotes server-side. On NAT64 networks (Jio and
+    // similar) S3 resolves to 64:ff9b::… which Next treats as a private IP and
+    // refuses. Serve the original URL instead of proxying it.
+    unoptimized: true,
     remotePatterns: [
       {
         protocol: "https",

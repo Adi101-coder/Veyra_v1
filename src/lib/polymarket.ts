@@ -5,8 +5,10 @@ import {
   type CategoryId,
   type Market,
 } from "@/lib/markets";
+import { peekPolymarketCache, polymarketJson } from "@/lib/polymarket-http";
 
-const GAMMA = "https://gamma-api.polymarket.com";
+const GAMMA = process.env.POLYMARKET_GAMMA_URL ?? "https://gamma-api.polymarket.com";
+const DATA = process.env.POLYMARKET_DATA_URL ?? "https://data-api.polymarket.com";
 
 type GammaTag = { label?: string; slug?: string };
 
@@ -74,13 +76,14 @@ function num(value: unknown) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function mapCategory(tags: string[]): Exclude<CategoryId, "all"> {
-  const blob = tags.join(" ").toLowerCase();
-  if (/\b(sport|soccer|nba|nfl|mlb|nhl|ufc|tennis|football|laliga|premier|mma)\b/.test(blob)) {
+function mapCategory(tags: string[], title = ""): Exclude<CategoryId, "all"> {
+  const blob = `${tags.join(" ")} ${title}`.toLowerCase();
+  if (/\b(lol|lcs|dota|cs2|valorant|esport|league of legends)\b/.test(blob)) return "sports";
+  if (/\b(sport|soccer|nba|nfl|mlb|nhl|ufc|tennis|football|laliga|premier|mma|ncaa|vs\.|versus)\b/.test(blob)) {
     return "sports";
   }
   if (/\b(crypto|bitcoin|ethereum|btc|eth|solana|defi)\b/.test(blob)) return "crypto";
-  if (/\b(politic|election|president|geopolit|congress|trump|fed)\b/.test(blob)) {
+  if (/\b(politic|election|president|geopolit|congress|trump|fed|parliament)\b/.test(blob)) {
     return "politics";
   }
   if (/\b(entertain|movie|oscar|music|celebrity|pop culture)\b/.test(blob)) {
@@ -125,24 +128,32 @@ function yesPrice(market: GammaMarket) {
   return Math.max(1, Math.min(99, Math.round((price || 0.5) * 100)));
 }
 
-function pickMarket(event: GammaEvent) {
-  const markets = (event.markets ?? []).filter(
-    (item) => item.closed !== true && item.active !== false,
+function isBinary(market: GammaMarket) {
+  const labels = parseList(market.outcomes).map((label) => label.toLowerCase());
+  return labels.includes("yes") && labels.includes("no");
+}
+
+function liveCandidates(event: GammaEvent) {
+  const open = (event.markets ?? []).filter((item) => item.closed !== true && item.active !== false);
+  const binary = open.filter(isBinary);
+  return [...(binary.length ? binary : open)].sort(
+    (a, b) => num(b.volume24hr ?? b.volumeNum) - num(a.volume24hr ?? a.volumeNum),
   );
-  if (!markets.length) return null;
-  const binary = markets.filter((item) => {
-    const labels = parseList(item.outcomes).map((label) => label.toLowerCase());
-    return labels.includes("yes") && labels.includes("no");
-  });
-  const pool = binary.length ? binary : markets;
-  return [...pool].sort((a, b) => num(b.volume24hr ?? b.volumeNum) - num(a.volume24hr ?? a.volumeNum))[0];
+}
+
+function pickMarket(event: GammaEvent) {
+  return liveCandidates(event)[0] ?? null;
 }
 
 function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
   const slug = raw.slug || event.slug;
   if (!slug) return null;
   const tags = (event.tags ?? []).map((tag) => tag.label || tag.slug || "").filter(Boolean);
-  const category = mapCategory(tags);
+  const title =
+    event.markets?.length === 1
+      ? event.title || raw.question || slug
+      : raw.question || event.title || slug;
+  const category = mapCategory(tags, title);
   const yes = yesPrice(raw);
   const volume = num(raw.volumeNum ?? raw.volume ?? event.volume);
   const volume24 = num(raw.volume24hr ?? event.volume24hr);
@@ -163,11 +174,6 @@ function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
             : accepting
               ? "open"
               : "trending";
-
-  const title =
-    event.markets?.length === 1
-      ? event.title || raw.question || slug
-      : raw.question || event.title || slug;
 
   const seed = hashSeed(slug);
   return {
@@ -214,36 +220,51 @@ function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
   };
 }
 
-async function gamma<T>(path: string): Promise<T> {
-  const response = await fetch(`${GAMMA}${path}`, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "VEYRAMarkets/0.1 (read-only market discovery)",
-    },
-    next: { revalidate: 45 },
-  });
-  if (!response.ok) {
-    throw new Error(`Polymarket ${response.status}`);
-  }
-  return (await response.json()) as T;
+async function gamma<T>(path: string, ttlMs = 30_000): Promise<T> {
+  return (await polymarketJson(`${GAMMA}${path}`, ttlMs)) as T;
 }
 
-export async function fetchPolymarketMarkets(limit = 36): Promise<Market[]> {
-  const events = await gamma<GammaEvent[]>(
-    `/events?active=true&closed=false&limit=${Math.min(60, limit + 12)}&order=volume24hr&ascending=false`,
-  );
+function mapEvents(events: GammaEvent[], limit: number) {
   const mapped: Market[] = [];
   const seen = new Set<string>();
   for (const event of events) {
-    const raw = pickMarket(event);
-    if (!raw) continue;
-    const market = toMarket(event, raw);
-    if (!market || seen.has(market.id)) continue;
-    seen.add(market.id);
-    mapped.push(market);
-    if (mapped.length >= limit) break;
+    for (const raw of liveCandidates(event)) {
+      const market = toMarket(event, raw);
+      if (!market || seen.has(market.id)) continue;
+      seen.add(market.id);
+      mapped.push(market);
+      if (mapped.length >= limit) return mapped;
+    }
   }
   return mapped;
+}
+
+export async function fetchPolymarketMarkets(limit = 36): Promise<Market[]> {
+  const page = Math.min(80, Math.max(limit, 12));
+  const path = `/markets?active=true&closed=false&limit=${page}&order=volume24hr&ascending=false`;
+  try {
+    const rows = await gamma<GammaMarket[]>(path);
+    const events = rows.map((raw) => raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] });
+    const paired: GammaEvent[] = events.map((event, index) => ({
+      ...event,
+      markets: event.markets?.length ? event.markets : [rows[index]!],
+    }));
+    const mapped = mapEvents(paired, limit);
+    if (mapped.length) return mapped;
+    return mapEvents(
+      rows.map((raw) => ({ slug: raw.slug, title: raw.question, markets: [raw] })),
+      limit,
+    );
+  } catch (error) {
+    const stale = peekPolymarketCache<GammaMarket[]>(`${GAMMA}${path}`);
+    if (stale?.length) {
+      return mapEvents(
+        stale.map((raw) => raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] }),
+        limit,
+      );
+    }
+    throw error;
+  }
 }
 
 export async function fetchPolymarketMarket(id: string): Promise<Market | null> {
@@ -279,27 +300,6 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
   }
 }
 
-const DATA = "https://data-api.polymarket.com";
-
-type DataTrade = {
-  proxyWallet?: string;
-  side?: string;
-  asset?: string;
-  conditionId?: string;
-  size?: number | string;
-  price?: number | string;
-  timestamp?: number | string;
-  title?: string;
-  slug?: string;
-  icon?: string;
-  outcome?: string;
-  name?: string;
-  pseudonym?: string;
-  profileImage?: string;
-  profileImageOptimized?: string;
-  transactionHash?: string;
-};
-
 export type LiveTrade = {
   id: string;
   marketId: string;
@@ -315,11 +315,64 @@ export type LiveTrade = {
   up: boolean;
 };
 
+export type VenueTraderPosition = {
+  id: string;
+  marketId: string;
+  title: string;
+  outcome: string;
+  shares: string;
+  avgPrice: string;
+  currentPrice: string;
+  value: string;
+  pnl: string;
+  pnlPct: string;
+  up: boolean;
+  icon: string | null;
+};
+
+export type VenueHolder = {
+  id: string;
+  marketId: string;
+  trader: string;
+  avatar: string | null;
+  outcome: string;
+  shares: string;
+  value: string;
+  pnl: string | null;
+  up: boolean;
+};
+
+type JsonRow = Record<string, unknown>;
+
+function isRow(value: unknown): value is JsonRow {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function rowsOf(payload: unknown): JsonRow[] {
+  if (Array.isArray(payload)) return payload.filter(isRow);
+  if (isRow(payload) && Array.isArray(payload.data)) return payload.data.filter(isRow);
+  return [];
+}
+
+function pick(row: JsonRow, ...keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value != null && value !== "") return value;
+  }
+  return undefined;
+}
+
 function usdLabel(value: number) {
   if (!Number.isFinite(value) || value <= 0) return "$0.00";
   if (value >= 1000) return `$${(value / 1000).toFixed(value >= 10_000 ? 0 : 1)}k`;
   if (value >= 100) return `$${value.toFixed(0)}`;
   return `$${value.toFixed(2)}`;
+}
+
+function signedUsd(value: number) {
+  if (!Number.isFinite(value) || value === 0) return "$0.00";
+  const abs = usdLabel(Math.abs(value));
+  return value > 0 ? `+${abs}` : `-${abs}`;
 }
 
 function timeAgo(timestamp: number) {
@@ -338,45 +391,153 @@ function shortenWallet(value: string) {
   return `${value.slice(0, 6)}…${value.slice(-4)}`;
 }
 
-export async function fetchPolymarketTrades(limit = 24): Promise<LiveTrade[]> {
-  const url = `${DATA}/trades?limit=${Math.min(50, Math.max(8, limit))}`;
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent": "VEYRAMarkets/0.1 (read-only trade tape)",
-    },
-    next: { revalidate: 8 },
-  });
-  if (!response.ok) {
-    throw new Error(`Polymarket trades ${response.status}`);
-  }
-  const rows = (await response.json()) as DataTrade[];
-  if (!Array.isArray(rows)) return [];
+function traderName(row: JsonRow, wallet: string) {
+  return String(pick(row, "name", "pseudonym") ?? shortenWallet(wallet)).trim();
+}
 
-  return rows.slice(0, limit).map((row, index) => {
-    const price = num(row.price);
-    const size = num(row.size);
-    const invested = size * price;
-    const payout = size;
-    const chance = Math.max(1, Math.min(99, Math.round(price * 100)));
-    const outcome = (row.outcome || row.side || "Yes").trim();
-    const up = /^(yes|up|buy)$/i.test(outcome) || row.side === "BUY";
-    const wallet = row.proxyWallet || "unknown";
-    const trader = (row.name || row.pseudonym || shortenWallet(wallet)).trim();
-    const slug = row.slug || row.conditionId || wallet;
+function avatarOf(row: JsonRow) {
+  const value = pick(row, "profileImageOptimized", "profile_image_optimized", "profileImage", "profile_image");
+  return typeof value === "string" ? value : null;
+}
+
+async function dataGet(path: string, ttlMs = 8_000): Promise<unknown> {
+  return polymarketJson(`${DATA}${path}`, ttlMs);
+}
+
+export function mapDataTrades(payload: unknown, limit: number): LiveTrade[] {
+  return rowsOf(payload)
+    .slice(0, limit)
+    .map((row, index) => {
+      const price = num(pick(row, "price"));
+      const size = num(pick(row, "size"));
+      const invested = size * price;
+      const chance = Math.max(1, Math.min(99, Math.round(price * 100)));
+      const outcome = String(pick(row, "outcome", "side") ?? "Yes").trim();
+      const side = String(pick(row, "side") ?? "");
+      const up = /^(yes|up|buy)$/i.test(outcome) || side.toUpperCase() === "BUY";
+      const wallet = String(pick(row, "proxyWallet", "proxy_wallet", "wallet") ?? "unknown");
+      const slug = String(pick(row, "slug", "eventSlug", "event_slug", "conditionId", "condition_id") ?? wallet);
+      const hash = String(pick(row, "transactionHash", "transaction_hash") ?? `${slug}-${pick(row, "timestamp")}-${index}`);
+      return {
+        id: hash,
+        marketId: slug,
+        trader: traderName(row, wallet),
+        avatar: avatarOf(row),
+        ago: timeAgo(num(pick(row, "timestamp"))),
+        invested: usdLabel(invested),
+        payout: usdLabel(size),
+        title: String(pick(row, "title") ?? slug),
+        icon: typeof pick(row, "icon") === "string" ? String(pick(row, "icon")) : null,
+        side: `${outcome} at ${chance}% probability`,
+        chance,
+        up,
+      };
+    });
+}
+
+export function mapDataPositions(payload: unknown, limit: number): VenueTraderPosition[] {
+  return rowsOf(payload)
+    .slice(0, limit)
+    .map((row, index) => {
+      const size = num(pick(row, "currentSize", "current_size", "size"));
+      const avg = num(pick(row, "avgPrice", "avg_price"));
+      const current = num(pick(row, "currentPrice", "current_price"));
+      const value = num(pick(row, "currentValue", "current_value", "value"));
+      const pnl = num(pick(row, "totalPnl", "total_pnl", "unrealizedPnl", "unrealized_pnl"));
+      const pct = num(pick(row, "percentPnl", "percent_pnl"));
+      const slug = String(pick(row, "slug", "eventSlug", "event_slug", "conditionId", "condition_id") ?? `pos-${index}`);
+      const token = String(pick(row, "assetId", "asset_id", "token_id", "tokenId") ?? index);
+      const outcome = String(pick(row, "outcome") ?? "Yes");
+      return {
+        id: `${slug}:${token}`,
+        marketId: slug,
+        title: String(pick(row, "title") ?? slug),
+        outcome,
+        shares: size.toFixed(2),
+        avgPrice: `${Math.round(avg * 100)}¢`,
+        currentPrice: `${Math.round(current * 100)}¢`,
+        value: usdLabel(value || size * current),
+        pnl: signedUsd(pnl),
+        pnlPct: Number.isFinite(pct) && pct !== 0 ? `${pct > 0 ? "+" : ""}${pct.toFixed(1)}%` : "0.0%",
+        up: pnl >= 0,
+        icon: typeof pick(row, "icon") === "string" ? String(pick(row, "icon")) : null,
+      };
+    });
+}
+
+export function mapDataHolders(payload: unknown, marketId: string, limit: number): VenueHolder[] {
+  const groups = rowsOf(payload);
+  const flat: JsonRow[] = [];
+  for (const group of groups) {
+    const outcomeHint = String(pick(group, "outcome") ?? "");
+    const holders = Array.isArray(group.holders) ? group.holders.filter(isRow) : [group];
+    for (const holder of holders) {
+      flat.push(outcomeHint && !pick(holder, "outcome") ? { ...holder, outcome: outcomeHint } : holder);
+    }
+  }
+  return flat.slice(0, limit).map((row, index) => {
+    const wallet = String(pick(row, "wallet", "proxyWallet", "proxy_wallet") ?? `holder-${index}`);
+    const amount = num(pick(row, "amount", "currentSize", "current_size"));
+    const value = num(pick(row, "currentValue", "current_value"));
+    const pnl = num(pick(row, "totalPnl", "total_pnl", "unrealizedPnl", "unrealized_pnl"));
+    const price = num(pick(row, "currentPrice", "current_price"));
+    const outcome = String(pick(row, "outcome") ?? (num(pick(row, "outcomeIndex", "outcome_index")) === 1 ? "No" : "Yes"));
     return {
-      id: row.transactionHash || `${slug}-${row.timestamp}-${index}`,
-      marketId: slug,
-      trader,
-      avatar: row.profileImageOptimized || row.profileImage || null,
-      ago: timeAgo(num(row.timestamp)),
-      invested: usdLabel(invested),
-      payout: usdLabel(payout),
-      title: row.title || slug,
-      icon: row.icon || null,
-      side: `${outcome} at ${chance}% probability`,
-      chance,
-      up,
+      id: `${wallet}:${outcome}:${index}`,
+      marketId,
+      trader: traderName(row, wallet),
+      avatar: avatarOf(row),
+      outcome,
+      shares: amount.toFixed(2),
+      value: usdLabel(value || amount * price),
+      pnl: value || pnl ? signedUsd(pnl) : null,
+      up: pnl >= 0,
     };
   });
+}
+
+export type TradeQuery = {
+  limit?: number;
+  marketId?: string;
+  conditionId?: string;
+  user?: string;
+};
+
+export async function fetchPolymarketTrades(limitOrQuery: number | TradeQuery = 24): Promise<LiveTrade[]> {
+  const query = typeof limitOrQuery === "number" ? { limit: limitOrQuery } : limitOrQuery;
+  const limit = Math.min(50, Math.max(1, query.limit ?? 24));
+  const legacy = new URLSearchParams({ limit: String(limit) });
+  if (query.user) legacy.set("user", query.user);
+  if (query.marketId) legacy.set("market", query.marketId);
+  if (query.conditionId) legacy.set("market", query.conditionId);
+  return mapDataTrades(await dataGet(`/trades?${legacy}`, 8_000), limit);
+}
+
+export async function fetchPolymarketPositions(user: string, limit = 40): Promise<VenueTraderPosition[]> {
+  const params = new URLSearchParams({
+    user,
+    limit: String(Math.min(100, Math.max(1, limit))),
+    status: "OPEN",
+  });
+  try {
+    return mapDataPositions(await dataGet(`/v2/positions?${params}`, 12_000), limit);
+  } catch {
+    return mapDataPositions(await dataGet(`/positions?${params}`, 12_000), limit);
+  }
+}
+
+export async function fetchPolymarketHolders(conditionId: string, limit = 16): Promise<VenueHolder[]> {
+  const params = new URLSearchParams({
+    condition: conditionId,
+    limit: String(Math.min(50, Math.max(1, limit))),
+  });
+  try {
+    return mapDataHolders(await dataGet(`/v2/holders?${params}`, 20_000), conditionId, limit);
+  } catch {
+    return mapDataHolders(
+      await dataGet(`/holders?market=${encodeURIComponent(conditionId)}&limit=${limit}`, 20_000),
+      conditionId,
+      limit,
+    );
+  }
 }

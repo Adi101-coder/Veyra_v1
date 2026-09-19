@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { ResolutionOutcome } from "@/server/reputation/types";
+import { polymarketJson } from "@/lib/polymarket-http";
 
 const GAMMA = process.env.POLYMARKET_GAMMA_URL ?? "https://gamma-api.polymarket.com";
 
@@ -43,12 +44,11 @@ export function resolutionFromGamma(market: GammaMarket): VenueResolution {
 }
 
 export async function fetchVenueResolution(slug: string): Promise<VenueResolution | null> {
-  const response = await fetch(`${GAMMA}/markets/slug/${encodeURIComponent(slug)}`, {
-    headers: { accept: "application/json" },
-    cache: "no-store",
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`Gamma ${response.status}`);
-  return resolutionFromGamma((await response.json()) as GammaMarket);
+  try {
+    const raw = (await polymarketJson(`${GAMMA}/markets/slug/${encodeURIComponent(slug)}`, 20_000)) as GammaMarket;
+    return resolutionFromGamma(raw);
+  } catch (error) {
+    if (error instanceof Error && /404/.test(error.message)) return null;
+    throw error;
+  }
 }

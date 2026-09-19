@@ -83,10 +83,12 @@ re-implementing.
 
 | Method | Path | Auth | Returns |
 |---|---|---|---|
-| GET | `/api/markets` | public | `{ source, markets[] }` — Polymarket list, falls back to the local catalog. |
+| GET | `/api/markets` | public | `{ source, markets[] }` — live Polymarket list (`?limit=&category=`), falls back to the local catalog. |
 | GET | `/api/markets/[id]` | public | One market. Resolves catalog, Veyra pool, then Polymarket. |
 | GET | `/api/markets/[id]/book` | public | Live order book for a market/outcome. |
-| GET | `/api/trades` | public | Recent trades (display only). |
+| GET | `/api/markets/[id]/holders` | public | Largest public Polymarket holders for that market. |
+| GET | `/api/trades` | public | Live tape (`?marketId=&walletAddress=&limit=`). |
+| GET | `/api/polymarket/positions` | public | Open Polymarket positions for `?walletAddress=` (EVM). |
 
 A market's `source` tells you what you're dealing with, and it changes the UI:
 

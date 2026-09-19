@@ -269,3 +269,35 @@ export async function listPools() {
   const response = await fetch("/api/pools", { cache: "no-store" });
   return readJson<{ pools: PoolSummary[] }>(response);
 }
+
+// --- Live Polymarket tape ---------------------------------------------------
+
+export type { LiveTrade, VenueHolder, VenueTraderPosition } from "@/lib/polymarket";
+
+export async function getLiveTrades(query?: { limit?: number; marketId?: string; walletAddress?: string }) {
+  const params = new URLSearchParams();
+  if (query?.limit) params.set("limit", String(query.limit));
+  if (query?.marketId) params.set("marketId", query.marketId);
+  if (query?.walletAddress) params.set("walletAddress", query.walletAddress);
+  const suffix = params.size ? `?${params}` : "";
+  const response = await fetch(`/api/trades${suffix}`, { cache: "no-store" });
+  return readJson<{ source: string; trades: import("@/lib/polymarket").LiveTrade[]; error?: string }>(response);
+}
+
+export async function getVenuePositions(walletAddress: string) {
+  const response = await fetch(
+    `/api/polymarket/positions?walletAddress=${encodeURIComponent(walletAddress)}`,
+    { cache: "no-store" },
+  );
+  return readJson<{
+    source: string;
+    walletAddress: string;
+    positions: import("@/lib/polymarket").VenueTraderPosition[];
+    error?: string;
+  }>(response);
+}
+
+export async function getMarketHolders(marketId: string) {
+  const response = await fetch(`/api/markets/${encodeURIComponent(marketId)}/holders`, { cache: "no-store" });
+  return readJson<{ source: string; holders: import("@/lib/polymarket").VenueHolder[]; error?: string }>(response);
+}

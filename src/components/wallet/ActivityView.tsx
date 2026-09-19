@@ -1,10 +1,13 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { Identicon } from "@/components/dashboard/Identicon";
 import { Shell } from "@/components/Shell";
 import { TransactionRows } from "@/components/wallet/TransactionRows";
+import { getVenuePositions } from "@/lib/betting-api";
+import type { VenueTraderPosition } from "@/lib/polymarket";
 import { shortenAddress, WALLET_OPTIONS } from "@/lib/solana-wallet";
 import { explorerAddressUrl } from "@/lib/wallet-activity";
 
@@ -95,6 +98,8 @@ export function ActivityView() {
           </a>
         </p>
 
+        {chain === "evm" ? <PolymarketPositions walletAddress={address} /> : null}
+
         <div className="mt-8 border-t border-[rgba(26,26,26,0.12)] pt-2">
           {loading ? (
             <p className="py-10 text-[13px] italic text-[#8a8a8a]">Reading the chain…</p>
@@ -108,6 +113,68 @@ export function ActivityView() {
           )}
         </div>
       </Shell>
+    </div>
+  );
+}
+
+function PolymarketPositions({ walletAddress }: { walletAddress: string }) {
+  const [rows, setRows] = useState<VenueTraderPosition[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVenuePositions(walletAddress)
+      .then((json) => {
+        if (cancelled) return;
+        setRows(json.positions);
+        setError(json.error ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setError("Could not load Polymarket positions.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [walletAddress]);
+
+  return (
+    <div className="mt-8">
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+        Polymarket positions
+      </p>
+      {rows == null ? (
+        <p className="mt-3 text-[13px] italic text-[#8a8a8a]">Reading the venue…</p>
+      ) : error && rows.length === 0 ? (
+        <p className="mt-3 text-[13px] text-[#c45c6a]">{error}</p>
+      ) : rows.length === 0 ? (
+        <p className="mt-3 text-[13px] italic text-[#8a8a8a]">
+          This address has no open Polymarket positions.
+        </p>
+      ) : (
+        <ul className="mt-4 flex flex-col gap-2">
+          {rows.map((row) => (
+            <li key={row.id}>
+              <Link
+                href={`/contract/${encodeURIComponent(row.marketId)}`}
+                className="flex items-center justify-between gap-3 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-4 py-3 no-underline"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[14px] text-[#1a1a1a]">{row.title}</p>
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+                    {row.outcome} · {row.shares} sh · {row.avgPrice} → {row.currentPrice}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[14px] tabular-nums text-[#1a1a1a]">{row.value}</p>
+                  <p className={`font-mono text-[10px] ${row.up ? "text-[#2c7a55]" : "text-[#c45c6a]"}`}>
+                    {row.pnl} · {row.pnlPct}
+                  </p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

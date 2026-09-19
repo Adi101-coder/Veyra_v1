@@ -3,6 +3,7 @@ import "server-only";
 import type { OrderBookSnapshot } from "@/lib/betting";
 import { BettingError } from "@/server/errors";
 import { parsePriceBps } from "@/server/money";
+import { polymarketJson } from "@/lib/polymarket-http";
 
 const CLOB = process.env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com";
 const USER_AGENT = "VEYRAMarkets/0.1 (confidence-betting)";
@@ -23,25 +24,35 @@ type ClobBook = {
 };
 
 async function clobGet<T>(path: string, auth?: Record<string, string>): Promise<T> {
-  const response = await fetch(`${CLOB}${path}`, {
-    headers: {
-      accept: "application/json",
-      "user-agent": USER_AGENT,
-      ...auth,
-    },
-    cache: "no-store",
-    signal: AbortSignal.timeout(8_000),
-  });
-  // Rate-limit and gateway errors are not always JSON.
-  const json = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) {
+  if (auth && Object.keys(auth).length) {
+    const response = await fetch(`${CLOB}${path}`, {
+      headers: {
+        accept: "application/json",
+        "user-agent": USER_AGENT,
+        ...auth,
+      },
+      cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
+    });
+    const json = (await response.json().catch(() => ({}))) as T & { error?: string };
+    if (!response.ok) {
+      throw new BettingError(
+        "POLYMARKET_CLOB",
+        json.error || `Polymarket CLOB ${response.status}`,
+        response.status === 404 ? 404 : 502,
+      );
+    }
+    return json;
+  }
+  try {
+    return (await polymarketJson(`${CLOB}${path}`, 3_000)) as T;
+  } catch (error) {
     throw new BettingError(
       "POLYMARKET_CLOB",
-      json.error || `Polymarket CLOB ${response.status}`,
-      response.status === 404 ? 404 : 502,
+      error instanceof Error ? error.message : "Polymarket CLOB unavailable",
+      502,
     );
   }
-  return json;
 }
 
 function levels(rows: ClobLevel[] | undefined) {

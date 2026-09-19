@@ -16,7 +16,16 @@ import {
   type WagerRow,
 } from "@/lib/markets";
 import { describeBettingError, describeQuoteRejection, predictionToWagerRow, type EngineQuote } from "@/lib/betting";
-import { getMarketConviction, listPredictions, placePrediction, quotePrediction } from "@/lib/betting-api";
+import {
+  getLiveTrades,
+  getMarketConviction,
+  getMarketHolders,
+  listPredictions,
+  placePrediction,
+  quotePrediction,
+} from "@/lib/betting-api";
+import { LiveHolders, LiveTape } from "@/components/markets/LiveTape";
+import type { LiveTrade, VenueHolder } from "@/lib/polymarket";
 import {
   convictionTrailLabel,
   formatConvictionPct,
@@ -312,6 +321,8 @@ export function ContractView({ market }: { market: Market }) {
               </div>
             </section>
 
+            {market.source === "polymarket" ? <VenueActivity marketId={market.id} /> : null}
+
             <section className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-5 sm:px-7 sm:py-6">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#1a1a1a]">
@@ -384,6 +395,46 @@ export function ContractView({ market }: { market: Market }) {
           />
         </div>
       </Shell>
+    </div>
+  );
+}
+
+function VenueActivity({ marketId }: { marketId: string }) {
+  const [trades, setTrades] = useState<LiveTrade[]>([]);
+  const [holders, setHolders] = useState<VenueHolder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [tapeError, setTapeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [tape, book] = await Promise.all([
+          getLiveTrades({ marketId, limit: 12 }),
+          getMarketHolders(marketId),
+        ]);
+        if (cancelled) return;
+        setTrades(tape.trades);
+        setHolders(book.holders);
+        setTapeError(tape.error ?? book.error ?? null);
+      } catch {
+        if (!cancelled) setTapeError("Could not load the Polymarket tape.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [marketId]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <LiveTape trades={trades} loading={loading} error={tapeError} />
+      <LiveHolders holders={holders} loading={loading} />
     </div>
   );
 }

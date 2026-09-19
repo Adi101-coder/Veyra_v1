@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion";
 import { PremiumButton } from "@/components/landing/PremiumButton";
-import { getMarket } from "@/lib/markets";
+import { getMarket, type Market } from "@/lib/markets";
 
 const RANGES = ["1H", "1D", "1W", "1M"] as const;
 
@@ -27,8 +27,22 @@ function chartPath(range: (typeof RANGES)[number]) {
 
 export function TradingPreview() {
   const reduce = useReducedMotion();
-  const market = getMarket("hype") ?? getMarket("jimothy")!;
-  const yes = market.seats[0]?.chance ?? 64;
+  const fallback = getMarket("hype") ?? getMarket("jimothy")!;
+  const [market, setMarket] = useState<Market>(fallback);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/markets?limit=8", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: { source?: string; markets?: Market[] } | null) => {
+        if (cancelled) return;
+        if (json?.source === "polymarket" && json.markets?.[0]) setMarket(json.markets[0]);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const yes = market.seats.find((seat) => seat.side === "lands")?.chance ?? market.seats[0]?.chance ?? 64;
   const no = Math.max(1, 100 - yes);
   const [range, setRange] = useState<(typeof RANGES)[number]>("1D");
   const [amount, setAmount] = useState("250");

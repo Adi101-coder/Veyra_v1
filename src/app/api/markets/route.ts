@@ -1,14 +1,29 @@
 import { NextResponse } from "next/server";
 import { fetchPolymarketMarkets } from "@/lib/polymarket";
-import { coreMarkets } from "@/lib/markets";
+import { coreMarkets, type CategoryId } from "@/lib/markets";
 
-export const revalidate = 45;
+export const dynamic = "force-dynamic";
 
-// Fallback responses stay HTTP 200 for compatibility, but are always marked
-// `source: "local"` with an `error` so clients never label catalog data as live.
-export async function GET() {
+const CATEGORIES = new Set<CategoryId>([
+  "politics",
+  "finance",
+  "crypto",
+  "sports",
+  "entertainment",
+  "science",
+  "culture",
+  "weather",
+]);
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const limit = Number.parseInt(url.searchParams.get("limit") ?? "80", 10);
+  const category = url.searchParams.get("category");
   try {
-    const markets = await fetchPolymarketMarkets(40);
+    let markets = await fetchPolymarketMarkets(Number.isFinite(limit) ? Math.min(120, Math.max(8, limit)) : 80);
+    if (category && CATEGORIES.has(category as CategoryId)) {
+      markets = markets.filter((market) => market.category === category);
+    }
     if (!markets.length) {
       return NextResponse.json({
         source: "local",

@@ -1,11 +1,35 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "@/components/motion";
 import { mastheadDate } from "@/lib/site";
 import { Shell } from "@/components/Shell";
+import { getLiveTrades } from "@/lib/betting-api";
+import type { LiveTrade } from "@/lib/polymarket";
 
 export function Ticker() {
   const now = new Date();
+  const [trades, setTrades] = useState<LiveTrade[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = () =>
+      getLiveTrades({ limit: 8 })
+        .then((json) => {
+          if (!cancelled) setTrades(json.trades);
+        })
+        .catch(() => undefined);
+    void load();
+    const timer = window.setInterval(() => void load(), 12_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  const headline = trades[0]
+    ? `${trades[0].title} · ${trades[0].invested} · ${trades[0].ago}`
+    : "Live markets";
 
   return (
     <div className="bg-[#111111] text-[#d8d1b8]">
@@ -15,17 +39,16 @@ export function Ticker() {
           <span className="hidden opacity-40 sm:inline">·</span>
           <span className="whitespace-nowrap">{mastheadDate(now)}</span>
         </div>
-        <div className="hidden items-center gap-[18px] sm:flex">
-          <div className="flex items-center gap-1.5">
+        <div className="hidden min-w-0 items-center gap-[18px] sm:flex">
+          <div className="flex min-w-0 items-center gap-1.5">
             <motion.span
               aria-hidden
               animate={{ scale: [1, 1.25, 1], opacity: [1, 0.7, 1] }}
               transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#c4a46a] shadow-[0_0_0_2px_rgba(196,164,106,0.22)]"
             />
-            <span>Live markets</span>
+            <span className="max-w-[36rem] truncate">{headline}</span>
           </div>
-          <span>$12.4M settled</span>
         </div>
       </Shell>
     </div>

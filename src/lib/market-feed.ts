@@ -511,11 +511,15 @@ export const esportMatches: EsportMatch[] = [
   },
 ];
 
+function tagBlob(market: Market) {
+  return `${market.tag} ${market.title}`.toLowerCase();
+}
+
 export const channelMarketFilter: Record<Exclude<FeedChannel, "all">, (market: Market) => boolean> = {
-  crypto: (market) => market.category === "finance" || market.tag === "sol" || market.tag === "scq",
+  crypto: (market) => market.category === "crypto" || /\b(btc|eth|sol|crypto|bitcoin)\b/.test(tagBlob(market)),
   sport: (market) =>
-    market.category === "sports" && !["cs2", "dota2"].includes(market.tag),
-  esports: (market) => ["cs2", "dota2"].includes(market.tag),
+    market.category === "sports" && !/\b(cs2|dota|valorant|lol|esport|league of legends)\b/.test(tagBlob(market)),
+  esports: (market) => /\b(cs2|dota|valorant|lol|esport|league of legends)\b/.test(tagBlob(market)),
   finance: (market) => market.category === "finance",
   politics: (market) => market.category === "politics",
   entertainment: (market) =>

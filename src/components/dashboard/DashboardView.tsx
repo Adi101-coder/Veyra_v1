@@ -32,7 +32,7 @@ export function DashboardView() {
     };
     const load = async () => {
       try {
-        const response = await fetch("/api/markets", { cache: "no-store" });
+        const response = await fetch("/api/markets?limit=80", { cache: "no-store" });
         if (!response.ok) {
           if (!cancelled) fallback(`Live feed unavailable (HTTP ${response.status})`);
           return;

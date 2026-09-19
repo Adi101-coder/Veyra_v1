@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -25,7 +26,10 @@ function swing(stake: number, chance: number) {
 
 export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const slides = markets.length ? markets : [];
+  const reduceMotion = useReducedMotion();
   const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+  const [paused, setPaused] = useState(false);
   const market = slides[index] ?? slides[0];
   const [tableId, setTableId] = useState(market?.tableOptions[0]?.id ?? "");
   const [convictionState, setConvictionState] = useState<{
@@ -35,6 +39,19 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const marketId = market?.id;
   // Only show conviction fetched for the market currently on screen.
   const conviction = marketId && convictionState?.id === marketId ? convictionState.data : null;
+
+  useEffect(() => {
+    if (slides.length < 2 || paused || reduceMotion) return;
+    const timer = window.setInterval(() => {
+      setDirection(1);
+      setIndex((current) => (current + 1) % slides.length);
+    }, 5_000);
+    return () => window.clearInterval(timer);
+  }, [slides.length, paused, reduceMotion]);
+
+  useEffect(() => {
+    setTableId(slides[index]?.tableOptions[0]?.id ?? "");
+  }, [index, slides]);
 
   useEffect(() => {
     if (!marketId) return;
@@ -80,13 +97,32 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const go = (dir: -1 | 1) => {
     if (!slides.length) return;
     const next = (index + dir + slides.length) % slides.length;
+    setDirection(dir);
     setIndex(next);
     setTableId(slides[next].tableOptions[0]?.id ?? "");
   };
 
   return (
-    <article className="overflow-hidden rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fffcf7] shadow-[0_18px_50px_-32px_rgba(23,22,20,0.55)]">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_20.5rem]">
+    <article
+      className="overflow-hidden rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fffcf7] shadow-[0_18px_50px_-32px_rgba(23,22,20,0.55)]"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false);
+      }}
+    >
+      <div className="relative overflow-hidden">
+      <AnimatePresence mode="wait" initial={false} custom={direction}>
+      <motion.div
+        key={market.id}
+        custom={direction}
+        initial={reduceMotion ? false : { opacity: 0, x: direction * 36 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={reduceMotion ? undefined : { opacity: 0, x: direction * -28 }}
+        transition={{ duration: 0.55, ease: [0.16, 1, 0.36, 1] }}
+        className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_20.5rem]"
+      >
         <div className="px-5 py-5 sm:px-7 sm:py-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#7a746a]">
@@ -397,6 +433,8 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </>
           )}
         </aside>
+      </motion.div>
+      </AnimatePresence>
       </div>
 
       {slides.length > 1 ? (
@@ -416,10 +454,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 type="button"
                 aria-label={`Show ${item.title}`}
                 onClick={() => {
+                  setDirection(i > index ? 1 : -1);
                   setIndex(i);
                   setTableId(slides[i].tableOptions[0]?.id ?? "");
                 }}
-                className={`h-1.5 rounded-full transition ${
+                className={`h-1.5 rounded-full transition-all duration-500 ${
                   i === index ? "w-5 bg-[#1a1a1a]" : "w-1.5 bg-[#c8c4bc]"
                 }`}
               />
