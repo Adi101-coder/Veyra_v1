@@ -70,6 +70,24 @@ Keep `VEYRA_MAX_STAKE_USD` low (e.g. 5–100).
 - [ ] `POST /api/operator/inventory-reconciliation` (operator token): no `error` findings. This step confirms the unverified venue formats: `/data/trades` size units, maker/taker side, and whether the pUSD balance includes open-order funds.
 - [ ] After a test market resolves: `GET /api/users/<wallet>/reputation` shows the score, and the wager page shows **Robinhood Chain · Settled** with an explorer link.
 
+## 6b. Veyra pools (liquidity fund)
+Veyra-native pools from daily voting price against an LMSR market maker that **Veyra
+funds**, unlike Polymarket markets where the counterparty is another trader.
+- [ ] Seed the fund with operator capital: `POST /api/operator/liquidity`
+  (`amountMicros`, `reference`). Fees cannot bootstrap it — at launch there is no
+  trading to generate them.
+- [ ] Decide `VEYRA_POOL_BUDGET_MICROS`. That figure is the **worst case each pool can
+  lose**, and 5 pools open per day; budget accordingly.
+- [ ] Confirm `GET /api/operator/liquidity` shows the expected fund total, allocated
+  amount and reserve.
+- [ ] A pool the fund cannot cover stays unquotable and reports `AWAITING_LIQUIDITY`
+  rather than showing a price. That is intended: an unfunded pool has no counterparty.
+- [ ] Resolve a pool with `POST /api/operator/pools/resolve` (`marketId`, `outcome`).
+  Pools have no venue oracle, so an operator decides; the worker then scores
+  reputation and settles the pool from those scores.
+- [ ] Pools trade in paper mode. No real money moves until execution is switched on
+  for them, and that needs the custody and regulatory position settled first.
+
 ## 7. Operate
 - [ ] Monitor `GET /api/operator/readiness` and `GET /api/operator/inventory-reconciliation` (alert on `ready: false` or any `error` finding).
 - [ ] Alert on `checks.worker.detail.batchesAwaitingVenueOver1h > 0` (orders needing manual reconciliation).

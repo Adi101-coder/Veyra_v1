@@ -2,7 +2,8 @@ import "server-only";
 
 import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
-import { closePoolLiquidity } from "@/server/pools/fund";
+import { closePoolLiquidity, openPoolLiquidity } from "@/server/pools/fund";
+import { VEYRA_POOL_SOURCE } from "@/server/voting/config";
 
 /**
  * Settles a Veyra pool once its market has been resolved and scored.
@@ -65,4 +66,28 @@ export async function settleResolvedPools(
     });
   }
   return settled;
+}
+
+/**
+ * Funds pools that opened while the fund was empty.
+ *
+ * A pool is created when its round finalizes, but the fund may not have covered it
+ * then. Without this, money arriving later would never reach those pools and they
+ * would stay unquotable forever, which is what testing the real flow exposed.
+ */
+export async function fundPendingPools(prisma: PrismaClient = getPrisma()) {
+  const candidates = await prisma.market.findMany({
+    where: { source: VEYRA_POOL_SOURCE, resolvedAt: null },
+    select: { id: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const funded: string[] = [];
+  for (const market of candidates) {
+    const existing = await prisma.poolLiquidity.findUnique({ where: { marketId: market.id } });
+    if (existing) continue;
+    const pool = await openPoolLiquidity(prisma, market.id, null);
+    // Reserve still too small: leave it unfunded and try again next tick.
+    if (pool) funded.push(market.id);
+  }
+  return funded;
 }

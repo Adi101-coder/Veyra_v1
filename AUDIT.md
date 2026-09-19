@@ -433,3 +433,64 @@ and settlement mechanism that does not exist yet.
 - `GET /api/treasury/balances`, `GET /api/treasury/exposure` (signed-in wallet)
 - `POST /api/operator/treasury/deposits`, `GET /api/operator/treasury/report`
 
+## Veyra pool market making (2026-09-19)
+
+Pools created by daily voting now have a real price at trade time. Veyra is the
+counterparty, funded from a liquidity fund built out of trading fees.
+
+**Why an AMM at all.** A pooled/parimutuel pot cannot pay a winner more than the pot
+holds, so a $700 YES against $300 NO pays 1.43x however the odds were displayed, and
+nobody knows their odds until the round closes. That also rewards betting late, which
+is backwards for a venue that needs early liquidity. An order book fixes it but needs
+a counterparty at that price, which a brand-new pool does not have. LMSR gives a
+locked price at trade time with a bounded worst-case loss of `b * ln(2)`.
+
+**Design points that matter:**
+- The ladder is the **integral**, not a flat quote: each level is priced at the
+  marginal cost after the preceding lots are absorbed, so walking it reproduces
+  `C(q') - C(q)`. A flat ladder lets a trader buy for less than the true cost and
+  `b * ln(2)` stops bounding anything.
+- Rounding always favours the pool (costs up, proceeds down), so discretising the
+  curve cannot create free money.
+- `src/server/pools/lmsr.ts` is the **single float boundary** in the money path. LMSR
+  needs `exp`/`ln`, so the BigInt rule cannot hold inside it; every exported function
+  takes and returns integers, and nothing downstream recomputes a cost in floating
+  point, so quote time and execution time cannot disagree by a micro.
+- **An unfunded pool is not quotable.** It refuses with `POOL_NOT_FUNDED` rather than
+  falling back to a default book. This is the same failure as the earlier bug where
+  pools quoted a fake 50/50 ladder with infinite depth.
+- Share inventory is **derived from filled positions**, not stored, so the ledger
+  stays the source of truth and Change Your Mind sells reduce it correctly. It counts
+  simulated fills — deliberately the opposite of `inventory/reconcile.ts`, which
+  scopes to non-simulated fills because it reconciles a real venue wallet.
+- The fee and the pool's result both come from reputation's `PredictionScore.pnlMicros`
+  rather than a second profit calculation, so the fund ties out against the ledger.
+  The pool is the sole counterparty, so its result is the negative of the traders'
+  aggregate. Settlement waits for scoring, claims atomically, and books once.
+
+**Fee: 2% of profit** (`VEYRA_POOL_FEE_BPS=200`), break-even forecasting accuracy
+~50.5% on a coin flip. For comparison: 20% of profit needs 55.6% and 20% of stake
+needs 62.5% — above horse-racing takeout, and skilled forecasters would work out they
+are net-negative despite good calibration.
+
+**Resolution:** operator-decided (`POST /api/operator/pools/resolve`). Pools have no
+venue oracle. This is a real trust burden and the honest reason not to run them with
+real money yet.
+
+**Tests:** 11 LMSR unit tests including a property run over random buy/sell sequences
+asserting the pool's payout never exceeds what it collected plus its bounded subsidy,
+plus 10 integration tests for funding, idempotent opening, reserve exhaustion,
+inventory derivation, fee capture and concurrent settlement. Mutation-checked: a flat
+ladder, round-down, quoting unfunded pools, a non-atomic close, and a fee on net PnL
+instead of winners' profit each fail a test.
+
+**Still true:** pools trade in **paper mode**. No real money moves, and the entries
+record what the fund would have earned or lost. The fund is bootstrapped by operator
+capital, not fees — at launch there is no trading to generate them.
+
+**Known exposure, unaddressed:** users propose and vote the questions, and vote
+budgets are per-wallet while wallets are free. A proposer with private information can
+vote their own question up and trade against a house-funded AMM. Polymarket cannot be
+attacked this way because it never takes a side. The per-pool loss cap bounds the
+damage; it does not remove the incentive.
+

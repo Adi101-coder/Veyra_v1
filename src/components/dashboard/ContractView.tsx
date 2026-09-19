@@ -7,6 +7,7 @@ import { Identicon } from "@/components/dashboard/Identicon";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { isKnownStatus, statusLabel, StatusChip } from "@/components/status/StatusChip";
 import { WalletSignatureNote } from "@/components/status/WalletSignatureNote";
+import { PoolLiquidityNote } from "@/components/pools/PoolLiquidityNote";
 import { Shell } from "@/components/Shell";
 import {
   formatResolvesBy,
@@ -63,7 +64,9 @@ function SectionMark() {
 }
 
 export function ContractView({ market }: { market: Market }) {
-  const sourceLabel = market.source === "polymarket" ? "Polymarket" : "Demo · paper only";
+  const isVeyraPool = market.source === "veyra";
+  const sourceLabel =
+    market.source === "polymarket" ? "Polymarket" : isVeyraPool ? "Veyra pool · community voted" : "Demo · paper only";
   const liquidityLabel =
     typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)
       ? `$${Math.round(market.liquidityUsd).toLocaleString("en-US")}`
@@ -213,6 +216,8 @@ export function ContractView({ market }: { market: Market }) {
               <h1 className="mt-5 max-w-[36rem] font-serif text-[30px] leading-[1.15] tracking-[-0.03em] text-[#1a1a1a] sm:text-[36px]">
                 {market.title}
               </h1>
+
+              {isVeyraPool ? <PoolLiquidityNote marketId={market.id} /> : null}
 
               <div className="mt-6 grid gap-5 sm:grid-cols-3">
                 <div className="flex items-center gap-2.5">

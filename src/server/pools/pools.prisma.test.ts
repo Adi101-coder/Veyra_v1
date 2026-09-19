@@ -5,7 +5,7 @@ import { loadPoolConfig, type PoolConfig } from "@/server/pools/config";
 import { poolBook, poolInventory, poolState } from "@/server/pools/book";
 import { closePoolLiquidity, fundBalances, openPoolLiquidity, seedFund } from "@/server/pools/fund";
 import { maxLossMicros } from "@/server/pools/lmsr";
-import { settleResolvedPools } from "@/server/pools/settlement";
+import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement";
 
 let prisma: PrismaClient;
 let database: ReturnType<typeof createTestDatabase>;
@@ -130,6 +130,30 @@ describe("Veyra pool liquidity (Prisma)", () => {
     // What is left is below the minimum, so the second pool opens unfunded.
     expect(second).toBeNull();
     expect(await poolBook(prisma, "veyra-pool-2", "YES", CONFIG)).toBeNull();
+  });
+
+  it("funds a pool that opened while the fund was empty, once money arrives", async () => {
+    // A pool is created when its round finalizes, which may be before the fund can
+    // cover it. Money arriving later has to reach it, or it stays dead forever.
+    expect(await openPoolLiquidity(prisma, MARKET, null, CONFIG)).toBeNull();
+    expect(await fundPendingPools(prisma)).toEqual([]);
+
+    await seedFund(prisma, 1_000n * USD, "late-seed");
+    expect(await fundPendingPools(prisma)).toEqual([MARKET]);
+    expect(await poolBook(prisma, MARKET, "YES", CONFIG)).not.toBeNull();
+
+    // Already funded: a later tick does nothing.
+    expect(await fundPendingPools(prisma)).toEqual([]);
+    expect(await prisma.poolLiquidity.count()).toBe(1);
+  });
+
+  it("never funds a resolved pool", async () => {
+    await seedFund(prisma, 1_000n * USD, "seed-1");
+    await prisma.market.update({
+      where: { id: MARKET },
+      data: { status: "resolved", resolvedOutcome: "YES", resolvedAt: new Date() },
+    });
+    expect(await fundPendingPools(prisma)).toEqual([]);
   });
 
   it("derives inventory from filled positions, net of both sides", async () => {

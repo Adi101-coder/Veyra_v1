@@ -13,7 +13,7 @@ import { runRobinhoodSettlementTick } from "@/server/chain";
 import { getPrisma } from "@/server/db";
 import { runScheduledInventoryReconciliation } from "@/server/inventory/service";
 import { runVotingTick } from "@/server/voting/lifecycle";
-import { settleResolvedPools } from "@/server/pools/settlement";
+import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement";
 
 /**
  * Background jobs, in dependency order. Each step is idempotent and safe to run
@@ -48,7 +48,12 @@ const STEPS = {
   // Settle Veyra pools whose market is resolved and scored: takes the fee and
   // books the pool's result against the liquidity fund. After reputation, which
   // produces the PnL these figures are derived from.
-  pools: async () => (await settleResolvedPools()).length,
+  pools: async () => {
+    // Fund pools that opened while the fund was empty, then settle resolved ones.
+    const funded = await fundPendingPools();
+    const settled = await settleResolvedPools();
+    return funded.length + settled.length;
+  },
   // Runs after reputation so newly scored predictions get settlement references.
   settlement: async () => {
     const result = await runRobinhoodSettlementTick();
