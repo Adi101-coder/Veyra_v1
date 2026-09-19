@@ -10,7 +10,7 @@ import {
   runVotingTick,
 } from "@/server/voting/lifecycle";
 import { castVote, openRound, submitProposal } from "@/server/voting/store";
-import { getPoolMarket, listPoolMarkets } from "@/server/voting/pool";
+import { getPoolMarket, listPoolMarkets, poolSyntheticBook } from "@/server/voting/pool";
 import { resolveMarket } from "@/server/betting/service";
 import { getMarket } from "@/lib/markets";
 
@@ -286,6 +286,15 @@ describe("Daily voting rounds (Prisma)", () => {
     expect(resolved?.clobTokenIds ?? []).toEqual([]);
 
     expect((await listPoolMarkets(prisma)).map((m) => m.id)).toEqual([poolId]);
+
+    // A pool token must have a paper book, or placing a wager on a pool fails with
+    // "No orderbook exists for the requested token id" after being accepted.
+    const book = await poolSyntheticBook(`synthetic:${poolId}:YES`, prisma);
+    expect(book).not.toBeNull();
+    expect(book!.asks.length).toBeGreaterThan(0);
+    expect(book!.source).not.toBe("polymarket");
+    expect(await poolSyntheticBook(`synthetic:not-a-pool:YES`, prisma)).toBeNull();
+    expect(await poolSyntheticBook("0xnotsynthetic", prisma)).toBeNull();
   });
 
   it("finishes a round left CLOSED by a crashed worker", async () => {

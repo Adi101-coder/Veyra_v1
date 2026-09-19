@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getMarket, yesChance, type Market as CatalogMarket } from "@/lib/markets";
-import { getPoolMarket } from "@/server/voting/pool";
+import { getPoolMarket, poolSyntheticBook } from "@/server/voting/pool";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
 import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome } from "@/lib/betting";
 import { ConfidenceEngine } from "@/server/confidence/engine";
@@ -140,8 +140,15 @@ export function createDefaultDeps(): BettingDeps {
     // Synthetic (catalog demo) tokens have no CLOB book; they are paper-only and
     // never reach the live venue (assertExecutable rejects them before this).
     getBook: async (tokenId) => {
-      const synthetic = live ? null : syntheticBookForToken(tokenId, getMarket);
-      return synthetic ?? fetchClobBook(tokenId);
+      if (!live) {
+        const synthetic = syntheticBookForToken(tokenId, getMarket);
+        if (synthetic) return synthetic;
+        // Veyra-native pools are database rows, so the catalog lookup above
+        // misses them; without this their tokens have no book and execution fails.
+        const pool = await poolSyntheticBook(tokenId).catch(() => null);
+        if (pool) return pool;
+      }
+      return fetchClobBook(tokenId);
     },
   });
   return createPrismaDeps(getPrisma(), { client });

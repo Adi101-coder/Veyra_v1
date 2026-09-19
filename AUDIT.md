@@ -393,6 +393,40 @@ but no endpoint moves funds out.
 load never creates a round. Between a round finalizing and the next tick it reports
 a null round.
 
+### Local end-to-end verification (2026-09-19)
+
+Run against a from-zero database (29 tables, 25 CHECK constraints, partial index
+present, zero drift) with a production build and `NODE_ENV=production`:
+
+- Voting over HTTP: propose (401 unauthenticated), vote, budget refused with 429
+  `VOTE_LIMIT` on the 4th distinct vote, duplicate vote returns `recorded: false`,
+  tally ranked 9/8/7/5/4/3/2/1, worker tick drove OPEN -> CLOSED -> FINALIZED, top 5
+  selected with pool ids, next round opened.
+- Full chain on a created pool: quote -> place -> worker -> **filled** position
+  (6.25 shares, $3.12) -> conviction reports 1 participant at 75%. Idempotent replay
+  of the same key returned the same prediction.
+- Treasury over HTTP: 401 unauthenticated balances, 403 deposits without the
+  operator token, first deposit credited, three concurrent replays all
+  `credited: false`, unsupported asset 400, balances/exposure/report correct, audit
+  clean, and no key material in the report.
+- Boot refuses to start (exit 1) when `VEYRA_TREASURY_ADDRESS` equals
+  `POLYMARKET_FUNDER_ADDRESS`.
+
+**Two reachability bugs this found and fixed**, both invisible to the unit tests
+because they asserted rows rather than behaviour:
+1. A pool's synthetic token had no order book: the executor resolves books through
+   the synchronous catalog lookup, so a wager on a pool was accepted and then failed
+   with "No orderbook exists for the requested token id". Pools now resolve a paper
+   book from the database (`poolSyntheticBook`).
+2. The contract and wager **pages** did their own catalog lookup, so a pool rendered
+   "Market not found" even though the API could quote it. Both pages now fall back
+   to the pool lookup.
+
+**Known gap:** Veyra pools are paper-only. They have no CLOB tokens, so in live mode
+they are rejected before execution; pools are also not yet listed in the markets UI
+(reachable by direct URL and API only). Trading them in production needs a pricing
+and settlement mechanism that does not exist yet.
+
 ### New endpoints
 - `GET /api/voting/round`, `POST /api/voting/proposals`, `POST /api/voting/votes`
 - `GET /api/voting/rounds`, `GET /api/voting/rounds/[id]` (frozen audit trail)

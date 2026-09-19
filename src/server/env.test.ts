@@ -158,7 +158,8 @@ describe("serverless deployments", () => {
   });
 
   it("requires DIRECT_URL in production because the Prisma CLI refuses to run without it", () => {
-    const { DIRECT_URL: _omitted, ...withoutDirect } = PROD_LIVE;
+    const withoutDirect: Record<string, string | undefined> = { ...PROD_LIVE };
+    delete withoutDirect.DIRECT_URL;
     expect(validateEnvironment(withoutDirect).errors.join("\n")).toMatch(/DIRECT_URL is required/);
   });
 

@@ -1,7 +1,9 @@
 import "server-only";
 
 import type { Market as MarketRow, PrismaClient } from "@prisma/client";
+import type { Outcome } from "@/lib/betting";
 import { categoryColor, type Market as CatalogMarket } from "@/lib/markets";
+import { syntheticBookFromMarket } from "@/server/confidence/book";
 import { getPrisma } from "@/server/db";
 import { normalizeCategory, VEYRA_POOL_SOURCE } from "@/server/voting/config";
 
@@ -59,4 +61,19 @@ export async function listPoolMarkets(prisma: PrismaClient = getPrisma()): Promi
     orderBy: { createdAt: "desc" },
   });
   return rows.map(poolToCatalogMarket);
+}
+
+/**
+ * The paper order book for a Veyra pool's synthetic token.
+ *
+ * The catalog-backed lookup in `syntheticBookForToken` is synchronous and only
+ * searches the static market list, so a pool's token resolves to nothing there and
+ * execution fails with "No orderbook exists for the requested token id". Pools are
+ * database rows, so their book needs this async lookup.
+ */
+export async function poolSyntheticBook(tokenId: string, prisma: PrismaClient = getPrisma()) {
+  const match = /^synthetic:(.+):(YES|NO)$/.exec(tokenId);
+  if (!match) return null;
+  const pool = await getPoolMarket(match[1]!, prisma);
+  return pool ? syntheticBookFromMarket(pool, match[2] as Outcome) : null;
 }

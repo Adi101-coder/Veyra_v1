@@ -35,8 +35,10 @@ export default async function WagerPage({ params }: WagerPageProps) {
   if (!prediction || prediction.marketId !== id) notFound();
 
   const local = getMarket(id);
+  // Veyra-native pools live in the database rather than the static catalog.
+  const pool = local ? null : await (await import("@/server/voting/pool")).getPoolMarket(id).catch(() => null);
   const market =
-    local ?? (await (await import("@/lib/polymarket")).fetchPolymarketMarket(id));
+    local ?? pool ?? (await (await import("@/lib/polymarket")).fetchPolymarketMarket(id));
   if (!market) notFound();
 
   return (
