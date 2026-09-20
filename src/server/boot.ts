@@ -1,5 +1,6 @@
 import { pinPolymarketDns } from "@/lib/polymarket-dns";
 import { validateEnvironment } from "@/server/env";
+import { applyHostedPostgresEnv } from "@/server/postgres-env";
 
 /**
  * Node-only boot preflight (kept out of instrumentation.ts so the Edge bundle never
@@ -7,6 +8,7 @@ import { validateEnvironment } from "@/server/env";
  * failing on the first request or the first live order.
  */
 export function runBootPreflight() {
+  applyHostedPostgresEnv();
   pinPolymarketDns();
   const report = validateEnvironment(process.env);
   for (const warning of report.warnings) console.warn(`[env] ${warning}`);
