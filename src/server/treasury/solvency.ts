@@ -6,6 +6,7 @@ import { CASH_ASSET } from "@/server/treasury/funds";
 import { auditBalances } from "@/server/treasury/ledger";
 import { lastOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
 import { staleHolds } from "@/server/treasury/holds";
+import { treasuryLiquidity, type TreasuryLiquidity } from "@/server/treasury/liquidity";
 
 export type SolvencyFinding = {
   code: string;
@@ -27,6 +28,8 @@ export type SolvencyReport = {
   unrecoveredDepositMicros: string;
   /** Reservations open past the stale threshold on unfinished executions. */
   staleHoldMicros: string;
+  /** Whether the treasury wallet can pay what the ledger owes, and what to sweep. */
+  treasuryLiquidity: TreasuryLiquidity;
   houseResidualMicros: string | null;
   audit: { checked: number; discrepancies: { walletAddress: string; asset: string }[] };
   findings: SolvencyFinding[];
@@ -131,6 +134,23 @@ export async function reconcileSolvency(
     });
   }
 
+  // Can the treasury wallet actually pay what the ledger says it owes? Total
+  // solvency can be fine while X is empty and Y holds everything.
+  const liquidity = await treasuryLiquidity(prisma, env);
+  if (liquidity.status === "short") {
+    findings.push({
+      code: "TREASURY_CANNOT_COVER",
+      severity: "error",
+      message: `Treasury holds ${liquidity.onchainMicros} micros against ${liquidity.requiredMicros} owed. Sweep ${liquidity.sweepMicros} micros from the execution wallet.`,
+    });
+  } else if (liquidity.status === "low") {
+    findings.push({
+      code: "TREASURY_LOW",
+      severity: "warning",
+      message: `Treasury is inside its payout buffer. Sweep ${liquidity.sweepMicros} micros from the execution wallet before withdrawals fail.`,
+    });
+  }
+
   // Reservations stuck on an execution that never finished: the user's money is
   // held with nothing happening to it.
   const stale = await staleHolds(prisma, env);
@@ -183,6 +203,7 @@ export async function reconcileSolvency(
     controlledSource,
     unrecoveredDepositMicros: unrecoveredMicros.toString(),
     staleHoldMicros: stale.micros.toString(),
+    treasuryLiquidity: liquidity,
     houseResidualMicros: residual?.toString() ?? null,
     audit: {
       checked: audit.checked,

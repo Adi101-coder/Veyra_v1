@@ -91,6 +91,22 @@ funds**, unlike Polymarket markets where the counterparty is another trader.
 - [ ] Pools trade in paper mode. No real money moves until execution is switched on
   for them, and that needs the custody and regulatory position settled first.
 
+## 6c. Treasury / execution wallet sweep (custody only)
+User funds stay in the treasury wallet (X) while a bet is open; the trade runs from
+the execution wallet (Y). A winning bet therefore leaves the proceeds in Y while X
+owes the payout, so X drains and Y accumulates and nothing moves between them.
+- [ ] Watch `solvency.treasuryLiquidity` in `GET /api/operator/treasury/report`.
+  `status` is `ok`, `low`, `short` or `unknown`, and `sweepMicros` is exactly how
+  much to move from Y to X.
+- [ ] Alert on `low` (inside the payout buffer) rather than waiting for `short` —
+  `short` means a withdrawal can already fail.
+- [ ] `unknown` means the treasury balance could not be read. Treat it as an
+  incident, not as healthy: set `POLYGON_RPC_URL` and `VEYRA_TREASURY_ADDRESS`.
+- [ ] The sweep is operator-executed, like withdrawals. The server holds no treasury
+  key, and the execution wallet's key stays trading-only — do not automate this by
+  giving the server a signing key over user funds.
+- [ ] Keep a collateral floor in Y so a sweep cannot starve open orders.
+
 ## 7. Operate
 - [ ] Monitor `GET /api/operator/readiness`, `GET /api/operator/inventory-reconciliation`, and `GET /api/operator/treasury/report` solvency (alert on `ready: false` or any `error` finding).
 - [ ] If function logs show `prepared statement "s0" already exists`, add `?pgbouncer=true` to the pooled `DATABASE_URL` only. Keep `DIRECT_URL` unpooled.
