@@ -36,6 +36,9 @@ export function lastOmnibusOnchain() {
   return { snapshot: lastSnapshot, error: lastError };
 }
 
+/** Env as a plain record: callers pass literals, which NodeJS.ProcessEnv rejects. */
+type EnvRecord = Record<string, string | undefined>;
+
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HEX_KEY = /^(0x)?[0-9a-fA-F]{64}$/;
 
@@ -43,7 +46,7 @@ const HEX_KEY = /^(0x)?[0-9a-fA-F]{64}$/;
  * Funder address when signature types 1–3 set one; otherwise the EOA from
  * POLYMARKET_PRIVATE_KEY. Returns null when neither is configured.
  */
-export function resolveOmnibusAddress(env: NodeJS.ProcessEnv = process.env): `0x${string}` | null {
+export function resolveOmnibusAddress(env: EnvRecord = process.env): `0x${string}` | null {
   const funder = (env.POLYMARKET_FUNDER_ADDRESS ?? "").trim();
   if (EVM_ADDRESS.test(funder)) return funder as `0x${string}`;
   const key = (env.POLYMARKET_PRIVATE_KEY ?? "").trim();
@@ -52,11 +55,11 @@ export function resolveOmnibusAddress(env: NodeJS.ProcessEnv = process.env): `0x
   return privateKeyToAccount(privateKey).address;
 }
 
-function polygonChain(env: NodeJS.ProcessEnv): Chain {
+function polygonChain(env: EnvRecord): Chain {
   return env.POLYMARKET_CHAIN_ID === "80002" ? polygonAmoy : polygon;
 }
 
-export async function readOmnibusOnchain(env: NodeJS.ProcessEnv = process.env): Promise<OmnibusOnchainSnapshot | null> {
+export async function readOmnibusOnchain(env: EnvRecord = process.env): Promise<OmnibusOnchainSnapshot | null> {
   const address = resolveOmnibusAddress(env);
   const rpc = (env.POLYGON_RPC_URL ?? "").trim();
   if (!address || !rpc) {

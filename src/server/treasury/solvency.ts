@@ -4,6 +4,9 @@ import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
 import { CASH_ASSET } from "@/server/treasury/funds";
 import { auditBalances } from "@/server/treasury/ledger";
+import { lastOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
+import { staleHolds } from "@/server/treasury/holds";
+import { treasuryLiquidity, type TreasuryLiquidity } from "@/server/treasury/liquidity";
 
 export type SolvencyFinding = {
   code: string;
@@ -19,12 +22,20 @@ export type SolvencyReport = {
   userClaimsMicros: string;
   houseCapitalMicros: string;
   controlledUsdcMicros: string | null;
+  /** Where the controlled figure came from; only "onchain" can detect real drift. */
+  controlledSource: "onchain" | "override" | "baseline" | "none";
+  /** USDC a reorg clawback could not recover. Non-zero means a real shortfall. */
+  unrecoveredDepositMicros: string;
+  /** Reservations open past the stale threshold on unfinished executions. */
+  staleHoldMicros: string;
+  /** Whether the treasury wallet can pay what the ledger owes, and what to sweep. */
+  treasuryLiquidity: TreasuryLiquidity;
   houseResidualMicros: string | null;
   audit: { checked: number; discrepancies: { walletAddress: string; asset: string }[] };
   findings: SolvencyFinding[];
 };
 
-function bigintEnv(env: NodeJS.ProcessEnv, name: string): bigint | null {
+function bigintEnv(env: Record<string, string | undefined>, name: string): bigint | null {
   const raw = (env[name] ?? "").trim();
   if (!/^\d+$/.test(raw)) return null;
   return BigInt(raw);
@@ -38,7 +49,7 @@ function bigintEnv(env: NodeJS.ProcessEnv, name: string): bigint | null {
  */
 export async function reconcileSolvency(
   prisma: PrismaClient = getPrisma(),
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<SolvencyReport> {
   const findings: SolvencyFinding[] = [];
 
@@ -59,14 +70,40 @@ export async function reconcileSolvency(
   const activeHolds = (holds._sum.amountMicros ?? 0n) - (holds._sum.spentMicros ?? 0n);
   const userClaims = userBalances + activeHolds;
   const house = bigintEnv(env, "VEYRA_HOUSE_CAPITAL_MICROS") ?? 0n;
-  const controlled =
-    bigintEnv(env, "VEYRA_CONTROLLED_USDC_MICROS") ??
-    (() => {
-      const omnibus = bigintEnv(env, "VEYRA_OMNIBUS_USDC_BASELINE_MICROS");
-      const treasury = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS");
-      if (omnibus == null && treasury == null) return null;
-      return (omnibus ?? 0n) + (treasury ?? 0n) + house;
-    })();
+  // Where "controlled USDC" comes from, best first. The invariant is only
+  // meaningful if this side is sourced independently of the ledger it checks:
+  // an operator-typed constant makes the comparison self-confirming.
+  //
+  // `controlled` is the TOTAL USDC Veyra holds, house capital included — so house
+  // is never added here. Adding it inflated the fallback path and made the two
+  // config routes test different things.
+  const onchain = lastOmnibusOnchain().snapshot;
+  const treasuryUsdc = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS") ?? 0n;
+  const override = bigintEnv(env, "VEYRA_CONTROLLED_USDC_MICROS");
+  let controlledSource: "onchain" | "override" | "baseline" | "none" = "none";
+  let controlled: bigint | null = null;
+  if (override != null) {
+    controlled = override;
+    controlledSource = "override";
+  } else if (onchain) {
+    // Live balance of the omnibus wallet, read from chain this worker tick.
+    controlled = BigInt(onchain.usdcEMicros) + BigInt(onchain.usdcMicros) + treasuryUsdc;
+    controlledSource = "onchain";
+  } else {
+    const omnibus = bigintEnv(env, "VEYRA_OMNIBUS_USDC_BASELINE_MICROS");
+    if (omnibus != null || treasuryUsdc > 0n) {
+      controlled = (omnibus ?? 0n) + treasuryUsdc;
+      controlledSource = "baseline";
+    }
+  }
+  if (controlledSource === "override" || controlledSource === "baseline") {
+    findings.push({
+      code: "CONTROLLED_USDC_NOT_ONCHAIN",
+      severity: "warning",
+      message:
+        "Controlled USDC came from configuration, not a live on-chain read, so this check cannot detect real drift.",
+    });
+  }
 
   if (audit.discrepancies.length > 0) {
     findings.push({
@@ -82,6 +119,49 @@ export async function reconcileSolvency(
       message: "A user USDC balance is negative.",
     });
   }
+  // Money a reorg clawback could not recover is real USDC Veyra is short.
+  const unrecovered = await prisma.treasuryDeposit.aggregate({
+    where: { unrecoveredMicros: { gt: 0n } },
+    _sum: { unrecoveredMicros: true },
+    _count: { _all: true },
+  });
+  const unrecoveredMicros = unrecovered._sum.unrecoveredMicros ?? 0n;
+  if (unrecoveredMicros > 0n) {
+    findings.push({
+      code: "UNRECOVERED_DEPOSITS",
+      severity: "error",
+      message: `${unrecovered._count._all} reorged deposit(s) left ${unrecoveredMicros} micros unrecovered: users spent funds that no longer exist on chain.`,
+    });
+  }
+
+  // Can the treasury wallet actually pay what the ledger says it owes? Total
+  // solvency can be fine while X is empty and Y holds everything.
+  const liquidity = await treasuryLiquidity(prisma, env);
+  if (liquidity.status === "short") {
+    findings.push({
+      code: "TREASURY_CANNOT_COVER",
+      severity: "error",
+      message: `Treasury holds ${liquidity.onchainMicros} micros against ${liquidity.requiredMicros} owed. Sweep ${liquidity.sweepMicros} micros from the execution wallet.`,
+    });
+  } else if (liquidity.status === "low") {
+    findings.push({
+      code: "TREASURY_LOW",
+      severity: "warning",
+      message: `Treasury is inside its payout buffer. Sweep ${liquidity.sweepMicros} micros from the execution wallet before withdrawals fail.`,
+    });
+  }
+
+  // Reservations stuck on an execution that never finished: the user's money is
+  // held with nothing happening to it.
+  const stale = await staleHolds(prisma, env);
+  if (stale.count > 0) {
+    findings.push({
+      code: "STALE_HOLDS",
+      severity: "warning",
+      message: `${stale.count} reservation(s) holding ${stale.micros} micros have been open past the stale threshold on executions that never reached a terminal state.`,
+    });
+  }
+
   if (simulatedPoolFills > 0) {
     findings.push({
       code: "SIMULATED_POOL_FILLS",
@@ -120,6 +200,10 @@ export async function reconcileSolvency(
     userClaimsMicros: userClaims.toString(),
     houseCapitalMicros: house.toString(),
     controlledUsdcMicros: controlled?.toString() ?? null,
+    controlledSource,
+    unrecoveredDepositMicros: unrecoveredMicros.toString(),
+    staleHoldMicros: stale.micros.toString(),
+    treasuryLiquidity: liquidity,
     houseResidualMicros: residual?.toString() ?? null,
     audit: {
       checked: audit.checked,

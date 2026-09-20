@@ -28,6 +28,7 @@ export async function payoutResolvedPositions(prisma: PrismaClient = getPrisma()
 
   let paid = 0;
   let fees = 0;
+  const failures: { positionId: string; error: string }[] = [];
   for (const score of scores) {
     const position = score.prediction.position;
     if (!position) continue;
@@ -35,31 +36,44 @@ export async function payoutResolvedPositions(prisma: PrismaClient = getPrisma()
     if (!live) continue;
     if (!poolPayoutsOpen(score.prediction.market)) continue;
 
-    if (score.correct && score.payoutMicros > 0n) {
-      const result = await creditCash(prisma, {
-        walletAddress: score.walletAddress,
-        amountMicros: score.payoutMicros,
-        kind: "PAYOUT",
-        refType: "Position",
-        refId: position.id,
-      });
-      if (result.credited) paid += 1;
-    }
+    try {
+      if (score.correct && score.payoutMicros > 0n) {
+        const result = await creditCash(prisma, {
+          walletAddress: score.walletAddress,
+          amountMicros: score.payoutMicros,
+          kind: "PAYOUT",
+          refType: "Position",
+          refId: position.id,
+        });
+        if (result.credited) paid += 1;
+      }
 
-    if (score.prediction.market.source === VEYRA_POOL_SOURCE && score.pnlMicros > 0n) {
-      const pool = await prisma.poolLiquidity.findUnique({ where: { marketId: score.marketId } });
-      if (!pool) continue;
-      const feeMicros = (score.pnlMicros * BigInt(pool.feeBps)) / 10_000n;
-      if (feeMicros <= 0n) continue;
-      const result = await debitCash(prisma, {
-        walletAddress: score.walletAddress,
-        amountMicros: feeMicros,
-        kind: "FEE_DEBIT",
-        refType: "Position",
-        refId: position.id,
+      if (score.prediction.market.source === VEYRA_POOL_SOURCE && score.pnlMicros > 0n) {
+        const pool = await prisma.poolLiquidity.findUnique({ where: { marketId: score.marketId } });
+        if (!pool) continue;
+        const feeMicros = (score.pnlMicros * BigInt(pool.feeBps)) / 10_000n;
+        if (feeMicros <= 0n) continue;
+        const result = await debitCash(prisma, {
+          walletAddress: score.walletAddress,
+          amountMicros: feeMicros,
+          kind: "FEE_DEBIT",
+          refType: "Position",
+          refId: position.id,
+        });
+        if (result.debited) fees += 1;
+      }
+    } catch (error) {
+      // One wallet must not abort the tick. A failing fee debit used to throw here
+      // and re-throw on every later tick, so a single stuck balance froze payouts
+      // for everyone.
+      failures.push({
+        positionId: position.id,
+        error: error instanceof Error ? error.message : String(error),
       });
-      if (result.debited) fees += 1;
     }
   }
-  return { paid, fees };
+  if (failures.length > 0) {
+    console.error("[custody] payout failures this tick", { count: failures.length, failures });
+  }
+  return { paid, fees, failed: failures.length };
 }

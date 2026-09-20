@@ -494,3 +494,75 @@ vote their own question up and trade against a house-funded AMM. Polymarket cann
 attacked this way because it never takes a side. The per-pool loss cap bounds the
 damage; it does not remove the incentive.
 
+## Money formulas (2026-09-20)
+
+Every formula that moves money, and where it lives. All are unit-tested; the
+LMSR and fee bounds are additionally mutation-tested.
+
+| Quantity | Formula | Source |
+|---|---|---|
+| Kelly stake | `(p − q) / (1 − q)`, then × `kellyFractionBps`, clamped to `maxKellyBps` | `confidence/formula.ts` |
+| Order notional | `stakeMicros × kellyBps / 10_000` | `confidence/formula.ts` |
+| Brier score | `(impliedYesBps − outcomeBps)² / 100` → micros | `reputation/metrics.ts` |
+| LMSR cost | `C(q) = b · ln(e^(qYes/b) + e^(qNo/b))` | `pools/lmsr.ts` |
+| LMSR price | `1 / (1 + e^((qOther − qOwn)/b))` | `pools/lmsr.ts` |
+| Pool max loss | `b · ln(2)` (binary market) | `pools/lmsr.ts` |
+| Venue taker fee | `shares × rate × p × (1 − p)`, p in bps | `polymarket/live.ts` |
+| Fee reserve | `notional × VEYRA_FEE_RESERVE_BPS / 10_000`, rounded up | `treasury/funds.ts` |
+| Pool fee | `pnlMicros × feeBps / 10_000`, rounded down | `treasury/payouts.ts` |
+| Conviction | blend of equal-weight and capital-weighted P(YES), `VEYRA_CONVICTION_CAPITAL_BLEND_BPS` | `conviction/formula.ts` |
+| User claims | `Σ balances + Σ (hold.amount − hold.spent)` | `treasury/solvency.ts` |
+| Treasury requirement | `claims + pending withdrawals`, plus `VEYRA_TREASURY_BUFFER_BPS` buffer | `treasury/liquidity.ts` |
+
+**Rounding always favours the pool or the house on cost, the user on fees**: LMSR
+costs round up and sale proceeds round down (otherwise discretising the curve creates
+free money); the fee reserve rounds up (under-reserving re-opens the fee leak); the
+pool fee rounds down, in the trader's favour.
+
+**The one conditional**: `fee ≤ notional × rate` holds only while
+`VEYRA_FEE_RESERVE_BPS >= ` the venue's actual `fee_rate_bps`. Set it from observed
+fills, not from hope. Verified across every price and rate combination.
+
+## Custody implementation review (2026-09-20)
+
+Custody was implemented against `CUSTODY.md` in the `Veyra_v1` repo. Reviewing it
+against the spec found eight defects, all since fixed and mutation-checked. They
+shared a shape worth noting: **each looked correct and failed precisely in the case
+it existed for.**
+
+| Defect | Effect |
+|---|---|
+| Market orders posted through the limit-order SDK method | Every live order malformed; wrong payload (shares where USDC was required) |
+| `failWithdrawal` refunded before claiming the row | A concurrent `completeWithdrawal` meant the user was paid twice |
+| Orders reserved notional but were charged notional + fee | Fee silently absorbed by the house, no ledger entry, invisible to `auditBalances` |
+| Solvency compared the ledger to a hand-typed env constant | The one check that could catch a shortfall could not see one |
+| The invariant test derived "controlled USDC" from the ledger | Headline assertion could never fail |
+| Reorg reversal threw when the user had already spent the deposit | Deposit stayed CREDITED, phantom funds spendable, rest of the sweep aborted |
+| Deposit watcher scanned a fixed window with no cursor | An outage longer than ~2000 blocks lost deposits permanently |
+| One failing fee debit aborted the payout loop | A single stuck wallet froze payouts for every user, every tick |
+
+Also closed: the three `§7` rows whose tests passed whether or not the protection
+existed (negative-balance CHECK, stuck-hold sweep, order/reservation atomicity), and
+the operator omnibus report overwriting a live error with a stale one.
+
+### Treasury vs execution wallet drift
+
+User funds stay in the treasury wallet (X) while a bet is open; the trade runs from
+the execution wallet (Y). A winning bet therefore leaves proceeds in Y while X owes
+the payout, and nothing moves between them — X drains, Y accumulates, and withdrawals
+eventually fail while Veyra is holding the money. Total solvency stays fine
+throughout, which is why summing both wallets could not detect it.
+
+`treasury/liquidity.ts` reads X on-chain and reports the exact amount to sweep from
+Y, alerting on a buffer rather than on empty. The sweep is operator-executed: the
+server holds no treasury key, and Y's key stays trading-only.
+
+### Not fixed, and not code
+- Holding user funds and taking the other side of user trades is a licensing
+  question. It can invalidate the design regardless of code quality.
+- No live order has ever been placed through this codebase. The market-order
+  regression above would have surfaced on the first real trade.
+- Custody has never processed a real deposit; the watcher and clawback are tested
+  against simulations only.
+- `VEYRA_CUSTODY_ENABLED` and `POLYMARKET_EXECUTION_MODE` remain off.
+

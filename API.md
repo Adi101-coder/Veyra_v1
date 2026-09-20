@@ -315,6 +315,20 @@ the frontend to call.
 
 ---
 
+## 9a. Withdrawals (custody)
+
+Only meaningful with `VEYRA_CUSTODY_ENABLED=true`.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/api/treasury/withdrawals` | session | `{ destAddress, amountMicros }` |
+| GET | `/api/treasury/withdrawals` | session | This wallet's withdrawals and status |
+
+A withdrawal debits the balance at request time, so the same funds cannot be bet or
+withdrawn twice while queued. An operator then sends the transfer off-server and
+marks it complete, or fails it — which credits the amount back. The server holds no
+treasury key, so payout is always a human step.
+
 ## 10. Operator endpoints
 
 Server-side only. **Never call these from the browser** — the token is an admin

@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createTestDatabase } from "@/server/testing/db";
+import { prismaBettingStore } from "@/server/betting/repository";
 import { auditBalances } from "@/server/treasury/ledger";
 import {
+  availableMicros,
   creditCash,
   releaseHold,
   reserveFunds,
 } from "@/server/treasury/funds";
-import { releaseTerminalHolds } from "@/server/treasury/holds";
+import { releaseTerminalHolds, staleHolds } from "@/server/treasury/holds";
 import { creditSellFills } from "@/server/treasury/sells";
 import { payoutResolvedPositions } from "@/server/treasury/payouts";
 import { custodyIdentity, reconcileSolvency } from "@/server/treasury/solvency";
@@ -56,6 +58,16 @@ async function fund(amount: bigint, ref = `dep-${Math.random()}`) {
   });
 }
 
+async function fundWallet(wallet: string, amount: bigint) {
+  await creditCash(prisma, {
+    walletAddress: wallet,
+    amountMicros: amount,
+    kind: "DEPOSIT",
+    refType: "Test",
+    refId: `dep-${wallet}-${Math.random()}`,
+  });
+}
+
 async function seedMarket(id: string, source = "polymarket") {
   return prisma.market.create({
     data: { id, title: id, category: "crypto", tag: "t", status: "open", source },
@@ -69,11 +81,13 @@ async function seedLiveOrder(input: {
   status?: string;
   notional: bigint;
   reserve?: boolean;
+  wallet?: string;
 }) {
   const marketId = input.marketId;
+  const actor = input.wallet ?? WALLET;
   const prediction = await prisma.prediction.create({
     data: {
-      walletAddress: WALLET,
+      walletAddress: actor,
       marketId,
       outcome: "YES",
       confidenceBps: 6000,
@@ -86,7 +100,7 @@ async function seedLiveOrder(input: {
       position: {
         create: {
           marketId,
-          walletAddress: WALLET,
+          walletAddress: actor,
           outcome: "YES",
           side: "BUY",
           tokenId: "tok",
@@ -121,7 +135,7 @@ async function seedLiveOrder(input: {
   const execution = prediction.position!.executions[0]!;
   if (input.reserve !== false && (input.side ?? "BUY") === "BUY") {
     await prisma.$transaction((tx) =>
-      reserveFunds(tx, { walletAddress: WALLET, executionId: execution.id, amountMicros: input.notional }),
+      reserveFunds(tx, { walletAddress: actor, executionId: execution.id, amountMicros: input.notional }),
     );
   }
   return { prediction, execution };
@@ -139,6 +153,37 @@ async function addFill(executionId: string, notional: bigint, fee = 0n, sideHint
       isSimulated: false,
     },
   });
+}
+
+/**
+ * The solvency check must be able to FAIL. assertSolvent() feeds it a controlled
+ * figure derived from the ledger, which makes that assertion self-confirming — it
+ * proves the ledger agrees with itself, not that the money is there. These two
+ * cases drive the other side independently.
+ */
+async function assertSolvencyDetectsDrift() {
+  const identity = await custodyIdentity(prisma);
+  const claims = identity.balances + identity.activeHolds;
+
+  // A shortfall: less USDC controlled than users are owed. This is the real-world
+  // custody leak and it must be an error, not a warning.
+  const short = await reconcileSolvency(prisma, {
+    VEYRA_HOUSE_CAPITAL_MICROS: "0",
+    VEYRA_CONTROLLED_USDC_MICROS: (claims > 0n ? claims - 1n : 0n).toString(),
+  });
+  expect(short.ready).toBe(false);
+  expect(short.findings.some((f) => f.code === "INSOLVENT" && f.severity === "error")).toBe(true);
+
+  // Enough to cover claims: solvent.
+  const ok = await reconcileSolvency(prisma, {
+    VEYRA_HOUSE_CAPITAL_MICROS: "0",
+    VEYRA_CONTROLLED_USDC_MICROS: (claims + 1n).toString(),
+  });
+  expect(ok.findings.some((f) => f.code === "INSOLVENT")).toBe(false);
+
+  // A configured figure can never prove solvency on its own, and says so.
+  expect(ok.controlledSource).toBe("override");
+  expect(ok.findings.some((f) => f.code === "CONTROLLED_USDC_NOT_ONCHAIN")).toBe(true);
 }
 
 async function assertSolvent() {
@@ -209,6 +254,183 @@ describe("Custody cash loop", () => {
     expect(credit?.deltaBase).toBe(9n * USD);
   });
 
+  it("creates no order at all when the wallet cannot fund it", async () => {
+    // The reservation runs inside the same transaction as the order. If it were
+    // moved outside, an underfunded user would be left holding an execution nobody
+    // paid for — the exact failure the fill-driven ledger exists to prevent.
+    await seedMarket("m-atomic");
+    const store = prismaBettingStore(prisma);
+    const poor = "0xb0b0000000000000000000000000000000000001";
+    await fundWallet(poor, 1n * USD); // nowhere near the 20 USDC order
+
+    const before = await prisma.execution.count();
+    await expect(
+      store.createPrediction({
+        walletAddress: poor,
+        marketId: "m-atomic",
+        outcome: "YES",
+        confidenceBps: 6000,
+        stakeMicros: 20n * USD,
+        marketPriceBps: 5000,
+        engineVersion: "v1",
+        engineInputJson: "{}",
+        engineOutputJson: "{}",
+        status: "accepted",
+        position: {
+          marketId: "m-atomic",
+          walletAddress: poor,
+          outcome: "YES",
+          side: "BUY",
+          tokenId: "tok-atomic",
+          sharesMicros: 0n,
+          limitPriceBps: 5200,
+          avgPriceBps: 0,
+          notionalMicros: 20n * USD,
+          payoutMicros: 0n,
+          edgeBps: 100,
+          kellyBps: 2500,
+          status: "pending",
+          execution: {
+            venue: "polymarket",
+            mode: "live",
+            status: "created",
+            tokenId: "tok-atomic",
+            side: "BUY",
+            orderType: "FAK",
+            limitPriceBps: 5200,
+            sizeSharesMicros: 40n * USD,
+            notionalMicros: 20n * USD,
+            requestJson: "{}",
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+
+    // Nothing persisted: no execution, no position, no prediction, no hold.
+    expect(await prisma.execution.count()).toBe(before);
+    expect(await prisma.prediction.count({ where: { walletAddress: poor } })).toBe(0);
+    expect(await prisma.position.count({ where: { walletAddress: poor } })).toBe(0);
+    expect(await prisma.fundsHold.count({ where: { walletAddress: poor } })).toBe(0);
+    // ...and their balance is untouched.
+    expect(await availableMicros(prisma, poor)).toBe(1n * USD);
+  });
+
+  it("surfaces a reservation stuck on an execution that never finished", async () => {
+    // A worker dying mid-flight leaves the hold ACTIVE on a non-terminal execution.
+    // releaseTerminalHolds will never touch it, so without reporting the user's
+    // money is held indefinitely with nothing recording why.
+    await fund(50n * USD);
+    await seedMarket("m-stuck");
+    const { execution } = await seedLiveOrder({
+      marketId: "m-stuck",
+      executionId: "exec-stuck",
+      notional: 10n * USD,
+      status: "submitted",
+    });
+
+    // The sweep correctly ignores it: the order may still fill.
+    expect(await releaseTerminalHolds(prisma)).toEqual({ released: 0 });
+
+    // Fresh, so not yet stale.
+    expect((await staleHolds(prisma, {}, new Date())).count).toBe(0);
+
+    // A day later it is, and the money is still held.
+    const later = new Date(Date.now() + 25 * 60 * 60 * 1000);
+    const stale = await staleHolds(prisma, {}, later);
+    expect(stale.count).toBe(1);
+    expect(stale.micros).toBe(10n * USD);
+    expect(stale.executionIds).toEqual([execution.id]);
+
+    // Once the execution reaches a terminal state it is the sweep's job, not stale.
+    await prisma.execution.update({ where: { id: execution.id }, data: { status: "failed" } });
+    expect((await staleHolds(prisma, {}, later)).count).toBe(0);
+    expect(await releaseTerminalHolds(prisma)).toEqual({ released: 1 });
+  });
+
+  it("keeps paying everyone else when one wallet's fee debit fails", async () => {
+    // Reachable sequence: the pool row is missing on one tick so the fee is skipped
+    // while the payout lands, the user withdraws it, and the fee is retried once the
+    // pool exists. debitCash then throws — and an unguarded loop aborted the whole
+    // tick and re-aborted every tick after, freezing payouts for everyone.
+    await seedMarket("m-wedge", "veyra");
+    await prisma.market.update({
+      where: { id: "m-wedge" },
+      data: { resolvedAt: new Date(), payoutsAuthorizedAt: new Date(), source: "veyra" },
+    });
+
+    const scoreFor = async (wallet: string, executionId: string) => {
+      await fundWallet(wallet, 10n * USD);
+      const { prediction, execution } = await seedLiveOrder({
+        marketId: "m-wedge",
+        executionId,
+        notional: 5n * USD,
+        status: "filled",
+        wallet,
+      });
+      await addFill(execution.id, 5n * USD);
+      await prisma.userReputation.upsert({
+        where: { walletAddress: wallet },
+        create: { walletAddress: wallet },
+        update: {},
+      });
+      await prisma.predictionScore.create({
+        data: {
+          predictionId: prediction.id,
+          walletAddress: wallet,
+          marketId: "m-wedge",
+          category: "crypto",
+          predictedOutcome: "YES",
+          resolvedOutcome: "YES",
+          confidenceBps: 6000,
+          impliedYesBps: 6000,
+          correct: true,
+          brierMicros: 0n,
+          notionalMicros: 5n * USD,
+          payoutMicros: 10n * USD,
+          pnlMicros: 5n * USD,
+          resolvedAt: new Date(),
+        },
+      });
+    };
+
+    const stuck = "0xdead000000000000000000000000000000000001";
+    await scoreFor(stuck, "exec-wedge-stuck");
+
+    // Tick 1: no pool row yet, so payouts land and fees are skipped.
+    const firstTick = await payoutResolvedPositions(prisma);
+    expect(firstTick.paid).toBe(1);
+    expect(firstTick.fees).toBe(0);
+
+    // The user withdraws everything they were paid.
+    await prisma.treasuryBalance.update({
+      where: { walletAddress_asset: { walletAddress: stuck, asset: "USDC" } },
+      data: { balanceBase: 0n },
+    });
+
+    // A second, healthy wallet resolves on the same market.
+    await scoreFor(WALLET, "exec-wedge-ok");
+
+    // Tick 2: the pool now exists, so the stuck wallet's fee is retried and fails.
+    await prisma.poolLiquidity.create({
+      data: {
+        marketId: "m-wedge",
+        bMicros: 100n * USD,
+        allocatedMicros: 70n * USD,
+        status: "ACTIVE",
+        feeBps: 200,
+      },
+    });
+    const secondTick = await payoutResolvedPositions(prisma);
+
+    // The healthy wallet is still paid, and the failure is reported, not swallowed.
+    expect(secondTick.failed).toBe(1);
+    expect(secondTick.paid).toBe(1);
+    const healthy = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: WALLET, asset: "USDC" } },
+    });
+    expect(healthy.balanceBase).toBeGreaterThan(0n);
+  });
+
   it("pays a winning position from PredictionScore.payoutMicros and takes the pool fee from pnlMicros", async () => {
     await fund(100n * USD);
     await seedMarket("m-pay", "veyra");
@@ -259,7 +481,7 @@ describe("Custody cash loop", () => {
     const second = await payoutResolvedPositions(prisma);
     expect(first.paid).toBe(1);
     expect(first.fees).toBe(1);
-    expect(second).toEqual({ paid: 0, fees: 0 });
+    expect(second).toEqual({ paid: 0, fees: 0, failed: 0 });
     // 100 - 20 reserve still active + 40 payout - 0.4 fee
     const fee = (20n * USD * 200n) / 10_000n;
     expect(fee).toBe(400_000n);
@@ -269,6 +491,7 @@ describe("Custody cash loop", () => {
     const deposits = 1_000n * USD;
     await fund(deposits, "seed-invariant");
     await assertSolvent();
+    await assertSolvencyDetectsDrift();
 
     let seed = 42;
     const rand = () => {
@@ -356,6 +579,7 @@ describe("Custody cash loop", () => {
         await releaseTerminalHolds(prisma);
       }
       await assertSolvent();
+      await assertSolvencyDetectsDrift();
     }
   });
 });

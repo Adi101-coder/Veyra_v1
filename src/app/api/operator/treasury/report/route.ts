@@ -19,9 +19,12 @@ export async function GET(request: Request) {
       accountingSeparationReport(prisma),
       auditBalances(prisma),
       reconcileSolvency(prisma),
+      // Spread the cached snapshot first: this call's failure is the useful one, so
+      // it must win. The other order let a stale (often null) error overwrite it,
+      // leaving an operator looking at `error: null` on a read that just failed.
       readOmnibusOnchain().catch((error) => ({
-        error: error instanceof Error ? error.message : String(error),
         ...lastOmnibusOnchain(),
+        error: error instanceof Error ? error.message : String(error),
       })),
     ]);
     return NextResponse.json({ ...separation, audit, solvency, omnibusOnchain });

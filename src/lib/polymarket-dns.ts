@@ -26,8 +26,16 @@ export function pinPolymarketDns() {
     // older Node
   }
   const original = dns.lookup.bind(dns);
+  // `dns.lookup`'s callback is an overloaded union (string address vs
+  // LookupAddress[]), which TypeScript resolves to an intersection at the call
+  // site. Narrow it once here rather than casting at each call.
+  type LookupCallback = (
+    err: NodeJS.ErrnoException | null,
+    address: string | dns.LookupAddress[],
+    family?: number,
+  ) => void;
   const patched: typeof dns.lookup = ((hostname, options, callback) => {
-    const cb = typeof options === "function" ? options : callback;
+    const cb = (typeof options === "function" ? options : callback) as LookupCallback | undefined;
     const opts = typeof options === "function" || options == null ? {} : options;
     if (!PINNED.has(String(hostname)) || typeof cb !== "function") {
       return original(hostname, options as never, callback as never);

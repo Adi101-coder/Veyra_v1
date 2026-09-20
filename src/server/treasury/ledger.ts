@@ -212,36 +212,60 @@ export async function auditBalances(prisma: PrismaClient) {
 export async function reverseDeposit(prisma: PrismaClient, depositId: string) {
   const deposit = await prisma.treasuryDeposit.findUnique({ where: { id: depositId } });
   if (!deposit || deposit.status !== "CREDITED") {
-    return { reversed: false };
+    return { reversed: false, unrecoveredMicros: 0n };
   }
   const claim = await prisma.treasuryDeposit.updateMany({
     where: { id: deposit.id, status: "CREDITED" },
     data: { status: "REVERSED" },
   });
-  if (claim.count !== 1) return { reversed: false };
+  if (claim.count !== 1) return { reversed: false, unrecoveredMicros: 0n };
 
+  // The transfer no longer exists on chain, so the deposit must not stay CREDITED
+  // whatever the balance looks like. If the user already spent it, claw back what is
+  // there and record the rest as money Veyra is short — refusing to reverse would
+  // leave phantom funds spendable, which is the case this path exists for.
+  let unrecovered = 0n;
   try {
     await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "treasury_balances" WHERE "walletAddress" = ${deposit.walletAddress} AND "asset" = ${deposit.asset} FOR UPDATE`;
       const balance = await tx.treasuryBalance.findUnique({
         where: { walletAddress_asset: { walletAddress: deposit.walletAddress, asset: deposit.asset } },
       });
-      if ((balance?.balanceBase ?? 0n) < deposit.amountBase) {
-        throw new BettingError("INSUFFICIENT_FUNDS", "Balance does not cover reversing this deposit.", 402);
+      const available = balance?.balanceBase ?? 0n;
+      const clawback = available < deposit.amountBase ? available : deposit.amountBase;
+      unrecovered = deposit.amountBase - clawback;
+
+      if (clawback > 0n) {
+        await applyDelta(tx, {
+          walletAddress: deposit.walletAddress,
+          asset: deposit.asset,
+          decimals: deposit.decimals,
+          deltaBase: -clawback,
+          kind: "REVERSAL",
+          refType: "TreasuryDeposit",
+          refId: `${deposit.id}:reorg`,
+        });
       }
-      await applyDelta(tx, {
-        walletAddress: deposit.walletAddress,
-        asset: deposit.asset,
-        decimals: deposit.decimals,
-        deltaBase: -deposit.amountBase,
-        kind: "REVERSAL",
-        refType: "TreasuryDeposit",
-        refId: `${deposit.id}:reorg`,
-      });
+      if (unrecovered > 0n) {
+        await tx.treasuryDeposit.update({
+          where: { id: deposit.id },
+          data: { unrecoveredMicros: unrecovered },
+        });
+      }
     });
   } catch (error) {
+    // Only an unexpected failure lands here; the spent-deposit case is handled
+    // above. Restore CREDITED so the next tick retries rather than losing the row.
     await prisma.treasuryDeposit.update({ where: { id: deposit.id }, data: { status: "CREDITED" } });
     throw error;
   }
-  return { reversed: true };
+  if (unrecovered > 0n) {
+    console.error("[custody] reorged deposit could not be fully clawed back", {
+      depositId: deposit.id,
+      walletAddress: deposit.walletAddress,
+      amountMicros: deposit.amountBase.toString(),
+      unrecoveredMicros: unrecovered.toString(),
+    });
+  }
+  return { reversed: true, unrecoveredMicros: unrecovered };
 }

@@ -4,9 +4,12 @@ import { createTestDatabase } from "@/server/testing/db";
 import { loadSupportedAssets, walletsAreSeparate } from "@/server/treasury/config";
 import { accountingSeparationReport, exposureFor } from "@/server/treasury/exposure";
 import { auditBalances, balancesFor, creditDeposit, reverseDeposit } from "@/server/treasury/ledger";
+import { reconcileSolvency } from "@/server/treasury/solvency";
+import { treasuryLiquidity } from "@/server/treasury/liquidity";
+import { confirmationDepth, maxScanSpan, resumeFromBlock } from "@/server/treasury/watcher";
 import { CASH_ASSET, creditCash } from "@/server/treasury/funds";
 import { applyConfirmedDeposits } from "@/server/treasury/watcher";
-import { failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
+import { completeWithdrawal, failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
 
 let prisma: PrismaClient;
 let database: ReturnType<typeof createTestDatabase>;
@@ -237,6 +240,214 @@ describe("Treasury custody ledger (Prisma)", () => {
     expect((await prisma.treasuryWithdrawal.findUniqueOrThrow({ where: { id: row.id } })).status).toBe("FAILED");
   });
 
+  it("still reverses a reorged deposit the user has already spent", async () => {
+    // The case the reversal path exists for. Previously this threw, flipped the
+    // deposit back to CREDITED and aborted the sweep — leaving phantom funds
+    // spendable and the reorg unrecorded.
+    await prisma.treasuryDeposit.deleteMany();
+    await prisma.treasuryLedgerEntry.deleteMany();
+    await prisma.treasuryBalance.deleteMany();
+
+    const credited = await creditDeposit(
+      prisma,
+      { walletAddress: USER, asset: "NVDA", chainId: 137, txHash: txHash(91), logIndex: 0, amountBase: 10_000_000n },
+      ENV,
+    );
+    expect(credited.credited).toBe(true);
+
+    // User spends most of it before the reorg is noticed.
+    await prisma.treasuryBalance.update({
+      where: { walletAddress_asset: { walletAddress: USER, asset: "NVDA" } },
+      data: { balanceBase: 3_000_000n },
+    });
+
+    const result = await reverseDeposit(prisma, credited.depositId);
+    expect(result.reversed).toBe(true);
+    // Clawed back what was there; the rest is recorded as a shortfall.
+    expect(result.unrecoveredMicros).toBe(7_000_000n);
+
+    const balance = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: USER, asset: "NVDA" } },
+    });
+    expect(balance.balanceBase).toBe(0n);
+
+    const row = await prisma.treasuryDeposit.findUniqueOrThrow({ where: { id: credited.depositId } });
+    expect(row.status).toBe("REVERSED");
+    expect(row.unrecoveredMicros).toBe(7_000_000n);
+
+    // Replaying is a no-op, not a second clawback.
+    expect(await reverseDeposit(prisma, credited.depositId)).toEqual({
+      reversed: false,
+      unrecoveredMicros: 0n,
+    });
+  });
+
+  it("says how much to sweep from the execution wallet before withdrawals fail", async () => {
+    // A winning bet leaves the proceeds in Y while X owes the payout, so X drains
+    // and nothing moves between them. The check must catch that before a user's
+    // cash-out fails, not after.
+    await prisma.treasuryWithdrawal.deleteMany();
+    await prisma.fundsHold.deleteMany();
+    await prisma.treasuryLedgerEntry.deleteMany();
+    await prisma.treasuryBalance.deleteMany();
+    await creditCash(prisma, {
+      walletAddress: USER,
+      amountMicros: 100_000_000n,
+      kind: "DEPOSIT",
+      refType: "Test",
+      refId: "liq-seed",
+    });
+
+    const env = { VEYRA_TREASURY_BUFFER_BPS: "1000" }; // 10% buffer
+
+    // Comfortably funded.
+    const ok = await treasuryLiquidity(prisma, env, 200_000_000n);
+    expect(ok.status).toBe("ok");
+    expect(ok.sweepMicros).toBe("0");
+    expect(ok.requiredMicros).toBe("100000000");
+
+    // Covered, but inside the buffer: sweep now rather than after a failure.
+    const low = await treasuryLiquidity(prisma, env, 105_000_000n);
+    expect(low.status).toBe("low");
+    expect(low.sweepMicros).toBe("5000000"); // to reach 110m
+
+    // Cannot cover what is owed at all.
+    const short = await treasuryLiquidity(prisma, env, 60_000_000n);
+    expect(short.status).toBe("short");
+    expect(short.sweepMicros).toBe("50000000"); // to reach 110m
+
+    // A pending withdrawal is money already promised, so it raises the bar.
+    await prisma.treasuryWithdrawal.create({
+      data: {
+        walletAddress: USER,
+        destAddress: "0x5555555555555555555555555555555555555555",
+        asset: "USDC",
+        amountMicros: 20_000_000n,
+        status: "PENDING",
+      },
+    });
+    const withPending = await treasuryLiquidity(prisma, env, 105_000_000n);
+    expect(withPending.requiredMicros).toBe("120000000");
+    expect(withPending.status).toBe("short");
+
+    // Unreadable chain balance is reported as unknown, never as healthy.
+    const unknown = await treasuryLiquidity(prisma, env, null);
+    expect(unknown.status).toBe("unknown");
+    expect(unknown.sweepMicros).toBe("0");
+  });
+
+  it("raises a solvency error when the treasury cannot cover what it owes", async () => {
+    const report = await reconcileSolvency(prisma, {
+      VEYRA_CONTROLLED_USDC_MICROS: "1000000000",
+      VEYRA_TREASURY_BUFFER_BPS: "1000",
+    });
+    // No treasury address configured in this suite, so the balance is unreadable
+    // and the check must not claim everything is fine.
+    expect(report.treasuryLiquidity.status).toBe("unknown");
+  });
+
+  it("resumes scanning from the stored cursor instead of a fixed window", async () => {
+    // Without a cursor the watcher only ever looks a fixed span back from the head,
+    // so an outage longer than that window loses deposits with no trace.
+    await prisma.depositScanCursor.deleteMany();
+    const span = 2_000n;
+
+    // First run: nothing stored, so look one span back from the confirmed head.
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(48_000n);
+    // A chain younger than the span starts at genesis.
+    expect(await resumeFromBlock(prisma, 137, 500n, span)).toBe(0n);
+
+    // With a cursor, resume at the next unscanned block — however far behind.
+    await prisma.depositScanCursor.create({ data: { chainId: 137, lastScannedBlock: 10_000n } });
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(10_001n);
+
+    // Never scan past the confirmed head.
+    await prisma.depositScanCursor.update({
+      where: { chainId: 137 },
+      data: { lastScannedBlock: 60_000n },
+    });
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(50_000n);
+
+    // Cursors are per chain.
+    expect(await resumeFromBlock(prisma, 80_002, 50_000n, span)).toBe(48_000n);
+  });
+
+  it("clamps the scan span and confirmation depth to sane values", () => {
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "500" })).toBe(500);
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "0" })).toBe(2_000);
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "nonsense" })).toBe(2_000);
+    expect(maxScanSpan({} as NodeJS.ProcessEnv)).toBe(2_000);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "1" })).toBe(1);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "0" })).toBe(12);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "9999" })).toBe(12);
+    expect(confirmationDepth({} as NodeJS.ProcessEnv)).toBe(12);
+  });
+
+  it("reports unrecovered reorg money as a solvency error", async () => {
+    await prisma.treasuryDeposit.deleteMany();
+    const clean = await reconcileSolvency(prisma, { VEYRA_CONTROLLED_USDC_MICROS: "1000000000" });
+    expect(clean.findings.some((f) => f.code === "UNRECOVERED_DEPOSITS")).toBe(false);
+
+    await prisma.treasuryDeposit.create({
+      data: {
+        walletAddress: USER,
+        asset: "NVDA",
+        chainId: 137,
+        txHash: txHash(92),
+        logIndex: 0,
+        amountBase: 8_000_000n,
+        decimals: 18,
+        status: "REVERSED",
+        unrecoveredMicros: 5_000_000n,
+      },
+    });
+    const dirty = await reconcileSolvency(prisma, { VEYRA_CONTROLLED_USDC_MICROS: "1000000000" });
+    expect(dirty.findings.some((f) => f.code === "UNRECOVERED_DEPOSITS" && f.severity === "error")).toBe(true);
+    expect(dirty.ready).toBe(false);
+    expect(dirty.unrecoveredDepositMicros).toBe("5000000");
+  });
+
+  it("never refunds a withdrawal the operator has already paid out", async () => {
+    // Covers the sequential case: a withdrawal the operator already paid out must
+    // never be refunded on top.
+    //
+    // The concurrent interleaving — failWithdrawal reads PENDING, completeWithdrawal
+    // takes the row, then the refund lands anyway — is NOT reachable from a
+    // sequential test. failWithdrawal claims the row before crediting so that window
+    // does not exist; this test does not by itself prove that ordering.
+    await prisma.treasuryWithdrawal.deleteMany();
+    await creditCash(prisma, {
+      walletAddress: USER,
+      amountMicros: 50_000_000n,
+      kind: "DEPOSIT",
+      refType: "Test",
+      refId: "wd-race-seed",
+    });
+    const row = await requestWithdrawal(prisma, {
+      walletAddress: USER,
+      destAddress: "0x5555555555555555555555555555555555555555",
+      amountMicros: 10_000_000n,
+    });
+
+    // Operator sends the funds and marks it complete.
+    await completeWithdrawal(prisma, { id: row.id, txHash: `0x${"ab".repeat(32)}` });
+    // A second operator (or a retry) then tries to fail the same withdrawal.
+    await expect(failWithdrawal(prisma, { id: row.id })).rejects.toMatchObject({
+      code: "WITHDRAWAL_NOT_PENDING",
+    });
+
+    // The balance must still reflect the payout, not a refund on top of it.
+    const after = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: USER, asset: CASH_ASSET } },
+    });
+    expect(after.balanceBase).toBe(40_000_000n);
+    expect(
+      await prisma.treasuryLedgerEntry.count({
+        where: { refType: "TreasuryWithdrawal", refId: row.id, kind: "REVERSAL" },
+      }),
+    ).toBe(0);
+  });
+
   it("credits a watched deposit once and can reverse a reorg", async () => {
     const transfer = {
       walletAddress: USER,
@@ -248,8 +459,8 @@ describe("Treasury custody ledger (Prisma)", () => {
     };
     expect((await applyConfirmedDeposits(prisma, [transfer, transfer], ENV)).credited).toBe(1);
     const deposit = await prisma.treasuryDeposit.findFirstOrThrow({ where: { txHash: transfer.txHash } });
-    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: true });
-    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: false });
+    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: true, unrecoveredMicros: 0n });
+    expect(await reverseDeposit(prisma, deposit.id)).toEqual({ reversed: false, unrecoveredMicros: 0n });
     expect((await prisma.treasuryDeposit.findUniqueOrThrow({ where: { id: deposit.id } })).status).toBe("REVERSED");
   });
 });

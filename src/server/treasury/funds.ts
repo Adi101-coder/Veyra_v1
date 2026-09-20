@@ -36,6 +36,8 @@ export const CASH_ASSET = "USDC";
 export const CASH_DECIMALS = 6;
 
 type Tx = Prisma.TransactionClient;
+/** Env as a plain record: callers pass literals, which NodeJS.ProcessEnv rejects. */
+type EnvRecord = Record<string, string | undefined>;
 
 /**
  * Whether custody is switched on. Off by default: the system runs paper-first, and
@@ -50,6 +52,30 @@ export function custodyEnabled(env: NodeJS.ProcessEnv = process.env) {
 /** Whether an execution moves real money. Paper never does, nor does custody-off. */
 export function settlesInCash(mode: string, env: NodeJS.ProcessEnv = process.env) {
   return custodyEnabled(env) && mode === "live";
+}
+
+/**
+ * Worst-case venue fee for a given notional, in micros.
+ *
+ * Polymarket's taker fee is `shares x rate x p x (1 - p)`, so as a fraction of
+ * notional (`shares x p`) it is `rate x (1 - p)` — maximised as p approaches 0 and
+ * bounded above by the fee rate itself. Reserving the notional plus that rate
+ * therefore covers any fill the venue can produce.
+ *
+ * This must be reserved up front. Reserving only the notional means a full fill
+ * costs more than was held, the release caps the overage away, and the fee is
+ * silently absorbed by the house instead of being charged to the trader.
+ */
+export function feeReserveMicros(notionalMicros: bigint, env: EnvRecord = process.env) {
+  const bps = BigInt(Math.max(0, Number.parseInt(env.VEYRA_FEE_RESERVE_BPS ?? "200", 10) || 0));
+  if (notionalMicros <= 0n || bps <= 0n) return 0n;
+  // Round up: under-reserving reintroduces the leak.
+  return (notionalMicros * bps + 9_999n) / 10_000n;
+}
+
+/** Notional plus the worst-case fee: what an order must reserve. */
+export function orderReserveMicros(notionalMicros: bigint, env: EnvRecord = process.env) {
+  return notionalMicros + feeReserveMicros(notionalMicros, env);
 }
 
 /** Spendable balance. Holds have already been debited, so this is simply the row. */
@@ -145,8 +171,19 @@ export async function releaseHold(
 
   // Never "spend" more than was reserved: a venue filling beyond the reservation is
   // an incident for reconciliation to flag, not something to silently fund.
-  const spent = spentMicros > hold.amountMicros ? hold.amountMicros : spentMicros;
+  const capped = spentMicros > hold.amountMicros;
+  const spent = capped ? hold.amountMicros : spentMicros;
   const refund = hold.amountMicros - spent;
+  if (capped) {
+    // The venue charged more than was reserved, so the difference is absorbed by
+    // the house. Never silent: this is a solvency event, not a rounding detail.
+    console.error("[custody] execution cost exceeded its reservation", {
+      executionId,
+      reservedMicros: hold.amountMicros.toString(),
+      actualMicros: spentMicros.toString(),
+      shortfallMicros: (spentMicros - hold.amountMicros).toString(),
+    });
+  }
 
   const claim = await prisma.fundsHold.updateMany({
     where: { id: hold.id, status: "ACTIVE" },
@@ -167,7 +204,7 @@ export async function releaseHold(
       refId: executionId,
     });
   }
-  return { released: true, refundMicros: refund };
+  return { released: true, refundMicros: refund, capped };
 }
 
 /**
