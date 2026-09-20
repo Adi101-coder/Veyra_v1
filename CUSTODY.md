@@ -54,6 +54,35 @@ Missing, in dependency order:
 
 ---
 
+## 2a. Where the implementation differs from this spec
+
+Two deliberate deviations. Both are safe; neither matches the wording below.
+
+**Cash moves at reserve time, not per fill (§5.2).** The spec wanted a `BET_DEBIT`
+per fill, keyed `(Fill.id)`, inside `applyExecutionResult`'s transaction. The code
+instead debits the full notional plus worst-case fee when the order is created, and
+releases the unspent remainder once the execution is terminal. `BET_DEBIT` does not
+exist. The reason: it keeps cash out of `applyExecutionResult`, the most
+safety-critical function in the codebase, and a release only ever returns money — so
+a delayed or crashed release is conservative, where a delayed debit is not. The
+failure §5.2 guards against (a position nobody paid for) is unreachable, because the
+money is taken before the order is submitted.
+
+Consequence: `FundsHold.spentMicros` is written once at release, so while a hold is
+ACTIVE it is always `0`. "Committed but not yet spent" is only known per execution,
+not per fill.
+
+**SELL credits are swept, not applied in the fill transaction (§5.4).** Same
+reasoning and same direction: a delayed credit withholds a user's own money briefly
+rather than letting them spend money twice.
+
+**Fees are reserved up front.** Reserving only the notional meant a full fill cost
+more than was held, the release capped the overage away, and the fee was silently
+absorbed by the house with no ledger entry. Orders now reserve
+`notional + feeReserveMicros(notional)`. `VEYRA_FEE_RESERVE_BPS` **must be greater
+than or equal to the venue's actual fee rate**, or the cap re-opens the leak — the
+bound is `fee ≤ notional × rate`, verified across all prices and rates.
+
 ## 3. Decision that shapes everything: what can be bet
 
 The deposit assets discussed so far are tokenized equities (NVDA, AMD). Those cannot
