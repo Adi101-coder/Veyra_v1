@@ -5,7 +5,7 @@ import { getPoolMarket, poolSyntheticBook, proposerForPool } from "@/server/voti
 import { poolBook } from "@/server/pools/book";
 import { VEYRA_POOL_SOURCE } from "@/server/voting/config";
 import { fetchPolymarketMarket } from "@/lib/polymarket";
-import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome } from "@/lib/betting";
+import type { EngineQuote, PlacePredictionRequest, QuoteRequest, ChangeConfidenceRequest, OrderBookSnapshot, Outcome, PredictionDTO, PredictionScoreDTO } from "@/lib/betting";
 import { ConfidenceEngine } from "@/server/confidence/engine";
 import { loadConfidenceEngineConfig } from "@/server/confidence/config";
 import { snapshotToEngineBook, syntheticBookForToken, syntheticBookFromMarket, tokenIdFor } from "@/server/confidence/book";
@@ -18,6 +18,7 @@ import {
 import type { EngineResult } from "@/server/confidence/types";
 import { BettingError } from "@/server/errors";
 import {
+  bpsToPct,
   confidencePctToBps,
   formatPrice,
   formatShares,
@@ -49,7 +50,7 @@ import { memoryExecutionStore, prismaExecutionStore, type ExecutionStore } from 
 import type { IntentAllocation, ProcessResult } from "@/server/execution/types";
 import { ReputationEngine } from "@/server/reputation/engine";
 import { memoryReputationStore, prismaReputationStore } from "@/server/reputation/store";
-import type { Forecast, ForecastSource, ResolutionOutcome } from "@/server/reputation/types";
+import type { Forecast, ForecastSource, PredictionScoreRow, ResolutionOutcome } from "@/server/reputation/types";
 import { fetchVenueResolution, type VenueResolution } from "@/server/polymarket/gamma";
 import { formatBrier } from "@/server/reputation/metrics";
 import { parseOutcome, parseWalletAddress } from "@/server/betting/validation";
@@ -284,6 +285,35 @@ function getEngine(deps: BettingDeps) {
     deps.engine = new ExecutionEngine(client, deps.executionStore);
   }
   return deps.engine;
+}
+
+function toScoreDTO(row: PredictionScoreRow): PredictionScoreDTO {
+  return {
+    resolvedOutcome: row.resolvedOutcome,
+    correct: row.correct,
+    brierScore: formatBrier(row.brierMicros),
+    pnlUsd: formatUsd(row.pnlMicros),
+    payoutUsd: formatUsd(row.payoutMicros),
+    confidencePct: bpsToPct(row.confidenceBps),
+    resolvedAt: row.resolvedAt.toISOString(),
+  };
+}
+
+async function withScores(dtos: PredictionDTO[], deps: BettingDeps): Promise<PredictionDTO[]> {
+  if (dtos.length === 0) return dtos;
+  const rows = await getReputation(deps).listScoresByIds(dtos.map((dto) => dto.id));
+  if (rows.length === 0) return dtos;
+  const byId = new Map(rows.map((row) => [row.predictionId, row]));
+  return dtos.map((dto) => {
+    const row = byId.get(dto.id);
+    return row ? { ...dto, score: toScoreDTO(row) } : dto;
+  });
+}
+
+async function withScore(dto: PredictionDTO | null, deps: BettingDeps) {
+  if (!dto) return null;
+  const [next] = await withScores([dto], deps);
+  return next ?? dto;
 }
 
 export async function resolveMarket(id: string, deps: BettingDeps) {
@@ -596,7 +626,7 @@ async function recordOpenIfFilled(deps: BettingDeps, bundle: PredictionBundle) {
 
 export async function getPrediction(id: string, deps: BettingDeps = createDefaultDeps()) {
   const bundle = await deps.store.getPrediction(id);
-  return bundle ? toPredictionDTO(bundle) : null;
+  return withScore(bundle ? toPredictionDTO(bundle) : null, deps);
 }
 
 export async function listPredictions(
@@ -608,7 +638,7 @@ export async function listPredictions(
     // Stored EVM addresses are lowercase; normalize user-supplied filters the same way.
     walletAddress: filter.walletAddress ? parseWalletAddress(filter.walletAddress) : undefined,
   });
-  return rows.map(toPredictionDTO);
+  return withScores(rows.map(toPredictionDTO), deps);
 }
 
 /**
@@ -625,7 +655,7 @@ export async function syncExecution(executionId: string, deps: BettingDeps = cre
   }
   const bundle = await deps.store.findByExecutionId(executionId);
   if (!bundle) throw new BettingError("EXECUTION_NOT_FOUND", "Execution not found.", 404);
-  return toPredictionDTO(bundle);
+  return withScore(toPredictionDTO(bundle), deps);
 }
 
 /** Worker entry point: fail or hand to reconciliation intents a crashed worker left PROCESSING. */
@@ -1091,19 +1121,17 @@ export async function listUserPredictions(
   deps: BettingDeps = createDefaultDeps(),
 ) {
   const predictions = await listPredictions({ walletAddress, limit: 100 }, deps);
-  const scores = await getReputation(deps).listScores(walletAddress);
-  const byId = new Map(scores.map((row) => [row.predictionId, row]));
   return predictions.map((prediction) => {
-    const score = byId.get(prediction.id);
+    const score = prediction.score;
     return {
       ...prediction,
       resolution: score
         ? {
             resolvedOutcome: score.resolvedOutcome,
             correct: score.correct,
-            brierScore: formatBrier(score.brierMicros),
-            pnlUsd: formatUsd(score.pnlMicros),
-            resolvedAt: score.resolvedAt.toISOString(),
+            brierScore: score.brierScore,
+            pnlUsd: score.pnlUsd,
+            resolvedAt: score.resolvedAt,
           }
         : null,
     };

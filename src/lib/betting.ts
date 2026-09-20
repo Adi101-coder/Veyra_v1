@@ -144,8 +144,24 @@ export type PredictionDTO = {
   execution: ExecutionDTO | null;
   /** Set once the market has resolved (INVALID = voided). */
   marketResolution: { outcome: "YES" | "NO" | "INVALID"; resolvedAt: string } | null;
+  /**
+   * Reputation `PredictionScore` after the resolve job. Same Brier / PnL / payout
+   * CUSTODY.md §5.5 uses for PAYOUT and pool FEE_DEBIT. Null until scored.
+   */
+  score: PredictionScoreDTO | null;
   /** Robinhood Chain settlement reference. Only status "confirmed" means mined and final. */
   settlement: SettlementReferenceDTO | null;
+};
+
+export type PredictionScoreDTO = {
+  resolvedOutcome: Outcome;
+  correct: boolean;
+  brierScore: string;
+  pnlUsd: string;
+  payoutUsd: string;
+  /** Stated confidence at the resolution cutoff, in percent. */
+  confidencePct: number;
+  resolvedAt: string;
 };
 
 export type SettlementReferenceDTO = {
@@ -287,13 +303,18 @@ export function predictionToWagerRow(
   // Only recorded fills lock a seat. Pending and failed orders stay open and
   // unresolved; their state is surfaced through lockBy (execution/position status).
   const locked = hasFilledShares(dto);
-  const resolved = dto.marketResolution?.outcome;
+  const scored = dto.score;
+  const resolved = scored?.resolvedOutcome ?? dto.marketResolution?.outcome;
   const userNote: import("@/lib/markets").SeatNote = resolved
     ? resolved === "INVALID"
       ? "PUSH"
-      : resolved === dto.outcome
-        ? "LANDED"
-        : "MISSED"
+      : scored
+        ? scored.correct
+          ? "LANDED"
+          : "MISSED"
+        : resolved === dto.outcome
+          ? "LANDED"
+          : "MISSED"
     : locked
       ? "LOCKED"
       : "OPEN";
@@ -306,7 +327,7 @@ export function predictionToWagerRow(
     gold: dto.position ? `${dto.position.shares} sh` : "—",
     lockBy: dto.execution?.status ?? dto.position?.status ?? dto.status,
     mechanism: "Confidence",
-    resolution: dto.marketResolution ? "RESOLVED" : "PENDING",
+    resolution: scored || dto.marketResolution ? "RESOLVED" : "PENDING",
     expired: false,
     left: {
       wallet: shorten(dto.walletAddress),

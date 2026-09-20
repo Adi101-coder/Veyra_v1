@@ -14,10 +14,10 @@ export function PredictionHistory({ predictions }: { predictions: ScoredPredicti
   return (
     <ul className="divide-y divide-[rgba(26,26,26,0.08)]">
       {predictions.map((prediction) => {
-        const resolution = prediction.resolution;
+        const score = prediction.score;
         const status =
           prediction.position?.status ?? prediction.execution?.status ?? prediction.status;
-        const voided = resolution?.resolvedOutcome === "INVALID";
+        const voided = prediction.marketResolution?.outcome === "INVALID";
         return (
           <li key={prediction.id}>
             <Link
@@ -39,25 +39,27 @@ export function PredictionHistory({ predictions }: { predictions: ScoredPredicti
                 </p>
               </div>
               <div className="shrink-0 sm:text-right">
-                {resolution ? (
+                {score ? (
                   <>
                     <p
                       className={`font-mono text-[10px] uppercase tracking-[0.16em] ${
-                        voided ? "text-[#8a8a8a]" : resolution.correct ? "text-[#2f9e6e]" : "text-[#c45c6a]"
+                        score.correct ? "text-[#2f9e6e]" : "text-[#c45c6a]"
                       }`}
                     >
-                      {voided ? "Voided" : resolution.correct ? "Landed" : "Missed"}
+                      {score.correct ? "Landed" : "Missed"}
                       <span className="text-[#c8c4bc]"> · </span>
-                      <span className="text-[#8a8a8a]">Resolved {resolution.resolvedOutcome}</span>
+                      <span className="text-[#8a8a8a]">Resolved {score.resolvedOutcome}</span>
                     </p>
                     <p className="mt-0.5 font-mono text-[11px] text-[#8a8a8a]">
-                      Brier {brier(resolution.brierScore)}
+                      Brier {brier(score.brierScore)}
                       <span className="text-[#c8c4bc]"> · </span>
-                      <span className={resolution.pnlUsd.startsWith("-") ? "text-[#c45c6a]" : "text-[#1a1a1a]"}>
-                        PnL {usd(resolution.pnlUsd, true)}
+                      <span className={score.pnlUsd.startsWith("-") ? "text-[#c45c6a]" : "text-[#1a1a1a]"}>
+                        PnL {usd(score.pnlUsd, true)}
                       </span>
                     </p>
                   </>
+                ) : voided ? (
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Voided</p>
                 ) : (
                   <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">Unresolved</p>
                 )}

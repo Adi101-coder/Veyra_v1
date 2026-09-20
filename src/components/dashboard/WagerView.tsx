@@ -32,6 +32,7 @@ import {
   type SeatNote,
   type WagerRow,
 } from "@/lib/markets";
+import { brier, usd } from "@/components/reputation/format";
 
 const CONFIDENCE_PRESETS = [60, 70, 80, 90];
 
@@ -255,10 +256,39 @@ export function WagerView({
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
               Resolution status
             </p>
-            <span className="mt-3 inline-flex items-center gap-2 rounded-full border border-[rgba(26,26,26,0.1)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#5a5a5a]">
-              {wager.resolution === "PENDING" ? "Pending" : "Resolved"}
+            <span
+              className={`mt-3 inline-flex items-center gap-2 rounded-full border border-[rgba(26,26,26,0.1)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${
+                prediction?.score
+                  ? prediction.score.correct
+                    ? "text-[#2f9e6e]"
+                    : "text-[#c45c6a]"
+                  : "text-[#5a5a5a]"
+              }`}
+            >
+              {prediction?.score
+                ? prediction.score.correct
+                  ? "Landed"
+                  : "Missed"
+                : wager.resolution === "PENDING"
+                  ? "Pending"
+                  : prediction?.marketResolution?.outcome === "INVALID"
+                    ? "Voided"
+                    : "Resolved"}
               <ClockIcon />
             </span>
+            {prediction?.score ? (
+              <p className="mt-3 font-mono text-[11px] text-[#8a8a8a]">
+                Brier {brier(prediction.score.brierScore)}
+                <span className="text-[#c8c4bc]"> · </span>
+                <span className={prediction.score.pnlUsd.startsWith("-") ? "text-[#c45c6a]" : "text-[#1a1a1a]"}>
+                  PnL {usd(prediction.score.pnlUsd, true)}
+                </span>
+                <span className="text-[#c8c4bc]"> · </span>
+                Payout {usd(prediction.score.payoutUsd)}
+                <span className="text-[#c8c4bc]"> · </span>
+                Scored at {Math.round(prediction.score.confidencePct)}%
+              </p>
+            ) : null}
           </div>
 
           <div className="mt-8 grid gap-4 sm:grid-cols-2 sm:gap-0">

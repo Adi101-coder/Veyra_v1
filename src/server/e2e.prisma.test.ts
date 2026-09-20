@@ -7,6 +7,7 @@ import {
   changeConfidence,
   createPrismaDeps,
   enqueueMarketResolution,
+  getPrediction,
   getUserReputation,
   listUserPredictions,
   placePrediction,
@@ -260,6 +261,16 @@ describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {
 
     const rows = await listUserPredictions(ALICE, deps);
     expect(rows[0]?.resolution?.correct).toBe(true);
+    expect(rows[0]?.score?.correct).toBe(true);
+    expect(rows[0]?.score?.brierScore).toBe("0.160000");
+
+    const wager = await getPrediction(predictionId, deps);
+    expect(wager?.score).toMatchObject({
+      resolvedOutcome: "YES",
+      correct: true,
+      brierScore: "0.160000",
+      confidencePct: 60,
+    });
 
     await expect(
       placePrediction(
