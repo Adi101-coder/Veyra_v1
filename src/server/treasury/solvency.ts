@@ -5,6 +5,7 @@ import { getPrisma } from "@/server/db";
 import { CASH_ASSET } from "@/server/treasury/funds";
 import { auditBalances } from "@/server/treasury/ledger";
 import { lastOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
+import { staleHolds } from "@/server/treasury/holds";
 
 export type SolvencyFinding = {
   code: string;
@@ -24,6 +25,8 @@ export type SolvencyReport = {
   controlledSource: "onchain" | "override" | "baseline" | "none";
   /** USDC a reorg clawback could not recover. Non-zero means a real shortfall. */
   unrecoveredDepositMicros: string;
+  /** Reservations open past the stale threshold on unfinished executions. */
+  staleHoldMicros: string;
   houseResidualMicros: string | null;
   audit: { checked: number; discrepancies: { walletAddress: string; asset: string }[] };
   findings: SolvencyFinding[];
@@ -128,6 +131,17 @@ export async function reconcileSolvency(
     });
   }
 
+  // Reservations stuck on an execution that never finished: the user's money is
+  // held with nothing happening to it.
+  const stale = await staleHolds(prisma, env);
+  if (stale.count > 0) {
+    findings.push({
+      code: "STALE_HOLDS",
+      severity: "warning",
+      message: `${stale.count} reservation(s) holding ${stale.micros} micros have been open past the stale threshold on executions that never reached a terminal state.`,
+    });
+  }
+
   if (simulatedPoolFills > 0) {
     findings.push({
       code: "SIMULATED_POOL_FILLS",
@@ -168,6 +182,7 @@ export async function reconcileSolvency(
     controlledUsdcMicros: controlled?.toString() ?? null,
     controlledSource,
     unrecoveredDepositMicros: unrecoveredMicros.toString(),
+    staleHoldMicros: stale.micros.toString(),
     houseResidualMicros: residual?.toString() ?? null,
     audit: {
       checked: audit.checked,

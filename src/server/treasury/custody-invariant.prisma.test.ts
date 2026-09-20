@@ -1,13 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { createTestDatabase } from "@/server/testing/db";
+import { prismaBettingStore } from "@/server/betting/repository";
 import { auditBalances } from "@/server/treasury/ledger";
 import {
+  availableMicros,
   creditCash,
   releaseHold,
   reserveFunds,
 } from "@/server/treasury/funds";
-import { releaseTerminalHolds } from "@/server/treasury/holds";
+import { releaseTerminalHolds, staleHolds } from "@/server/treasury/holds";
 import { creditSellFills } from "@/server/treasury/sells";
 import { payoutResolvedPositions } from "@/server/treasury/payouts";
 import { custodyIdentity, reconcileSolvency } from "@/server/treasury/solvency";
@@ -250,6 +252,99 @@ describe("Custody cash loop", () => {
       where: { kind: "SELL_CREDIT", refId: fill.id },
     });
     expect(credit?.deltaBase).toBe(9n * USD);
+  });
+
+  it("creates no order at all when the wallet cannot fund it", async () => {
+    // The reservation runs inside the same transaction as the order. If it were
+    // moved outside, an underfunded user would be left holding an execution nobody
+    // paid for — the exact failure the fill-driven ledger exists to prevent.
+    await seedMarket("m-atomic");
+    const store = prismaBettingStore(prisma);
+    const poor = "0xb0b0000000000000000000000000000000000001";
+    await fundWallet(poor, 1n * USD); // nowhere near the 20 USDC order
+
+    const before = await prisma.execution.count();
+    await expect(
+      store.createPrediction({
+        walletAddress: poor,
+        marketId: "m-atomic",
+        outcome: "YES",
+        confidenceBps: 6000,
+        stakeMicros: 20n * USD,
+        marketPriceBps: 5000,
+        engineVersion: "v1",
+        engineInputJson: "{}",
+        engineOutputJson: "{}",
+        status: "accepted",
+        position: {
+          marketId: "m-atomic",
+          walletAddress: poor,
+          outcome: "YES",
+          side: "BUY",
+          tokenId: "tok-atomic",
+          sharesMicros: 0n,
+          limitPriceBps: 5200,
+          avgPriceBps: 0,
+          notionalMicros: 20n * USD,
+          payoutMicros: 0n,
+          edgeBps: 100,
+          kellyBps: 2500,
+          status: "pending",
+          execution: {
+            venue: "polymarket",
+            mode: "live",
+            status: "created",
+            tokenId: "tok-atomic",
+            side: "BUY",
+            orderType: "FAK",
+            limitPriceBps: 5200,
+            sizeSharesMicros: 40n * USD,
+            notionalMicros: 20n * USD,
+            requestJson: "{}",
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "INSUFFICIENT_FUNDS" });
+
+    // Nothing persisted: no execution, no position, no prediction, no hold.
+    expect(await prisma.execution.count()).toBe(before);
+    expect(await prisma.prediction.count({ where: { walletAddress: poor } })).toBe(0);
+    expect(await prisma.position.count({ where: { walletAddress: poor } })).toBe(0);
+    expect(await prisma.fundsHold.count({ where: { walletAddress: poor } })).toBe(0);
+    // ...and their balance is untouched.
+    expect(await availableMicros(prisma, poor)).toBe(1n * USD);
+  });
+
+  it("surfaces a reservation stuck on an execution that never finished", async () => {
+    // A worker dying mid-flight leaves the hold ACTIVE on a non-terminal execution.
+    // releaseTerminalHolds will never touch it, so without reporting the user's
+    // money is held indefinitely with nothing recording why.
+    await fund(50n * USD);
+    await seedMarket("m-stuck");
+    const { execution } = await seedLiveOrder({
+      marketId: "m-stuck",
+      executionId: "exec-stuck",
+      notional: 10n * USD,
+      status: "submitted",
+    });
+
+    // The sweep correctly ignores it: the order may still fill.
+    expect(await releaseTerminalHolds(prisma)).toEqual({ released: 0 });
+
+    // Fresh, so not yet stale.
+    expect((await staleHolds(prisma, {}, new Date())).count).toBe(0);
+
+    // A day later it is, and the money is still held.
+    const later = new Date(Date.now() + 25 * 60 * 60 * 1000);
+    const stale = await staleHolds(prisma, {}, later);
+    expect(stale.count).toBe(1);
+    expect(stale.micros).toBe(10n * USD);
+    expect(stale.executionIds).toEqual([execution.id]);
+
+    // Once the execution reaches a terminal state it is the sweep's job, not stale.
+    await prisma.execution.update({ where: { id: execution.id }, data: { status: "failed" } });
+    expect((await staleHolds(prisma, {}, later)).count).toBe(0);
+    expect(await releaseTerminalHolds(prisma)).toEqual({ released: 1 });
   });
 
   it("keeps paying everyone else when one wallet's fee debit fails", async () => {

@@ -208,6 +208,36 @@ describe("Cash custody", () => {
     expect(await availableMicros(prisma, WALLET)).toBe(5n * USD);
   });
 
+  it("refuses a negative balance at the database, not just in application code", async () => {
+    // debitCash and reserveFunds both guard against overdrafts, so the CHECK is a
+    // backstop for any path that bypasses them — a migration, an operator script,
+    // a future writer. Without this the constraint could be dropped and every test
+    // would still pass.
+    await fund(5n * USD);
+    await expect(
+      prisma.treasuryBalance.update({
+        where: { walletAddress_asset: { walletAddress: WALLET, asset: CASH_ASSET } },
+        data: { balanceBase: { decrement: 6n * USD } },
+      }),
+    ).rejects.toThrow();
+
+    // The failed write left the balance untouched.
+    expect(await availableMicros(prisma, WALLET)).toBe(5n * USD);
+  });
+
+  it("refuses a hold that claims more than it reserves", async () => {
+    // funds_holds_amounts_check: spent can never exceed the reservation, so a bad
+    // writer cannot make a hold look like it spent money that was never held.
+    await fund(50n * USD);
+    await reserve_("exec-check", 10n * USD);
+    await expect(
+      prisma.fundsHold.update({
+        where: { executionId: "exec-check" },
+        data: { spentMicros: 11n * USD },
+      }),
+    ).rejects.toThrow();
+  });
+
   it("keeps the ledger and the balance in agreement", async () => {
     await fund(100n * USD);
     await reserve("exec-1", 40n * USD);
