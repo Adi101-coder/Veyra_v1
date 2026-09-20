@@ -433,6 +433,18 @@ export class ExecutionEngine {
           allocation.errorCode = strategy.blockedReason;
           allocation.errorMessage = strategy.notes[0] ?? "Execution blocked by a venue safety limit.";
         }
+      } else if (lastError) {
+        for (const allocation of allocations) {
+          if (allocation.status !== "failed") continue;
+          allocation.errorCode = "VENUE_FAILED";
+          allocation.errorMessage = lastError;
+        }
+      } else if (strategy.netSide !== "NONE" && !strategy.slices.length) {
+        for (const allocation of allocations) {
+          if (allocation.status !== "failed") continue;
+          allocation.errorCode = "NO_VENUE_SLICE";
+          allocation.errorMessage = strategy.notes[0] ?? "No shares were allocated after aggregation.";
+        }
       }
 
       if (awaitingVenue) {

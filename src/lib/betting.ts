@@ -9,6 +9,8 @@ export type OrderBookSnapshot = {
   tokenId: string;
   conditionId?: string;
   timestamp?: string;
+  /** Wall-clock ms when we fetched this snapshot. Venue `timestamp` is last change, not fetch time. */
+  fetchedAt?: number;
   hash?: string;
   bids: BookLevel[];
   asks: BookLevel[];

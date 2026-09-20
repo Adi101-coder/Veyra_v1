@@ -12,7 +12,11 @@
     "db:generate": "prisma generate",
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
-    "db:migrate:dev": "prisma migrate dev"
+    "db:migrate:dev": "prisma migrate dev",
+    "worker:balance": "node scripts/omnibus-balance.mjs",
+    "worker:approve": "node scripts/omnibus-approve.mjs",
+    "worker:deposit-wallet": "node scripts/omnibus-deposit-wallet.mjs",
+    "worker:wrap-pusd": "node scripts/omnibus-wrap-pusd.mjs"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.1.0",

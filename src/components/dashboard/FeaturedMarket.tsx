@@ -8,9 +8,11 @@ import {
   categoryColor,
   categoryLabel,
   formatUsdCompact,
+  marketOutcomes,
   type Market,
 } from "@/lib/markets";
 import { Identicon } from "@/components/dashboard/Identicon";
+import { OutcomeOdds } from "@/components/markets/OutcomeOdds";
 import { getMarketConviction } from "@/lib/betting-api";
 import { formatDivergence, type MarketConviction } from "@/lib/conviction";
 
@@ -87,8 +89,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
   const stake = table ? parseFloat(table.stake) : 0;
   // Demo catalog stakes carry their own unit string; live markets have no tables.
   const unit = table ? table.stake.replace(/^[\d.,\s]+/, "") : "";
+  const outcomes = marketOutcomes(market);
   const land = market.seats.find((s) => s.side === "lands") ?? market.seats[0];
   const miss = market.seats.find((s) => s.side === "misses") ?? market.seats[1];
+  const landLabel = land.wallet;
+  const missLabel = miss?.wallet ?? "No";
   const landSwing = swing(stake, land.chance);
   const missSwing = swing(stake, miss?.chance ?? 50);
   const bothTaken = market.seats.every((seat) => seat.wallet !== "Open seat");
@@ -226,6 +231,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           </div>
           ) : null}
 
+          {outcomes.length > 2 ? (
+            <div className="mt-5 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-4 py-4">
+              <OutcomeOdds outcomes={outcomes} limit={5} />
+            </div>
+          ) : (
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             {market.seats.map((seat) => (
               <div
@@ -235,7 +245,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 <Identicon seed={seat.avatar} className="h-9 w-9 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
-                    Seat {market.live ? (seat.side === "lands" ? "Yes" : "No") : seat.id}
+                    Seat {market.live ? seat.wallet : seat.id}
                   </p>
                   <p className="truncate font-mono text-[12px] text-[#1a1a1a]">
                     {seat.wallet}
@@ -254,12 +264,13 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                       seat.side === "lands" ? "text-[#2c7a55]" : "text-[#b4454a]"
                     }`}
                   >
-                    {seat.side === "lands" ? "Yes" : "No"}
+                    {seat.wallet}
                   </p>
                 </div>
               </div>
             ))}
           </div>
+          )}
 
           <div className="mt-6">
             <div className="mb-2 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
@@ -297,8 +308,8 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               ) : null}
             </div>
             <div className="mt-2 flex justify-between font-mono text-[9px] uppercase tracking-[0.14em]">
-              <span className="text-[#b4454a]">No · {miss?.chance ?? 0}¢</span>
-              <span className="text-[#2c7a55]">Yes · {land.chance}¢</span>
+              <span className="text-[#b4454a]">{missLabel} · {miss?.chance ?? 0}¢</span>
+              <span className="text-[#2c7a55]">{landLabel} · {land.chance}¢</span>
             </div>
             <p className="mt-2 text-[11px] text-[#9a9a9a]">
               {conviction?.conviction != null
@@ -338,7 +349,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           <div className="mt-2 grid grid-cols-2 gap-2">
             <div className="rounded-xl bg-[#e8f3ec] px-3 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#2c7a55]">
-                If yes
+                If {landLabel}
               </p>
               <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {land.wallet}
@@ -351,7 +362,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </div>
             <div className="rounded-xl bg-[#f6e9ea] px-3 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#b4454a]">
-                If no
+                If {missLabel}
               </p>
               <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
                 {land.wallet}
@@ -382,7 +393,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 Market odds
               </p>
               <p className="mt-1 text-[13px] text-[#6e6e6e]">
-                Yes {land.chance}¢ · No {miss?.chance ?? 0}¢
+                {landLabel} {land.chance}¢ · {missLabel} {miss?.chance ?? 0}¢
               </p>
             </div>
             <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#6e6e6e]">

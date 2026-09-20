@@ -62,6 +62,20 @@ describe("execution book quality and strategy", () => {
     expect(quality.minOrderSizeMicros).toBe(1_000_000n);
   });
 
+  it("does not treat a just-fetched book as stale when the venue last-change stamp is old", () => {
+    const quality = analyzeBook(
+      { ...book, timestamp: String(Date.now() - 60_000), fetchedAt: Date.now() },
+      Date.now(),
+      15_000,
+    );
+    expect(quality.stale).toBe(false);
+  });
+
+  it("marks a cached snapshot stale from its timestamp when we did not just fetch it", () => {
+    const quality = analyzeBook({ ...book, timestamp: String(Date.now() - 60_000) }, Date.now(), 15_000);
+    expect(quality.stale).toBe(true);
+  });
+
   it("nets two buys into one venue order", () => {
     const strategy = buildStrategy(
       [

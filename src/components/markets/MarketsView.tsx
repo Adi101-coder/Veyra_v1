@@ -129,7 +129,7 @@ export function MarketsView() {
               </h2>
               <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">
                 {visible.map((market) => (
-                  <li key={market.id}>
+                  <li key={market.id} className="h-full">
                     <MarketCard market={market} />
                   </li>
                 ))}

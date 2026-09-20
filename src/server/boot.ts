@@ -1,3 +1,4 @@
+import { pinPolymarketDns } from "@/lib/polymarket-dns";
 import { validateEnvironment } from "@/server/env";
 
 /**
@@ -6,6 +7,7 @@ import { validateEnvironment } from "@/server/env";
  * failing on the first request or the first live order.
  */
 export function runBootPreflight() {
+  pinPolymarketDns();
   const report = validateEnvironment(process.env);
   for (const warning of report.warnings) console.warn(`[env] ${warning}`);
   if (report.errors.length) {

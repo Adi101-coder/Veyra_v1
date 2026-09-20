@@ -4,6 +4,7 @@ import {
   hashSeed,
   type CategoryId,
   type Market,
+  type MarketOutcome,
 } from "@/lib/markets";
 import { peekPolymarketCache, polymarketJson } from "@/lib/polymarket-http";
 
@@ -79,7 +80,7 @@ function num(value: unknown) {
 function mapCategory(tags: string[], title = ""): Exclude<CategoryId, "all"> {
   const blob = `${tags.join(" ")} ${title}`.toLowerCase();
   if (/\b(lol|lcs|dota|cs2|valorant|esport|league of legends)\b/.test(blob)) return "sports";
-  if (/\b(sport|soccer|nba|nfl|mlb|nhl|ufc|tennis|football|laliga|premier|mma|ncaa|vs\.|versus)\b/.test(blob)) {
+  if (/\b(sport|soccer|nba|nfl|mlb|nhl|ufc|tennis|football|laliga|premier|mma|ncaa|cfb|ncaaf|vs\.?|versus)\b/.test(blob)) {
     return "sports";
   }
   if (/\b(crypto|bitcoin|ethereum|btc|eth|solana|defi)\b/.test(blob)) return "crypto";
@@ -120,12 +121,20 @@ function resolvesAt(endDate?: string) {
   });
 }
 
+function pct(price: number) {
+  return Math.max(1, Math.min(99, Math.round((price || 0) * 100)));
+}
+
 function yesPrice(market: GammaMarket) {
   const labels = parseList(market.outcomes).map((item) => item.toLowerCase());
   const prices = parseList(market.outcomePrices).map(num);
   const yesIndex = labels.findIndex((label) => label === "yes");
   const price = yesIndex >= 0 ? prices[yesIndex] : prices[0];
-  return Math.max(1, Math.min(99, Math.round((price || 0.5) * 100)));
+  return pct(price || 0.5);
+}
+
+function isYesNoLabel(label: string) {
+  return /^(yes|no)$/i.test(label.trim());
 }
 
 function isBinary(market: GammaMarket) {
@@ -133,28 +142,156 @@ function isBinary(market: GammaMarket) {
   return labels.includes("yes") && labels.includes("no");
 }
 
+function isTwoSided(market: GammaMarket) {
+  return parseList(market.outcomes).length >= 2;
+}
+
+function tidyName(value: string) {
+  return value
+    .replace(/^(lol|cs2|dota 2|dota2|valorant|nba|nfl|mlb|nhl|ufc):\s*/i, "")
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function parseMatchupTitle(title?: string): [string, string] | null {
+  if (!title) return null;
+  const cleaned = tidyName(title).replace(/\s+[—–-]\s+.*$/, "").trim();
+  const match = cleaned.match(/^(.+?)\s+(?:vs\.?|versus)\s+(.+)$/i);
+  if (!match) return null;
+  const a = tidyName(match[1]);
+  const b = tidyName(match[2]);
+  if (!a || !b || a.length > 42 || b.length > 42) return null;
+  return [a, b];
+}
+
+function namedFromQuestion(question?: string) {
+  if (!question) return "";
+  const match = question.match(
+    /^will\s+(.+?)\s+(win|beat|defeat|become|be the|gain|take|qualify|advance|cover)\b/i,
+  );
+  const name = match?.[1]?.trim() ?? "";
+  return name && !isYesNoLabel(name) && name.length <= 42 ? name : "";
+}
+
+function fieldFromEvent(event: GammaEvent): MarketOutcome[] {
+  const open = (event.markets ?? []).filter((item) => item.closed !== true && item.active !== false);
+  const rows = open
+    .map((item) => {
+      const label = (item.groupItemTitle?.trim() || namedFromQuestion(item.question) || "").trim();
+      if (!label || isYesNoLabel(label)) return null;
+      return { label: tidyName(label), chance: yesPrice(item) };
+    })
+    .filter((row): row is MarketOutcome => Boolean(row));
+  const unique = new Map<string, MarketOutcome>();
+  for (const row of rows) {
+    const key = row.label.toLowerCase();
+    const existing = unique.get(key);
+    if (!existing || row.chance > existing.chance) unique.set(key, row);
+  }
+  return [...unique.values()].sort((a, b) => b.chance - a.chance);
+}
+
+export function resolveLiveOutcomes(event: GammaEvent, raw: GammaMarket): {
+  title: string;
+  outcomes: MarketOutcome[];
+} {
+  const labels = parseList(raw.outcomes);
+  const prices = parseList(raw.outcomePrices).map(num);
+  const named = labels.filter((label) => !isYesNoLabel(label));
+  const eventTitle = event.title?.trim() || "";
+  const question = raw.question?.trim() || "";
+  const field = fieldFromEvent(event);
+
+  if (named.length >= 2) {
+    return {
+      title: eventTitle || question,
+      outcomes: labels.map((label, index) => ({
+        label: tidyName(label),
+        chance: pct(prices[index] || (index === 0 ? 0.5 : 0)),
+      })),
+    };
+  }
+
+  if (field.length >= 3) {
+    return { title: eventTitle || question, outcomes: field };
+  }
+
+  const matchup =
+    parseMatchupTitle(eventTitle) || parseMatchupTitle(question) || parseMatchupTitle(raw.slug?.replace(/-/g, " "));
+  if (matchup) {
+    const yes = yesPrice(raw);
+    return {
+      title: eventTitle || `${matchup[0]} vs ${matchup[1]}`,
+      outcomes: [
+        { label: matchup[0], chance: yes },
+        { label: matchup[1], chance: Math.max(1, 100 - yes) },
+      ],
+    };
+  }
+
+  if (field.length === 2) {
+    return { title: eventTitle || question, outcomes: field };
+  }
+
+  const candidate = raw.groupItemTitle?.trim() || namedFromQuestion(question);
+  if (candidate && !isYesNoLabel(candidate) && (field.length > 0 || openSiblings(event) > 1)) {
+    const yes = yesPrice(raw);
+    return {
+      title: eventTitle || question,
+      outcomes: [
+        { label: tidyName(candidate), chance: yes },
+        { label: "Field", chance: Math.max(1, 100 - yes) },
+      ],
+    };
+  }
+
+  return {
+    title: question || eventTitle,
+    outcomes: [
+      { label: "Yes", chance: yesPrice(raw) },
+      { label: "No", chance: Math.max(1, 100 - yesPrice(raw)) },
+    ],
+  };
+}
+
+function openSiblings(event: GammaEvent) {
+  return (event.markets ?? []).filter((item) => item.closed !== true && item.active !== false).length;
+}
+
 function liveCandidates(event: GammaEvent) {
   const open = (event.markets ?? []).filter((item) => item.closed !== true && item.active !== false);
-  const binary = open.filter(isBinary);
-  return [...(binary.length ? binary : open)].sort(
+  const twoSided = open.filter(isTwoSided);
+  const binary = twoSided.filter(isBinary);
+  const pool = twoSided.length ? twoSided : open;
+  const preferred = fieldFromEvent(event).length >= 3 ? pool : binary.length ? binary : pool;
+  return [...preferred].sort(
     (a, b) => num(b.volume24hr ?? b.volumeNum) - num(a.volume24hr ?? a.volumeNum),
   );
+}
+
+function isTotalsMarket(market: GammaMarket) {
+  return parseList(market.outcomes).some((label) => /^(over|under)$/i.test(label));
+}
+
+function pickLeadMarket(event: GammaEvent) {
+  const candidates = liveCandidates(event);
+  return candidates.find((item) => !isTotalsMarket(item)) ?? candidates[0] ?? null;
 }
 
 function pickMarket(event: GammaEvent) {
   return liveCandidates(event)[0] ?? null;
 }
 
-function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
-  const slug = raw.slug || event.slug;
+function toMarket(event: GammaEvent, raw: GammaMarket, asEvent = false): Market | null {
+  const display = resolveLiveOutcomes(event, raw);
+  const slug = asEvent ? event.slug || raw.slug : raw.slug || event.slug;
   if (!slug) return null;
   const tags = (event.tags ?? []).map((tag) => tag.label || tag.slug || "").filter(Boolean);
-  const title =
-    event.markets?.length === 1
-      ? event.title || raw.question || slug
-      : raw.question || event.title || slug;
+  const title = display.title || raw.question || event.title || slug;
   const category = mapCategory(tags, title);
-  const yes = yesPrice(raw);
+  const lead = display.outcomes[0] ?? { label: "Yes", chance: yesPrice(raw) };
+  const trail = display.outcomes[1] ?? { label: "No", chance: Math.max(1, 100 - lead.chance) };
   const volume = num(raw.volumeNum ?? raw.volume ?? event.volume);
   const volume24 = num(raw.volume24hr ?? event.volume24hr);
   const liquidity = num(raw.liquidityNum ?? raw.liquidity ?? event.liquidity);
@@ -198,22 +335,25 @@ function toMarket(event: GammaEvent, raw: GammaMarket): Market | null {
     live: true,
     source: "polymarket",
     conditionId: raw.conditionId,
+    // Event cards still use the event slug as `id`, but the lead child's CLOB
+    // tokens must stay attached or the contract page cannot quote YES/NO.
     clobTokenIds: parseList(raw.clobTokenIds),
     // No fabricated stake tables for live markets.
     tableOptions: [],
+    outcomes: display.outcomes,
     seats: [
       {
         id: "A",
-        wallet: "Yes",
-        avatar: `${slug}-yes`,
-        chance: yes,
+        wallet: lead.label,
+        avatar: `${slug}-${lead.label}`,
+        chance: lead.chance,
         side: "lands",
       },
       {
         id: "B",
-        wallet: "No",
-        avatar: `${slug}-no`,
-        chance: Math.max(1, 100 - yes),
+        wallet: trail.label,
+        avatar: `${slug}-${trail.label}`,
+        chance: trail.chance,
         side: "misses",
       },
     ],
@@ -224,11 +364,50 @@ async function gamma<T>(path: string, ttlMs = 30_000): Promise<T> {
   return (await polymarketJson(`${GAMMA}${path}`, ttlMs)) as T;
 }
 
+function coalesceEvents(rows: GammaMarket[]): GammaEvent[] {
+  const byEvent = new Map<string, GammaEvent>();
+  rows.forEach((raw, index) => {
+    const nested = raw.events?.[0];
+    const key = String(nested?.slug || nested?.id || raw.slug || index);
+    const base = byEvent.get(key) ?? {
+      ...nested,
+      slug: nested?.slug || raw.slug,
+      title: nested?.title || raw.question,
+      markets: [],
+    };
+    const markets = [...(base.markets ?? [])];
+    const push = (item: GammaMarket) => {
+      if (markets.some((existing) => (existing.slug && existing.slug === item.slug) || (existing.id && existing.id === item.id))) {
+        return;
+      }
+      markets.push(item);
+    };
+    push(raw);
+    for (const item of nested?.markets ?? []) push(item);
+    byEvent.set(key, { ...base, markets });
+  });
+  return [...byEvent.values()];
+}
+
 function mapEvents(events: GammaEvent[], limit: number) {
   const mapped: Market[] = [];
   const seen = new Set<string>();
   for (const event of events) {
-    for (const raw of liveCandidates(event)) {
+    const field = fieldFromEvent(event);
+    const lead = pickLeadMarket(event);
+    if (!lead) continue;
+    const matchup =
+      parseMatchupTitle(event.title) || parseMatchupTitle(lead.question) || parseMatchupTitle(lead.slug?.replace(/-/g, " "));
+    if (field.length >= 2 || matchup) {
+      const market = toMarket(event, lead, Boolean(event.slug));
+      if (market && !seen.has(market.id)) {
+        seen.add(market.id);
+        mapped.push(market);
+        if (mapped.length >= limit) return mapped;
+      }
+      continue;
+    }
+    for (const raw of liveCandidates(event).filter((item) => !isTotalsMarket(item) || liveCandidates(event).length === 1)) {
       const market = toMarket(event, raw);
       if (!market || seen.has(market.id)) continue;
       seen.add(market.id);
@@ -244,12 +423,7 @@ export async function fetchPolymarketMarkets(limit = 36): Promise<Market[]> {
   const path = `/markets?active=true&closed=false&limit=${page}&order=volume24hr&ascending=false`;
   try {
     const rows = await gamma<GammaMarket[]>(path);
-    const events = rows.map((raw) => raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] });
-    const paired: GammaEvent[] = events.map((event, index) => ({
-      ...event,
-      markets: event.markets?.length ? event.markets : [rows[index]!],
-    }));
-    const mapped = mapEvents(paired, limit);
+    const mapped = mapEvents(coalesceEvents(rows), limit);
     if (mapped.length) return mapped;
     return mapEvents(
       rows.map((raw) => ({ slug: raw.slug, title: raw.question, markets: [raw] })),
@@ -258,10 +432,7 @@ export async function fetchPolymarketMarkets(limit = 36): Promise<Market[]> {
   } catch (error) {
     const stale = peekPolymarketCache<GammaMarket[]>(`${GAMMA}${path}`);
     if (stale?.length) {
-      return mapEvents(
-        stale.map((raw) => raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] }),
-        limit,
-      );
+      return mapEvents(coalesceEvents(stale), limit);
     }
     throw error;
   }
@@ -294,7 +465,7 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
     const event = events[0];
     if (!event) return null;
     const raw = pickMarket(event);
-    return raw ? toMarket(event, raw) : null;
+    return raw ? toMarket(event, raw, fieldFromEvent(event).length >= 3) : null;
   } catch {
     return null;
   }

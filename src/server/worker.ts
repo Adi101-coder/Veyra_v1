@@ -17,6 +17,7 @@ import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement
 import { releaseTerminalHolds } from "@/server/treasury/holds";
 import { payoutResolvedPositions } from "@/server/treasury/payouts";
 import { creditSellFills } from "@/server/treasury/sells";
+import { checkOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
 import { reconcileSolvency } from "@/server/treasury/solvency";
 import { watchDeposits } from "@/server/treasury/watcher";
 
@@ -49,6 +50,8 @@ const STEPS = {
     const result = await payoutResolvedPositions();
     return result.paid + result.fees;
   },
+  // On-chain POL / USDC.e / USDC for the omnibus (Alchemy RPC). Independent of CLOB.
+  omnibus: async () => checkOmnibusOnchain(),
   // Read-only omnibus inventory check (disabled unless live credentials are set).
   inventory: async () => {
     const result = await runScheduledInventoryReconciliation(getPrisma());

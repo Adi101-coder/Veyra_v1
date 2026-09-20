@@ -6,7 +6,9 @@ import type { PrismaClient } from "@prisma/client";
 import { getNativeBalance, getRpcStatus } from "@/server/chain/client";
 import { publicChainConfig } from "@/server/chain/config";
 import { getRobinhoodClients } from "@/server/chain";
+import { polymarketJson, polymarketReachable } from "@/lib/polymarket-http";
 import { validateEnvironment } from "@/server/env";
+import { lastOmnibusOnchain, readOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
 
 type Check = { ok: boolean; critical: boolean; detail: Record<string, unknown> };
 
@@ -50,8 +52,8 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
 
   const clob = env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com";
   try {
-    const response = await timed(() => fetch(`${clob}/ok`, { cache: "no-store" }));
-    checks.polymarketClob = { ok: response.ok, critical: environment.mode === "live", detail: { status: response.status } };
+    const probe = await timed(() => polymarketReachable(`${clob}/ok`), 15_000);
+    checks.polymarketClob = { ok: probe.ok, critical: environment.mode === "live", detail: { status: probe.status } };
   } catch (error) {
     checks.polymarketClob = { ok: false, critical: environment.mode === "live", detail: { error: message(error) } };
   }
@@ -59,8 +61,8 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
   if (environment.mode === "live") {
     try {
       const { createLiveInventoryVenue } = await import("@/server/polymarket/live");
-      const venue = await timed(() => createLiveInventoryVenue(), 15_000);
-      const collateral = await timed(() => venue.getCollateralBalance(), 15_000);
+      const venue = await timed(() => createLiveInventoryVenue(), 25_000);
+      const collateral = await timed(() => venue.getCollateralBalance(), 20_000);
       // Authenticated, read-only: proves the key, API credentials and signature type work.
       checks.polymarketAccount = { ok: true, critical: true, detail: { network: venue.network, collateralMicros: collateral.toString() } };
     } catch (error) {
@@ -70,10 +72,27 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
 
   const gamma = env.POLYMARKET_GAMMA_URL ?? "https://gamma-api.polymarket.com";
   try {
-    const response = await timed(() => fetch(`${gamma}/markets?limit=1`, { cache: "no-store" }));
-    checks.polymarketGamma = { ok: response.ok, critical: true, detail: { status: response.status } };
+    await timed(() => polymarketJson(`${gamma}/markets?limit=1`, 15_000), 20_000);
+    checks.polymarketGamma = { ok: true, critical: true, detail: { via: "bridge-or-direct" } };
   } catch (error) {
     checks.polymarketGamma = { ok: false, critical: true, detail: { error: message(error) } };
+  }
+
+  try {
+    const snapshot = await timed(() => readOmnibusOnchain(env), 8_000);
+    const last = lastOmnibusOnchain();
+    checks.omnibusOnchain = {
+      ok: Boolean(snapshot) || Boolean(last.snapshot),
+      critical: false,
+      detail: snapshot ?? last.snapshot ?? { error: last.error ?? "skipped" },
+    };
+  } catch (error) {
+    const last = lastOmnibusOnchain();
+    checks.omnibusOnchain = {
+      ok: Boolean(last.snapshot),
+      critical: false,
+      detail: last.snapshot ?? { error: message(error) },
+    };
   }
 
   try {

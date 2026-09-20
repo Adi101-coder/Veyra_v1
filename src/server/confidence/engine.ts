@@ -120,9 +120,15 @@ export class ConfidenceEngine {
       return reject(version, "NO_EDGE", "Kelly size is zero at this confidence.");
     }
 
-    const budget = sizedNotionalMicros(stakeMicros, sizedKelly);
+    let budget = sizedNotionalMicros(stakeMicros, sizedKelly);
     if (budget <= 0n) {
       return reject(version, "NO_EDGE", "Sized notional is zero.");
+    }
+    // Fractional Kelly on a $1–$5 live cap is often below the venue minimum (1 share).
+    // If the user stake can pay that minimum at the touch, lift the budget to it.
+    const minCost = sharesCostMicros(book.minSharesMicros, marketPriceBps);
+    if (minCost > 0n && minCost <= stakeMicros && budget < minCost) {
+      budget = minCost;
     }
 
     const limit = limitPriceBps(

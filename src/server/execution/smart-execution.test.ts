@@ -190,7 +190,12 @@ describe("Smart Execution: venue failures", () => {
     const { engine, requests } = setup((r) => ({ ...fill(r, 0), status: "rejected", polymarketOrderId: null, errorMessage: "invalid tick" }));
     const processed = await engine.enqueueAndProcess(intent("BUY", 2_000_000n));
     expect(requests).toHaveLength(1);
-    expect(processed.allocation).toMatchObject({ status: "failed", executedSharesMicros: 0n });
+    expect(processed.allocation).toMatchObject({
+      status: "failed",
+      executedSharesMicros: 0n,
+      errorCode: "VENUE_FAILED",
+      errorMessage: "invalid tick",
+    });
   });
 
   it("retryable refusals stop at maxAttempts", async () => {

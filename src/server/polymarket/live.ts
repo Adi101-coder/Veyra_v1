@@ -1,7 +1,8 @@
 import "server-only";
 
+import { pinPolymarketDns } from "@/lib/polymarket-dns";
 import { BettingError } from "@/server/errors";
-import { formatPrice, formatShares, formatUsd, parseDecimalToScale } from "@/server/money";
+import { formatPrice, formatShares, parseDecimalToScale } from "@/server/money";
 import type { VenueFill, VenueOrderRequest, VenueOrderResult } from "@/server/polymarket/client";
 
 /**
@@ -15,6 +16,7 @@ const TICK_SIZES = ["0.1", "0.01", "0.005", "0.0025", "0.001", "0.0001"] as cons
 type SdkClient = InstanceType<typeof import("@polymarket/clob-client-v2").ClobClient>;
 
 let cached: Promise<SdkClient> | null = null;
+let resolvedLiveFunder: string | undefined;
 
 async function sdkClient(): Promise<SdkClient> {
   if (!cached) {
@@ -26,8 +28,17 @@ async function sdkClient(): Promise<SdkClient> {
   return cached;
 }
 
+function completeCreds(creds: { key?: string; secret?: string; passphrase?: string } | null | undefined) {
+  const key = creds?.key?.trim() ?? "";
+  const secret = creds?.secret?.trim() ?? "";
+  const passphrase = creds?.passphrase?.trim() ?? "";
+  if (!key || !secret || !passphrase) return null;
+  return { key, secret, passphrase };
+}
+
 async function buildSdkClient(): Promise<SdkClient> {
-  const { Chain, ClobClient } = await import("@polymarket/clob-client-v2");
+  pinPolymarketDns();
+  const { Chain, ClobClient, SignatureTypeV2 } = await import("@polymarket/clob-client-v2");
   const { createWalletClient, http } = await import("viem");
   const { privateKeyToAccount } = await import("viem/accounts");
   const { polygon, polygonAmoy } = await import("viem/chains");
@@ -47,25 +58,57 @@ async function buildSdkClient(): Promise<SdkClient> {
 
   const host = process.env.POLYMARKET_CLOB_URL ?? "https://clob.polymarket.com";
   const chain = amoy ? Chain.AMOY : Chain.POLYGON;
-  const signatureType = Number.parseInt(process.env.POLYMARKET_SIGNATURE_TYPE ?? "0", 10);
-  const funderAddress = process.env.POLYMARKET_FUNDER_ADDRESS || undefined;
-  if (signatureType !== 0 && !funderAddress) {
+  let signatureType = Number.parseInt(process.env.POLYMARKET_SIGNATURE_TYPE ?? "0", 10);
+  let funderAddress = process.env.POLYMARKET_FUNDER_ADDRESS || undefined;
+  if (signatureType === 1 || signatureType === 2) {
+    if (!funderAddress) {
+      throw new BettingError(
+        "LIVE_NOT_CONFIGURED",
+        "POLYMARKET_FUNDER_ADDRESS is required for proxy/safe signature types.",
+        503,
+      );
+    }
+    resolvedLiveFunder = funderAddress;
+  } else {
+    // Production CLOB rejects EOA makers. Type 0/3 go through the deposit wallet.
+    const { ensureDepositWalletTrading } = await import("@/server/polymarket/deposit-wallet-setup");
+    const ensured = await ensureDepositWalletTrading();
+    signatureType = SignatureTypeV2.POLY_1271;
+    funderAddress = ensured.funder;
+    resolvedLiveFunder = ensured.funder;
+  }
+
+  const envCreds = completeCreds({
+    key: process.env.POLYMARKET_API_KEY,
+    secret: process.env.POLYMARKET_API_SECRET,
+    passphrase: process.env.POLYMARKET_API_PASSPHRASE,
+  });
+    const unsigned = new ClobClient({
+    host,
+    chain,
+    signer: walletClient,
+    signatureType,
+    funderAddress,
+  });
+  let creds = envCreds;
+  if (!creds) {
+    try {
+      creds = completeCreds(await unsigned.createOrDeriveApiKey());
+    } catch {
+      creds = null;
+    }
+    if (!creds) creds = completeCreds(await unsigned.deriveApiKey());
+  }
+  if (!creds) {
     throw new BettingError(
       "LIVE_NOT_CONFIGURED",
-      "POLYMARKET_FUNDER_ADDRESS is required for proxy/safe signature types.",
+      "Polymarket did not return API credentials. Set POLYMARKET_API_KEY/SECRET/PASSPHRASE or retry when the CLOB is reachable.",
       503,
     );
   }
-
-  const envCreds = {
-    key: process.env.POLYMARKET_API_KEY ?? "",
-    secret: process.env.POLYMARKET_API_SECRET ?? "",
-    passphrase: process.env.POLYMARKET_API_PASSPHRASE ?? "",
-  };
-  const creds =
-    envCreds.key && envCreds.secret && envCreds.passphrase
-      ? envCreds
-      : await new ClobClient({ host, chain, signer: walletClient }).createOrDeriveApiKey();
+  process.env.POLYMARKET_API_KEY = creds.key;
+  process.env.POLYMARKET_API_SECRET = creds.secret;
+  process.env.POLYMARKET_API_PASSPHRASE = creds.passphrase;
 
   return new ClobClient({
     host,
@@ -104,6 +147,21 @@ function errorStatus(error: unknown): number | null {
   const candidate = error as { status?: unknown; response?: { status?: unknown } };
   const status = candidate?.status ?? candidate?.response?.status;
   return typeof status === "number" ? status : null;
+}
+
+function venueErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  const candidate = error as {
+    data?: { error?: string; errorMsg?: string };
+    response?: { data?: { error?: string; errorMsg?: string } };
+  };
+  return (
+    candidate?.response?.data?.errorMsg ||
+    candidate?.response?.data?.error ||
+    candidate?.data?.errorMsg ||
+    candidate?.data?.error ||
+    "Live Polymarket submission failed"
+  );
 }
 
 type PostOrderResponse = {
@@ -224,7 +282,7 @@ export function paceOrderPost(minSpacingMs = Number.parseInt(process.env.POLYMAR
 }
 
 export async function submitLiveOrder(request: VenueOrderRequest): Promise<VenueOrderResult> {
-  const { OrderType, Side } = await import("@polymarket/clob-client-v2");
+  const { AssetType, OrderType, Side } = await import("@polymarket/clob-client-v2");
   const client = await sdkClient();
   const tickSize = TICK_SIZES.includes(request.tickSize as (typeof TICK_SIZES)[number])
     ? (request.tickSize as (typeof TICK_SIZES)[number])
@@ -235,33 +293,30 @@ export async function submitLiveOrder(request: VenueOrderRequest): Promise<Venue
   const options = { tickSize, negRisk: request.negRisk };
   const price = Number(formatPrice(request.limitPriceBps));
   const size = Number(formatShares(request.sharesMicros, 2));
-  const amount = Number(formatUsd(request.notionalMicros, 2));
   const side = request.side === "SELL" ? Side.SELL : Side.BUY;
+  const orderType =
+    request.orderType === "FOK" ? OrderType.FOK : request.orderType === "GTC" ? OrderType.GTC : OrderType.FAK;
 
   const timeoutMs = Number.parseInt(process.env.VEYRA_VENUE_TIMEOUT_MS ?? "10000", 10);
   try {
+    try {
+      if (request.side === "SELL") {
+        await client.updateBalanceAllowance({ asset_type: AssetType.CONDITIONAL, token_id: request.tokenId });
+      } else {
+        await client.updateBalanceAllowance({ asset_type: AssetType.COLLATERAL });
+      }
+    } catch {
+      // Refresh is best-effort; a stale CLOB cache still fails at post.
+    }
     await paceOrderPost();
     const response = await withTimeout(
-      request.orderType === "GTC"
-        ? client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, OrderType.GTC)
-        : client.createAndPostMarketOrder(
-            {
-              tokenID: request.tokenId,
-              price,
-              // Market BUY is denominated in USDC, market SELL in shares.
-              amount: request.side === "SELL" ? size : amount,
-              side,
-              orderType: request.orderType === "FOK" ? OrderType.FOK : OrderType.FAK,
-            },
-            options,
-            request.orderType === "FOK" ? OrderType.FOK : OrderType.FAK,
-          ),
+      client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, orderType),
       Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10_000,
     );
     return mapPostOrderResponse(request, response as PostOrderResponse);
   } catch (error) {
     const status = errorStatus(error);
-    const message = error instanceof Error ? error.message : "Live Polymarket submission failed";
+    const message = venueErrorMessage(error);
     if (error instanceof VenueTimeoutError) {
       return { mode: "live", status: "unknown", polymarketOrderId: null, response: { error: message }, fills: [], errorMessage: message };
     }
@@ -419,7 +474,7 @@ export async function createLiveInventoryVenue() {
   const client = await sdkClient();
   const signerAddress = (client.signer as { account?: { address?: string } } | undefined)?.account?.address ?? "";
   // Balances and maker fills belong to the funder (proxy/safe) for signature types 1-3, else the signer.
-  const funder = (process.env.POLYMARKET_FUNDER_ADDRESS || signerAddress).toLowerCase();
+  const funder = (resolvedLiveFunder || process.env.POLYMARKET_FUNDER_ADDRESS || signerAddress).toLowerCase();
   const owner = (client.creds?.key ?? "").toLowerCase();
   const baseUnits = (raw: string, what: string) => {
     if (!/^\d+$/.test(raw)) throw new Error(`Unexpected ${what} balance format from Polymarket.`);

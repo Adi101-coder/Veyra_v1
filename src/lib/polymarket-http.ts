@@ -1,5 +1,8 @@
 import { lookup } from "node:dns/promises";
 import https from "node:https";
+import { pinPolymarketDns } from "@/lib/polymarket-dns";
+
+pinPolymarketDns();
 
 const USER_AGENT = "VEYRAMarkets/0.1 (read-only market discovery)";
 
@@ -116,6 +119,39 @@ export async function polymarketJson(url: string, ttlMs = 15_000): Promise<unkno
 
   inflight.set(url, task);
   return task;
+}
+
+/** GET that only cares about HTTP 200 (CLOB `/ok` is plain text). */
+export async function polymarketReachable(url: string, timeoutMs = 12_000): Promise<{ ok: true; status: number }> {
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(Math.min(timeoutMs, 4_000)) });
+    if (response.ok) return { ok: true, status: response.status };
+  } catch {
+    // fall through to the Cloudflare IP bridge
+  }
+  const ip = await resolveBridgeIp();
+  const target = new URL(url);
+  const status = await new Promise<number>((resolve, reject) => {
+    const req = https.request(
+      {
+        host: ip,
+        servername: target.hostname,
+        path: `${target.pathname}${target.search}`,
+        method: "GET",
+        headers: { host: target.hostname, "user-agent": USER_AGENT },
+        timeout: timeoutMs,
+      },
+      (res) => {
+        res.resume();
+        res.on("end", () => resolve(res.statusCode ?? 500));
+      },
+    );
+    req.on("error", reject);
+    req.on("timeout", () => req.destroy(new Error("Polymarket timed out")));
+    req.end();
+  });
+  if (status >= 400) throw new Error(`Polymarket ${status}`);
+  return { ok: true, status };
 }
 
 export function peekPolymarketCache<T>(url: string): T | null {

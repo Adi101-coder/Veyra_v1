@@ -127,6 +127,19 @@ describe("ConfidenceEngine formula", () => {
     expect(result).toMatchObject({ accepted: false, code: "NO_EDGE" });
   });
 
+  it("lifts a tiny Kelly size up to the venue minimum when the stake can pay it", () => {
+    const result = engine.evaluate({
+      outcome: "YES",
+      confidenceBps: 8000,
+      stakeMicros: 2_000_000n,
+      book: book(),
+    });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) return;
+    expect(result.sharesMicros).toBeGreaterThanOrEqual(1_000_000n);
+    expect(result.notionalMicros).toBeLessThanOrEqual(2_000_000n);
+  });
+
   it("rejects a book that cannot fill the minimum size", () => {
     const result = engine.evaluate({
       outcome: "YES",

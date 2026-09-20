@@ -67,6 +67,7 @@ export async function fetchClobBook(tokenId: string): Promise<OrderBookSnapshot>
     tokenId: raw.asset_id || tokenId,
     conditionId: raw.market,
     timestamp: raw.timestamp,
+    fetchedAt: Date.now(),
     hash: raw.hash,
     bids: levels(raw.bids),
     asks: levels(raw.asks),

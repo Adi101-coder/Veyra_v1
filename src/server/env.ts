@@ -87,8 +87,13 @@ export function validateEnvironment(env: Env): EnvReport {
     if (creds.length === 0) warnings.push("Polymarket API credentials are unset: they will be derived from the private key on first use; inventory reconciliation stays disabled.");
     const signatureType = Number(env.POLYMARKET_SIGNATURE_TYPE ?? "0");
     if (![0, 1, 2, 3].includes(signatureType)) errors.push("POLYMARKET_SIGNATURE_TYPE must be 0, 1, 2 or 3.");
-    if (signatureType !== 0 && !EVM_ADDRESS.test(env.POLYMARKET_FUNDER_ADDRESS ?? "")) {
-      errors.push("POLYMARKET_FUNDER_ADDRESS (proxy/safe/deposit wallet) is required for signature types 1-3.");
+    if ([1, 2].includes(signatureType) && !EVM_ADDRESS.test(env.POLYMARKET_FUNDER_ADDRESS ?? "")) {
+      errors.push("POLYMARKET_FUNDER_ADDRESS (proxy/safe wallet) is required for signature types 1-2.");
+    }
+    if (signatureType === 0) {
+      warnings.push(
+        "POLYMARKET_SIGNATURE_TYPE=0: live orders use the Polymarket deposit wallet (type 3). Set POLYMARKET_BUILDER_API_KEY/SECRET/PASSPHRASE so Veyra can deploy it.",
+      );
     }
     if (env.POLYMARKET_CHAIN_ID === "80002") warnings.push("Live mode is pointed at Polygon Amoy (80002), not mainnet.");
     if (!set(env.POLYGON_RPC_URL)) warnings.push("POLYGON_RPC_URL is unset: viem's public Polygon RPC will be used for signing context.");

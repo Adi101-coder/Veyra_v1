@@ -26,6 +26,11 @@ export type Seat = {
   side: "lands" | "misses";
 };
 
+export type MarketOutcome = {
+  label: string;
+  chance: number;
+};
+
 export type Market = {
   id: string;
   title: string;
@@ -41,6 +46,7 @@ export type Market = {
   accent: string;
   tableOptions: TableOption[];
   seats: Seat[];
+  outcomes?: MarketOutcome[];
   featured?: boolean;
   image?: string;
   volumeUsd?: number;
@@ -814,6 +820,22 @@ export function categoryColor(id: Exclude<CategoryId, "all">) {
 
 export function yesChance(market: Market) {
   return market.seats.find((seat) => seat.side === "lands")?.chance ?? 50;
+}
+
+export function marketOutcomes(market: Market): MarketOutcome[] {
+  if (market.outcomes && market.outcomes.length >= 2) return market.outcomes;
+  const land = market.seats.find((seat) => seat.side === "lands");
+  const miss = market.seats.find((seat) => seat.side === "misses");
+  if (market.live && land && miss) {
+    return [
+      { label: land.wallet, chance: land.chance },
+      { label: miss.wallet, chance: miss.chance },
+    ];
+  }
+  return [
+    { label: "Yes", chance: land?.chance ?? 50 },
+    { label: "No", chance: miss?.chance ?? Math.max(1, 100 - (land?.chance ?? 50)) },
+  ];
 }
 
 export function formatUsdCompact(value: number) {

@@ -6,7 +6,7 @@ import {
   categoryColor,
   categoryLabel,
   formatUsdCompact,
-  yesChance,
+  marketOutcomes,
   type Market,
 } from "@/lib/markets";
 import { Identicon } from "@/components/dashboard/Identicon";
@@ -55,8 +55,9 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
       <ul className="flex flex-col gap-2.5">
         {markets.map((market) => {
           const color = categoryColor(market.category);
-          const yes = yesChance(market);
-          const no = Math.max(1, 100 - yes);
+          const outcomes = marketOutcomes(market);
+          const lead = outcomes[0];
+          const trail = outcomes[1];
           return (
             <li key={market.id}>
               <Link
@@ -85,13 +86,24 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
                 </div>
                 <div className="flex w-full shrink-0 items-center gap-3 sm:w-auto sm:min-w-[220px]">
                   <div className="min-w-0 flex-1">
-                    <div className="mb-1.5 flex items-center justify-between text-[11px] font-medium">
-                      <span className="text-[#2c7a55]">Yes {yes}¢</span>
-                      <span className="text-[#b4454a]">No {no}¢</span>
+                    <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] font-medium">
+                      <span className="truncate text-[#2c7a55]">
+                        {lead?.label ?? "Yes"} {lead?.chance ?? 0}¢
+                      </span>
+                      {outcomes.length > 2 ? (
+                        <span className="shrink-0 text-[#8a847a]">+{outcomes.length - 1}</span>
+                      ) : (
+                        <span className="truncate text-right text-[#b4454a]">
+                          {trail?.label ?? "No"} {trail?.chance ?? 0}¢
+                        </span>
+                      )}
                     </div>
                     <div className="flex h-1.5 overflow-hidden rounded-full bg-[#efe8dc]">
-                      <span className="h-full bg-[#2c7a55]" style={{ width: `${yes}%` }} />
-                      <span className="h-full bg-[#b4454a]" style={{ width: `${no}%` }} />
+                      <span className="h-full bg-[#2c7a55]" style={{ width: `${lead?.chance ?? 50}%` }} />
+                      <span
+                        className="h-full bg-[#b4454a]"
+                        style={{ width: `${Math.max(0, 100 - (lead?.chance ?? 50))}%` }}
+                      />
                     </div>
                   </div>
                   <p className="w-[4.5rem] text-right font-mono text-[11px] text-[#7a746a]">

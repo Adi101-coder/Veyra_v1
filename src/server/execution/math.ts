@@ -34,7 +34,13 @@ export function analyzeBook(
   const bestAsk = book.asks[0]?.priceBps ?? null;
   const midBps =
     bestBid != null && bestAsk != null ? Math.round((bestBid + bestAsk) / 2) : (bestAsk ?? bestBid);
-  const timestampMs = snapshot.timestamp ? Number(snapshot.timestamp) : NaN;
+  const fetchedAt = snapshot.fetchedAt;
+  const timestampMs =
+    typeof fetchedAt === "number" && Number.isFinite(fetchedAt)
+      ? fetchedAt
+      : snapshot.timestamp
+        ? Number(snapshot.timestamp)
+        : NaN;
   const ageMs = Number.isFinite(timestampMs) && timestampMs > 1_000_000_000_000 ? now - timestampMs : 0;
   return {
     tokenId: snapshot.tokenId,

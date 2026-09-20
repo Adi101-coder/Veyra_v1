@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mapDataHolders, mapDataPositions, mapDataTrades } from "@/lib/polymarket";
+import {
+  mapDataHolders,
+  mapDataPositions,
+  mapDataTrades,
+  parseMatchupTitle,
+  resolveLiveOutcomes,
+} from "@/lib/polymarket";
 
 describe("Polymarket public data mapping", () => {
   it("maps v1 trade arrays and v2 { data } envelopes", () => {
@@ -107,5 +113,50 @@ describe("Polymarket public data mapping", () => {
       shares: "100.00",
       up: true,
     });
+  });
+});
+
+describe("live outcome labels", () => {
+  it("parses two-team titles into names", () => {
+    expect(parseMatchupTitle("SMU vs. Louisville")).toEqual(["SMU", "Louisville"]);
+    expect(parseMatchupTitle("LoL: LYON vs Cloud9 (BO5) - LCS Playoffs")).toEqual(["LYON", "Cloud9"]);
+  });
+
+  it("keeps Yes/No for genuine binary questions", () => {
+    const display = resolveLiveOutcomes(
+      { title: "Will it rain in Seattle tomorrow?" },
+      { question: "Will it rain in Seattle tomorrow?", outcomes: '["Yes","No"]', outcomePrices: '["0.64","0.36"]' },
+    );
+    expect(display.outcomes).toEqual([
+      { label: "Yes", chance: 64 },
+      { label: "No", chance: 36 },
+    ]);
+  });
+
+  it("lists tournament names from sibling markets", () => {
+    const display = resolveLiveOutcomes(
+      {
+        title: "Which party will gain most seats?",
+        markets: [
+          { groupItemTitle: "United Russia", outcomes: '["Yes","No"]', outcomePrices: '["0.81","0.19"]' },
+          { groupItemTitle: "Communist Party", outcomes: '["Yes","No"]', outcomePrices: '["0.12","0.88"]' },
+          { groupItemTitle: "LDPR", outcomes: '["Yes","No"]', outcomePrices: '["0.05","0.95"]' },
+        ],
+      },
+      { question: "Will United Russia gain most seats?", outcomes: '["Yes","No"]', outcomePrices: '["0.81","0.19"]' },
+    );
+    expect(display.title).toBe("Which party will gain most seats?");
+    expect(display.outcomes.map((row) => row.label)).toEqual(["United Russia", "Communist Party", "LDPR"]);
+  });
+
+  it("uses named outcomes when the market is not Yes/No", () => {
+    const display = resolveLiveOutcomes(
+      { title: "LCS Playoffs" },
+      { question: "Who wins?", outcomes: '["LYON","Cloud9"]', outcomePrices: '["0.61","0.39"]' },
+    );
+    expect(display.outcomes).toEqual([
+      { label: "LYON", chance: 61 },
+      { label: "Cloud9", chance: 39 },
+    ]);
   });
 });
