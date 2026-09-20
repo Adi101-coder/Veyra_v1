@@ -5,6 +5,7 @@ import { loadSupportedAssets, walletsAreSeparate } from "@/server/treasury/confi
 import { accountingSeparationReport, exposureFor } from "@/server/treasury/exposure";
 import { auditBalances, balancesFor, creditDeposit, reverseDeposit } from "@/server/treasury/ledger";
 import { reconcileSolvency } from "@/server/treasury/solvency";
+import { confirmationDepth, maxScanSpan, resumeFromBlock } from "@/server/treasury/watcher";
 import { CASH_ASSET, creditCash } from "@/server/treasury/funds";
 import { applyConfirmedDeposits } from "@/server/treasury/watcher";
 import { completeWithdrawal, failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
@@ -278,6 +279,43 @@ describe("Treasury custody ledger (Prisma)", () => {
       reversed: false,
       unrecoveredMicros: 0n,
     });
+  });
+
+  it("resumes scanning from the stored cursor instead of a fixed window", async () => {
+    // Without a cursor the watcher only ever looks a fixed span back from the head,
+    // so an outage longer than that window loses deposits with no trace.
+    await prisma.depositScanCursor.deleteMany();
+    const span = 2_000n;
+
+    // First run: nothing stored, so look one span back from the confirmed head.
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(48_000n);
+    // A chain younger than the span starts at genesis.
+    expect(await resumeFromBlock(prisma, 137, 500n, span)).toBe(0n);
+
+    // With a cursor, resume at the next unscanned block — however far behind.
+    await prisma.depositScanCursor.create({ data: { chainId: 137, lastScannedBlock: 10_000n } });
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(10_001n);
+
+    // Never scan past the confirmed head.
+    await prisma.depositScanCursor.update({
+      where: { chainId: 137 },
+      data: { lastScannedBlock: 60_000n },
+    });
+    expect(await resumeFromBlock(prisma, 137, 50_000n, span)).toBe(50_000n);
+
+    // Cursors are per chain.
+    expect(await resumeFromBlock(prisma, 80_002, 50_000n, span)).toBe(48_000n);
+  });
+
+  it("clamps the scan span and confirmation depth to sane values", () => {
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "500" })).toBe(500);
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "0" })).toBe(2_000);
+    expect(maxScanSpan({ VEYRA_DEPOSIT_MAX_SPAN_BLOCKS: "nonsense" })).toBe(2_000);
+    expect(maxScanSpan({} as NodeJS.ProcessEnv)).toBe(2_000);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "1" })).toBe(1);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "0" })).toBe(12);
+    expect(confirmationDepth({ VEYRA_DEPOSIT_CONFIRMATIONS: "9999" })).toBe(12);
+    expect(confirmationDepth({} as NodeJS.ProcessEnv)).toBe(12);
   });
 
   it("reports unrecovered reorg money as a solvency error", async () => {

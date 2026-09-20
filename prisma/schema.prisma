@@ -726,3 +726,17 @@ model TreasuryWithdrawal {
   @@index([walletAddress, createdAt])
   @@map("treasury_withdrawals")
 }
+
+/// How far the deposit watcher has scanned on each chain.
+///
+/// Without this the watcher only ever looks a fixed window back from the chain
+/// head, so an outage longer than that window misses deposits permanently. The
+/// cursor advances only after the deposits in a range are credited, so a crash
+/// re-scans — safe, because crediting is idempotent per (chainId, txHash, logIndex).
+model DepositScanCursor {
+  chainId          Int      @id
+  lastScannedBlock BigInt
+  updatedAt        DateTime @updatedAt
+
+  @@map("deposit_scan_cursors")
+}

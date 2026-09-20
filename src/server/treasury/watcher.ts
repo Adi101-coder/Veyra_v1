@@ -19,7 +19,36 @@ export type ObservedTransfer = {
   amountBase: bigint;
 };
 
-export function confirmationDepth(env: NodeJS.ProcessEnv = process.env) {
+/**
+ * Largest block span one tick will scan. A long outage is caught up across several
+ * ticks rather than one enormous getLogs that the RPC would reject or time out.
+ */
+export function maxScanSpan(env: Record<string, string | undefined> = process.env) {
+  const raw = Number.parseInt((env.VEYRA_DEPOSIT_MAX_SPAN_BLOCKS ?? "2000").trim(), 10);
+  if (!Number.isInteger(raw) || raw < 1 || raw > 100_000) return 2_000;
+  return raw;
+}
+
+/**
+ * Where scanning resumes for a chain.
+ *
+ * With a stored cursor, the next unscanned block. Without one (first run), a single
+ * span back from the confirmed head — there is no history to recover, and scanning
+ * from genesis would be pointless.
+ */
+export async function resumeFromBlock(
+  prisma: PrismaClient,
+  chainId: number,
+  toBlock: bigint,
+  span: bigint,
+) {
+  const cursor = await prisma.depositScanCursor.findUnique({ where: { chainId } });
+  if (!cursor) return toBlock > span ? toBlock - span : 0n;
+  const next = cursor.lastScannedBlock + 1n;
+  return next > toBlock ? toBlock : next;
+}
+
+export function confirmationDepth(env: Record<string, string | undefined> = process.env) {
   const raw = Number.parseInt((env.VEYRA_DEPOSIT_CONFIRMATIONS ?? "12").trim(), 10);
   if (!Number.isInteger(raw) || raw < 1 || raw > 256) return 12;
   return raw;
@@ -90,6 +119,7 @@ export async function watchDeposits(
 
   const depth = confirmationDepth(env);
   const confirmed: ObservedTransfer[] = [];
+  const scanRanges = new Map<number, bigint>();
   let scanned = 0;
 
   const byChain = new Map<number, typeof assets>();
@@ -105,8 +135,14 @@ export async function watchDeposits(
     const client = createPublicClient({ transport: http(url) });
     const head = await client.getBlockNumber();
     if (head < BigInt(depth)) continue;
-    const toBlock = head - BigInt(depth);
-    const fromBlock = toBlock > 2_000n ? toBlock - 2_000n : 0n;
+    const confirmedHead = head - BigInt(depth);
+    const span = BigInt(maxScanSpan(env));
+    const fromBlock = await resumeFromBlock(prisma, chainId, confirmedHead, span);
+    // Cap the span so catching up after an outage takes several ticks instead of
+    // one getLogs the RPC will refuse.
+    const toBlock = confirmedHead - fromBlock > span ? fromBlock + span : confirmedHead;
+    if (toBlock < fromBlock) continue;
+    scanRanges.set(chainId, toBlock);
 
     for (const asset of chainAssets) {
       const logs = (await client.getLogs({
@@ -138,6 +174,17 @@ export async function watchDeposits(
   }
 
   const applied = await applyConfirmedDeposits(prisma, confirmed.filter((row) => row.amountBase > 0n), env);
+
+  // Advance only after crediting. A crash before this re-scans the same range,
+  // which is safe because crediting is idempotent per (chainId, txHash, logIndex);
+  // advancing first would drop those deposits permanently.
+  for (const [chainId, lastScannedBlock] of scanRanges) {
+    await prisma.depositScanCursor.upsert({
+      where: { chainId },
+      create: { chainId, lastScannedBlock },
+      update: { lastScannedBlock },
+    });
+  }
 
   let reversed = 0;
   const creditedRows = await prisma.treasuryDeposit.findMany({ where: { status: "CREDITED" } });
