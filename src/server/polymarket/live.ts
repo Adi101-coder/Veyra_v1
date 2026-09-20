@@ -2,7 +2,7 @@ import "server-only";
 
 import { pinPolymarketDns } from "@/lib/polymarket-dns";
 import { BettingError } from "@/server/errors";
-import { formatPrice, formatShares, parseDecimalToScale } from "@/server/money";
+import { formatPrice, formatShares, formatUsd, parseDecimalToScale } from "@/server/money";
 import type { VenueFill, VenueOrderRequest, VenueOrderResult } from "@/server/polymarket/client";
 
 /**
@@ -293,9 +293,8 @@ export async function submitLiveOrder(request: VenueOrderRequest): Promise<Venue
   const options = { tickSize, negRisk: request.negRisk };
   const price = Number(formatPrice(request.limitPriceBps));
   const size = Number(formatShares(request.sharesMicros, 2));
+  const amount = Number(formatUsd(request.notionalMicros, 2));
   const side = request.side === "SELL" ? Side.SELL : Side.BUY;
-  const orderType =
-    request.orderType === "FOK" ? OrderType.FOK : request.orderType === "GTC" ? OrderType.GTC : OrderType.FAK;
 
   const timeoutMs = Number.parseInt(process.env.VEYRA_VENUE_TIMEOUT_MS ?? "10000", 10);
   try {
@@ -309,8 +308,24 @@ export async function submitLiveOrder(request: VenueOrderRequest): Promise<Venue
       // Refresh is best-effort; a stale CLOB cache still fails at post.
     }
     await paceOrderPost();
+    // GTC is a limit order; FOK/FAK are market orders and take a different SDK
+    // entry point with a different payload. Posting a market order through
+    // createAndPostOrder is not just a type mismatch — the payload is wrong.
     const response = await withTimeout(
-      client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, orderType),
+      request.orderType === "GTC"
+        ? client.createAndPostOrder({ tokenID: request.tokenId, price, size, side }, options, OrderType.GTC)
+        : client.createAndPostMarketOrder(
+            {
+              tokenID: request.tokenId,
+              price,
+              // Market BUY is denominated in USDC, market SELL in shares.
+              amount: request.side === "SELL" ? size : amount,
+              side,
+              orderType: request.orderType === "FOK" ? OrderType.FOK : OrderType.FAK,
+            },
+            options,
+            request.orderType === "FOK" ? OrderType.FOK : OrderType.FAK,
+          ),
       Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 10_000,
     );
     return mapPostOrderResponse(request, response as PostOrderResponse);

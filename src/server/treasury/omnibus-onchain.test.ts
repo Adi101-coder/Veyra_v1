@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { privateKeyToAccount } from "viem/accounts";
 import { resolveOmnibusAddress } from "@/server/treasury/omnibus-onchain";
 
-const KEY = `0x${"ab".repeat(32)}`;
+const KEY = `0x${"ab".repeat(32)}` as `0x${string}`;
 const FUNDER = `0x${"cd".repeat(20)}`;
 
 describe("resolveOmnibusAddress", () => {
