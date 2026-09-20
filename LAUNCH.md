@@ -46,7 +46,6 @@ Prisma over a transaction pooler (Neon/PgBouncer) can fail at runtime with
 `prepared statement "s0" already exists` while every local test passes. If that appears in the
 function logs, append `?pgbouncer=true` (and a small `connection_limit`) to `DATABASE_URL`.
 The interactive transactions and `SELECT … FOR UPDATE` locks are safe under transaction
-pooling; only statement caching is affected.
 
 ## 4. Readiness (operator)
 ```bash
