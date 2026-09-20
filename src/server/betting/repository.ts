@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "@prisma/client";
 import type { Outcome } from "@/lib/betting";
 import { applyFillsToHeld, derivePositionStatus, settledHistoryStatus, unseenFills } from "@/server/betting/ledger";
 import { withUniqueRetry } from "@/server/prisma-retry";
-import { reserveFunds, settlesInCash } from "@/server/treasury/funds";
+import { orderReserveMicros, reserveFunds, settlesInCash } from "@/server/treasury/funds";
 
 export type StoredFill = {
   /** Required: fills are deduplicated per execution by this id. */
@@ -387,7 +387,7 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           await reserveFunds(tx, {
             walletAddress: input.walletAddress,
             executionId: execution.id,
-            amountMicros: input.position.execution.notionalMicros,
+            amountMicros: orderReserveMicros(input.position.execution.notionalMicros),
           });
         }
         return bundle;
@@ -551,7 +551,7 @@ export function prismaBettingStore(prisma: PrismaClient): BettingStore {
           await reserveFunds(tx, {
             walletAddress: position.walletAddress,
             executionId: execution.id,
-            amountMicros: input.execution.notionalMicros,
+            amountMicros: orderReserveMicros(input.execution.notionalMicros),
           });
         }
         const history = await tx.confidenceHistory.create({

@@ -141,6 +141,37 @@ async function addFill(executionId: string, notional: bigint, fee = 0n, sideHint
   });
 }
 
+/**
+ * The solvency check must be able to FAIL. assertSolvent() feeds it a controlled
+ * figure derived from the ledger, which makes that assertion self-confirming — it
+ * proves the ledger agrees with itself, not that the money is there. These two
+ * cases drive the other side independently.
+ */
+async function assertSolvencyDetectsDrift() {
+  const identity = await custodyIdentity(prisma);
+  const claims = identity.balances + identity.activeHolds;
+
+  // A shortfall: less USDC controlled than users are owed. This is the real-world
+  // custody leak and it must be an error, not a warning.
+  const short = await reconcileSolvency(prisma, {
+    VEYRA_HOUSE_CAPITAL_MICROS: "0",
+    VEYRA_CONTROLLED_USDC_MICROS: (claims > 0n ? claims - 1n : 0n).toString(),
+  });
+  expect(short.ready).toBe(false);
+  expect(short.findings.some((f) => f.code === "INSOLVENT" && f.severity === "error")).toBe(true);
+
+  // Enough to cover claims: solvent.
+  const ok = await reconcileSolvency(prisma, {
+    VEYRA_HOUSE_CAPITAL_MICROS: "0",
+    VEYRA_CONTROLLED_USDC_MICROS: (claims + 1n).toString(),
+  });
+  expect(ok.findings.some((f) => f.code === "INSOLVENT")).toBe(false);
+
+  // A configured figure can never prove solvency on its own, and says so.
+  expect(ok.controlledSource).toBe("override");
+  expect(ok.findings.some((f) => f.code === "CONTROLLED_USDC_NOT_ONCHAIN")).toBe(true);
+}
+
 async function assertSolvent() {
   const audit = await auditBalances(prisma);
   expect(audit.discrepancies).toEqual([]);
@@ -269,6 +300,7 @@ describe("Custody cash loop", () => {
     const deposits = 1_000n * USD;
     await fund(deposits, "seed-invariant");
     await assertSolvent();
+    await assertSolvencyDetectsDrift();
 
     let seed = 42;
     const rand = () => {
@@ -356,6 +388,7 @@ describe("Custody cash loop", () => {
         await releaseTerminalHolds(prisma);
       }
       await assertSolvent();
+      await assertSolvencyDetectsDrift();
     }
   });
 });

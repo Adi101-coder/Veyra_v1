@@ -4,6 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
 import { CASH_ASSET } from "@/server/treasury/funds";
 import { auditBalances } from "@/server/treasury/ledger";
+import { lastOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
 
 export type SolvencyFinding = {
   code: string;
@@ -19,12 +20,14 @@ export type SolvencyReport = {
   userClaimsMicros: string;
   houseCapitalMicros: string;
   controlledUsdcMicros: string | null;
+  /** Where the controlled figure came from; only "onchain" can detect real drift. */
+  controlledSource: "onchain" | "override" | "baseline" | "none";
   houseResidualMicros: string | null;
   audit: { checked: number; discrepancies: { walletAddress: string; asset: string }[] };
   findings: SolvencyFinding[];
 };
 
-function bigintEnv(env: NodeJS.ProcessEnv, name: string): bigint | null {
+function bigintEnv(env: Record<string, string | undefined>, name: string): bigint | null {
   const raw = (env[name] ?? "").trim();
   if (!/^\d+$/.test(raw)) return null;
   return BigInt(raw);
@@ -38,7 +41,7 @@ function bigintEnv(env: NodeJS.ProcessEnv, name: string): bigint | null {
  */
 export async function reconcileSolvency(
   prisma: PrismaClient = getPrisma(),
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): Promise<SolvencyReport> {
   const findings: SolvencyFinding[] = [];
 
@@ -59,14 +62,40 @@ export async function reconcileSolvency(
   const activeHolds = (holds._sum.amountMicros ?? 0n) - (holds._sum.spentMicros ?? 0n);
   const userClaims = userBalances + activeHolds;
   const house = bigintEnv(env, "VEYRA_HOUSE_CAPITAL_MICROS") ?? 0n;
-  const controlled =
-    bigintEnv(env, "VEYRA_CONTROLLED_USDC_MICROS") ??
-    (() => {
-      const omnibus = bigintEnv(env, "VEYRA_OMNIBUS_USDC_BASELINE_MICROS");
-      const treasury = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS");
-      if (omnibus == null && treasury == null) return null;
-      return (omnibus ?? 0n) + (treasury ?? 0n) + house;
-    })();
+  // Where "controlled USDC" comes from, best first. The invariant is only
+  // meaningful if this side is sourced independently of the ledger it checks:
+  // an operator-typed constant makes the comparison self-confirming.
+  //
+  // `controlled` is the TOTAL USDC Veyra holds, house capital included — so house
+  // is never added here. Adding it inflated the fallback path and made the two
+  // config routes test different things.
+  const onchain = lastOmnibusOnchain().snapshot;
+  const treasuryUsdc = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS") ?? 0n;
+  const override = bigintEnv(env, "VEYRA_CONTROLLED_USDC_MICROS");
+  let controlledSource: "onchain" | "override" | "baseline" | "none" = "none";
+  let controlled: bigint | null = null;
+  if (override != null) {
+    controlled = override;
+    controlledSource = "override";
+  } else if (onchain) {
+    // Live balance of the omnibus wallet, read from chain this worker tick.
+    controlled = BigInt(onchain.usdcEMicros) + BigInt(onchain.usdcMicros) + treasuryUsdc;
+    controlledSource = "onchain";
+  } else {
+    const omnibus = bigintEnv(env, "VEYRA_OMNIBUS_USDC_BASELINE_MICROS");
+    if (omnibus != null || treasuryUsdc > 0n) {
+      controlled = (omnibus ?? 0n) + treasuryUsdc;
+      controlledSource = "baseline";
+    }
+  }
+  if (controlledSource === "override" || controlledSource === "baseline") {
+    findings.push({
+      code: "CONTROLLED_USDC_NOT_ONCHAIN",
+      severity: "warning",
+      message:
+        "Controlled USDC came from configuration, not a live on-chain read, so this check cannot detect real drift.",
+    });
+  }
 
   if (audit.discrepancies.length > 0) {
     findings.push({
@@ -120,6 +149,7 @@ export async function reconcileSolvency(
     userClaimsMicros: userClaims.toString(),
     houseCapitalMicros: house.toString(),
     controlledUsdcMicros: controlled?.toString() ?? null,
+    controlledSource,
     houseResidualMicros: residual?.toString() ?? null,
     audit: {
       checked: audit.checked,

@@ -3,6 +3,8 @@ import type { PrismaClient } from "@prisma/client";
 import { createTestDatabase } from "@/server/testing/db";
 import {
   availableMicros,
+  feeReserveMicros,
+  orderReserveMicros,
   CASH_ASSET,
   creditCash,
   custodyEnabled,
@@ -45,6 +47,9 @@ async function fund(amount: bigint) {
 }
 
 /** Reserve outside a caller transaction, as the repository does inside one. */
+const reserve_ = (executionId: string, amountMicros: bigint) =>
+  prisma.$transaction((tx) => reserveFunds(tx, { walletAddress: WALLET, executionId, amountMicros }));
+
 const reserve = (executionId: string, amountMicros: bigint) =>
   prisma.$transaction((tx) => reserveFunds(tx, { walletAddress: WALLET, executionId, amountMicros }));
 
@@ -99,10 +104,50 @@ describe("Cash custody", () => {
 
     // Only 15 of the 40 reserved actually filled.
     const result = await releaseHold(prisma, "exec-1", 15n * USD);
-    expect(result).toEqual({ released: true, refundMicros: 25n * USD });
+    expect(result).toEqual({ released: true, refundMicros: 25n * USD, capped: false });
     expect(await availableMicros(prisma, WALLET)).toBe(85n * USD);
     expect(await heldMicros(prisma, WALLET)).toBe(0n);
     expect((await prisma.fundsHold.findUniqueOrThrow({ where: { executionId: "exec-1" } })).status).toBe("SETTLED");
+  });
+
+  it("reserves the venue fee, so a fully filled order charges the trader for it", async () => {
+    // The leak: reserving only the notional means a full fill costs more than was
+    // held, releaseHold caps the overage away, and nobody is charged the fee — the
+    // house absorbs it with no ledger entry at all.
+    await fund(100n * USD);
+    const notional = 40n * USD;
+    const reserve = orderReserveMicros(notional, {});
+    expect(reserve).toBeGreaterThan(notional);
+
+    await reserve_("exec-fee", reserve);
+    // Venue fills the whole order and charges a fee on top.
+    const fee = 300_000n;
+    const result = await releaseHold(prisma, "exec-fee", notional + fee);
+
+    expect(result.capped).toBe(false);
+    // The trader paid notional + fee; only the unused buffer came back.
+    expect(result.refundMicros).toBe(reserve - notional - fee);
+    expect(await availableMicros(prisma, WALLET)).toBe(100n * USD - notional - fee);
+    expect(
+      (await prisma.fundsHold.findUniqueOrThrow({ where: { executionId: "exec-fee" } })).spentMicros,
+    ).toBe(notional + fee);
+  });
+
+  it("bounds the fee reserve by the configured rate and rounds it up", () => {
+    // Polymarket's taker fee is shares x rate x p x (1 - p), which as a fraction of
+    // notional is bounded above by the rate itself.
+    expect(feeReserveMicros(10_000_000n, { VEYRA_FEE_RESERVE_BPS: "200" })).toBe(200_000n);
+    expect(feeReserveMicros(1n, { VEYRA_FEE_RESERVE_BPS: "200" })).toBe(1n);
+    expect(feeReserveMicros(10_000_000n, { VEYRA_FEE_RESERVE_BPS: "0" })).toBe(0n);
+    expect(feeReserveMicros(0n, {})).toBe(0n);
+  });
+
+  it("flags rather than hides an execution that cost more than it reserved", async () => {
+    await fund(100n * USD);
+    await reserve_("exec-over", 20n * USD);
+    const result = await releaseHold(prisma, "exec-over", 50n * USD);
+    expect(result.capped).toBe(true);
+    expect(result.refundMicros).toBe(0n);
   });
 
   it("returns everything when an order fills nothing", async () => {
