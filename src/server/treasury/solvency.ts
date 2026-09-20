@@ -22,6 +22,8 @@ export type SolvencyReport = {
   controlledUsdcMicros: string | null;
   /** Where the controlled figure came from; only "onchain" can detect real drift. */
   controlledSource: "onchain" | "override" | "baseline" | "none";
+  /** USDC a reorg clawback could not recover. Non-zero means a real shortfall. */
+  unrecoveredDepositMicros: string;
   houseResidualMicros: string | null;
   audit: { checked: number; discrepancies: { walletAddress: string; asset: string }[] };
   findings: SolvencyFinding[];
@@ -111,6 +113,21 @@ export async function reconcileSolvency(
       message: "A user USDC balance is negative.",
     });
   }
+  // Money a reorg clawback could not recover is real USDC Veyra is short.
+  const unrecovered = await prisma.treasuryDeposit.aggregate({
+    where: { unrecoveredMicros: { gt: 0n } },
+    _sum: { unrecoveredMicros: true },
+    _count: { _all: true },
+  });
+  const unrecoveredMicros = unrecovered._sum.unrecoveredMicros ?? 0n;
+  if (unrecoveredMicros > 0n) {
+    findings.push({
+      code: "UNRECOVERED_DEPOSITS",
+      severity: "error",
+      message: `${unrecovered._count._all} reorged deposit(s) left ${unrecoveredMicros} micros unrecovered: users spent funds that no longer exist on chain.`,
+    });
+  }
+
   if (simulatedPoolFills > 0) {
     findings.push({
       code: "SIMULATED_POOL_FILLS",
@@ -150,6 +167,7 @@ export async function reconcileSolvency(
     houseCapitalMicros: house.toString(),
     controlledUsdcMicros: controlled?.toString() ?? null,
     controlledSource,
+    unrecoveredDepositMicros: unrecoveredMicros.toString(),
     houseResidualMicros: residual?.toString() ?? null,
     audit: {
       checked: audit.checked,

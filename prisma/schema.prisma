@@ -585,19 +585,23 @@ model VotingRoundResult {
 /// An observed on-chain deposit into the treasury wallet. Unique per
 /// (chainId, txHash, logIndex) so replaying the same transfer credits once.
 model TreasuryDeposit {
-  id            String   @id @default(cuid())
-  walletAddress String
-  asset         String
-  chainId       Int
-  txHash        String
-  logIndex      Int
+  id                String   @id @default(cuid())
+  walletAddress     String
+  asset             String
+  chainId           Int
+  txHash            String
+  logIndex          Int
   /// Amount in the asset's own base units; `decimals` records the scale so the
   /// value round-trips exactly without ever becoming a float.
-  amountBase    BigInt
-  decimals      Int
-  status        String   @default("CREDITED")
-  observedAt    DateTime @default(now())
-  createdAt     DateTime @default(now())
+  amountBase        BigInt
+  decimals          Int
+  status            String   @default("CREDITED")
+  /// Amount a reorg reversal could not claw back because the user had already spent
+  /// it. Real money Veyra is short, so solvency reports it rather than letting the
+  /// deposit stay CREDITED as if the transfer still existed.
+  unrecoveredMicros BigInt   @default(0)
+  observedAt        DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   @@unique([chainId, txHash, logIndex])
   @@index([walletAddress, asset])

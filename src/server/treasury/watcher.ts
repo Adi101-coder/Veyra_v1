@@ -55,8 +55,17 @@ export async function reverseMissingDeposits(
   for (const deposit of credited) {
     const key = `${deposit.chainId}:${deposit.txHash}:${deposit.logIndex}`;
     if (stillPresent.has(key)) continue;
-    const result = await reverseDeposit(prisma, deposit.id);
-    if (result.reversed) reversed += 1;
+    // One deposit failing must not abandon the rest of the sweep: the remaining
+    // rows include other reorgs that still need reversing.
+    try {
+      const result = await reverseDeposit(prisma, deposit.id);
+      if (result.reversed) reversed += 1;
+    } catch (error) {
+      console.error("[custody] reversing a reorged deposit failed", {
+        depositId: deposit.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
   return { reversed };
 }
