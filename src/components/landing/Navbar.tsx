@@ -7,13 +7,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { BrandMark } from "@/components/Logo";
 import { PremiumButton } from "@/components/landing/PremiumButton";
 import { siteConfig } from "@/lib/site";
-import {
-  IconClose,
-  IconDiscord,
-  IconMenu,
-  IconSend,
-  IconX,
-} from "@/components/landing/icons";
+import { IconClose, IconDiscord, IconMenu, IconX } from "@/components/landing/icons";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -26,7 +20,6 @@ const links = [
 const social = [
   { href: "/community", label: "X", Icon: IconX },
   { href: "/community", label: "Discord", Icon: IconDiscord },
-  { href: "/community", label: "Telegram", Icon: IconSend },
 ] as const;
 
 function isActive(pathname: string, href: string) {

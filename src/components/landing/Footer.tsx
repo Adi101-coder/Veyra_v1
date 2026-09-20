@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion";
 import { BrandMark } from "@/components/Logo";
 import { siteConfig } from "@/lib/site";
-import { IconDiscord, IconSend, IconX } from "@/components/landing/icons";
+import { IconDiscord, IconX } from "@/components/landing/icons";
 
 const columns = [
   {
@@ -85,7 +85,6 @@ export function Footer() {
             {[
               { href: "/community", label: "X", Icon: IconX },
               { href: "/community#discord", label: "Discord", Icon: IconDiscord },
-              { href: "/community#telegram", label: "Telegram", Icon: IconSend },
             ].map((item) => (
               <motion.div key={item.label} tabIndex={-1} whileHover={reduce ? undefined : { y: -2 }}>
                 <Link href={item.href} aria-label={item.label} className="block hover:text-white">
