@@ -49,7 +49,7 @@ export type PredictionResolution = {
   resolvedAt: string;
 };
 
-export type ScoredPrediction = PredictionDTO & { resolution: PredictionResolution | null };
+export type ScoredPrediction = PredictionDTO & { resolution?: PredictionResolution | null };
 
 export type Loadable<T> =
   | { key: string; status: "ready"; data: T }

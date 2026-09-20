@@ -83,6 +83,7 @@ export type ReputationStore = {
   applyResolution(score: PredictionScoreRow): Promise<void>;
   getReputation(walletAddress: string): Promise<ReputationSnapshot | null>;
   listScores(walletAddress: string): Promise<PredictionScoreRow[]>;
+  listScoresByIds(predictionIds: string[]): Promise<PredictionScoreRow[]>;
   enqueueJob(marketId: string, resolvedOutcome: ResolutionOutcome): Promise<ReputationJobRow>;
   /** `now` is the caller's clock so engine and store agree on lease/availability. */
   claimJob(now?: Date): Promise<ReputationJobRow | null>;

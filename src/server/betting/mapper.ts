@@ -136,6 +136,7 @@ export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
     position,
     execution: executionDto,
     settlement: toSettlementDTO(bundle.chainSettlements?.[0]),
+    score: null,
     marketResolution:
       bundle.market.resolvedAt && bundle.market.resolvedOutcome
         ? {

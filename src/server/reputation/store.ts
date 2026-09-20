@@ -127,6 +127,11 @@ export function memoryReputationStore(): ReputationStore {
         .filter((row) => normalizeWallet(row.walletAddress) === key)
         .sort((a, b) => b.resolvedAt.getTime() - a.resolvedAt.getTime());
     },
+    async listScoresByIds(predictionIds) {
+      if (predictionIds.length === 0) return [];
+      const wanted = new Set(predictionIds);
+      return [...scores.values()].filter((row) => wanted.has(row.predictionId));
+    },
     async enqueueJob(marketId, resolvedOutcome) {
       const existing = jobs.find((job) => job.marketId === marketId);
       if (existing) return existing;
@@ -416,6 +421,13 @@ export function prismaReputationStore(prisma: PrismaClient): ReputationStore {
       const rows = await prisma.predictionScore.findMany({
         where: { walletAddress },
         orderBy: { resolvedAt: "desc" },
+      });
+      return rows.map(toScore);
+    },
+    async listScoresByIds(predictionIds) {
+      if (predictionIds.length === 0) return [];
+      const rows = await prisma.predictionScore.findMany({
+        where: { predictionId: { in: predictionIds } },
       });
       return rows.map(toScore);
     },

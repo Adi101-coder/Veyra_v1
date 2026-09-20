@@ -138,6 +138,10 @@ export class ReputationEngine {
     return this.store.listScores(walletAddress);
   }
 
+  async listScoresByIds(predictionIds: string[]) {
+    return this.store.listScoresByIds(predictionIds);
+  }
+
   private async resolveMarket(marketId: string, resolvedOutcome: Outcome, resolvedAt: Date) {
     // The market was marked resolved when the job was enqueued, so nothing can be
     // placed after this cutoff; scoring is limited to predictions made before it.
