@@ -167,8 +167,11 @@ describe("Veyra end-to-end (Prisma + mocked Polymarket)", () => {
       venueFill({ side: "BUY", sharesMicros: execution.sizeSharesMicros } as VenueOrderRequest, "order-open-1"),
     );
     const synced = await syncExecution(openingExecutionId, deps);
-    expect(synced.position?.status).toBe("filled");
-    expect(synced.execution?.status).toBe("filled");
+    // syncExecution throws when the execution is missing, so a null here would be a
+    // contract change rather than a normal outcome.
+    expect(synced).not.toBeNull();
+    expect(synced!.position?.status).toBe("filled");
+    expect(synced!.execution?.status).toBe("filled");
     await syncExecution(openingExecutionId, deps);
     await reconcileExecutions(deps);
     const position = await prisma.position.findFirstOrThrow({ where: { predictionId } });
