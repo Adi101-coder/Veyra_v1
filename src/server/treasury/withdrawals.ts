@@ -78,13 +78,12 @@ export async function failWithdrawal(
   if (!current || current.status !== "PENDING") {
     throw new BettingError("WITHDRAWAL_NOT_PENDING", "That withdrawal is not waiting for an operator.", 409);
   }
-  await creditCash(prisma, {
-    walletAddress: current.walletAddress,
-    amountMicros: current.amountMicros,
-    kind: "REVERSAL",
-    refType: "TreasuryWithdrawal",
-    refId: current.id,
-  });
+  // Claim BEFORE refunding. Refunding first lets a concurrent completeWithdrawal
+  // take the row — the operator has already sent the funds on-chain — while this
+  // call refunds anyway, paying the user twice. Claiming first means the refund
+  // only happens for a withdrawal this call owns, and a crash before the credit
+  // leaves FAILED-but-unrefunded, which is recoverable because creditCash is
+  // idempotent per (refType, refId, kind).
   const claim = await prisma.treasuryWithdrawal.updateMany({
     where: { id: current.id, status: "PENDING" },
     data: {
@@ -96,5 +95,12 @@ export async function failWithdrawal(
   if (claim.count !== 1) {
     throw new BettingError("WITHDRAWAL_NOT_PENDING", "That withdrawal is not waiting for an operator.", 409);
   }
+  await creditCash(prisma, {
+    walletAddress: current.walletAddress,
+    amountMicros: current.amountMicros,
+    kind: "REVERSAL",
+    refType: "TreasuryWithdrawal",
+    refId: current.id,
+  });
   return prisma.treasuryWithdrawal.findUniqueOrThrow({ where: { id: current.id } });
 }

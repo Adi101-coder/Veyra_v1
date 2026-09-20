@@ -6,7 +6,7 @@ import { accountingSeparationReport, exposureFor } from "@/server/treasury/expos
 import { auditBalances, balancesFor, creditDeposit, reverseDeposit } from "@/server/treasury/ledger";
 import { CASH_ASSET, creditCash } from "@/server/treasury/funds";
 import { applyConfirmedDeposits } from "@/server/treasury/watcher";
-import { failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
+import { completeWithdrawal, failWithdrawal, requestWithdrawal } from "@/server/treasury/withdrawals";
 
 let prisma: PrismaClient;
 let database: ReturnType<typeof createTestDatabase>;
@@ -235,6 +235,47 @@ describe("Treasury custody ledger (Prisma)", () => {
     });
     expect(after.balanceBase).toBe(50_000_000n);
     expect((await prisma.treasuryWithdrawal.findUniqueOrThrow({ where: { id: row.id } })).status).toBe("FAILED");
+  });
+
+  it("never refunds a withdrawal the operator has already paid out", async () => {
+    // Covers the sequential case: a withdrawal the operator already paid out must
+    // never be refunded on top.
+    //
+    // The concurrent interleaving — failWithdrawal reads PENDING, completeWithdrawal
+    // takes the row, then the refund lands anyway — is NOT reachable from a
+    // sequential test. failWithdrawal claims the row before crediting so that window
+    // does not exist; this test does not by itself prove that ordering.
+    await prisma.treasuryWithdrawal.deleteMany();
+    await creditCash(prisma, {
+      walletAddress: USER,
+      amountMicros: 50_000_000n,
+      kind: "DEPOSIT",
+      refType: "Test",
+      refId: "wd-race-seed",
+    });
+    const row = await requestWithdrawal(prisma, {
+      walletAddress: USER,
+      destAddress: "0x5555555555555555555555555555555555555555",
+      amountMicros: 10_000_000n,
+    });
+
+    // Operator sends the funds and marks it complete.
+    await completeWithdrawal(prisma, { id: row.id, txHash: `0x${"ab".repeat(32)}` });
+    // A second operator (or a retry) then tries to fail the same withdrawal.
+    await expect(failWithdrawal(prisma, { id: row.id })).rejects.toMatchObject({
+      code: "WITHDRAWAL_NOT_PENDING",
+    });
+
+    // The balance must still reflect the payout, not a refund on top of it.
+    const after = await prisma.treasuryBalance.findUniqueOrThrow({
+      where: { walletAddress_asset: { walletAddress: USER, asset: CASH_ASSET } },
+    });
+    expect(after.balanceBase).toBe(40_000_000n);
+    expect(
+      await prisma.treasuryLedgerEntry.count({
+        where: { refType: "TreasuryWithdrawal", refId: row.id, kind: "REVERSAL" },
+      }),
+    ).toBe(0);
   });
 
   it("credits a watched deposit once and can reverse a reorg", async () => {
