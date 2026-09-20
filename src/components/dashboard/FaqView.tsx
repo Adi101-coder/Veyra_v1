@@ -21,7 +21,7 @@ export function FaqView() {
           <span className="text-[#c8c4bc]"> / </span>
           FAQ
         </p>
-        <h1 className="mt-3 font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+        <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
           Questions.
         </h1>
         <p className="mt-4 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">

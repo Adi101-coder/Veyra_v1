@@ -79,7 +79,7 @@ export function MarketsView() {
     <div className="bg-[#f3f1eb]">
       <Shell className="pt-3 pb-20 sm:pt-4">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          <div className="scroll-x -mx-4 gap-1.5 px-4 pb-0.5 sm:mx-0 sm:px-0">
             {feedChannels.map((item) => {
               const active = item.id === channel;
               return (

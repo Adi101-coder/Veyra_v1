@@ -93,7 +93,7 @@ export function CommunityView() {
           <p className="text-[11px] font-medium tracking-[0.28em] text-[#8d939c] uppercase">
             The VEYRA community
           </p>
-          <h1 className="mt-6 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text text-[44px] leading-[1.02] font-light tracking-[-0.045em] text-transparent sm:text-[72px] lg:text-[88px]">
+          <h1 className="mt-6 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text text-[32px] leading-[1.08] font-light tracking-[-0.045em] text-transparent sm:text-[72px] lg:text-[88px]">
             Built by traders.
             <br />
             Shaped by the community.

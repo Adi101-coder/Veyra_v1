@@ -72,11 +72,11 @@ export function ConnectWalletButton() {
   if (address) {
     const preview = activity.data?.transactions.slice(0, 4) ?? [];
     return (
-      <div className="relative justify-self-end" ref={menuRef}>
+      <div className="relative shrink-0 justify-self-end" ref={menuRef}>
         <button
           type="button"
           onClick={() => setMenu((value) => !value)}
-          className="inline-flex items-center gap-2 rounded-full border border-[#1a1a1a] bg-transparent px-4 py-1.5 font-serif text-[14px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:px-5"
+          className="inline-flex max-w-[11rem] items-center gap-2 truncate rounded-full border border-[#1a1a1a] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:max-w-none sm:px-5 sm:text-[14px]"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-[#2f9e6e]" />
           {shortenAddress(address)}
@@ -165,16 +165,16 @@ export function ConnectWalletButton() {
   }
 
   return (
-    <div className="justify-self-end">
+    <div className="shrink-0 justify-self-end">
       <button
         type="button"
         onClick={() => {
           clearError();
           setOpen(true);
         }}
-        className="rounded-full border border-[#1a1a1a] bg-transparent px-5 py-1.5 font-serif text-[14px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:px-6"
+        className="whitespace-nowrap rounded-full border border-[#1a1a1a] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:px-6 sm:text-[14px]"
       >
-        {connecting ? "Connecting…" : "Connect Wallet"}
+        {connecting ? "Connecting…" : <>Connect<span className="hidden sm:inline"> Wallet</span></>}
       </button>
 
       {open ? (

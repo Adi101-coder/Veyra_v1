@@ -30,7 +30,7 @@ function NavLinks({ className = "" }: { className?: string }) {
           <Link
             key={link.href}
             href={link.href}
-            className={`relative pb-1 font-serif text-[12px] uppercase tracking-[0.16em] no-underline sm:text-[13px] ${
+            className={`relative shrink-0 pb-1 font-serif text-[12px] uppercase tracking-[0.12em] no-underline sm:text-[13px] sm:tracking-[0.16em] ${
               active ? "text-[#1a1a1a]" : "text-[#8a8a8a] hover:text-[#1a1a1a]"
             }`}
           >
@@ -48,21 +48,21 @@ function NavLinks({ className = "" }: { className?: string }) {
 export function DashboardHeader() {
   return (
     <header className="bg-[#f3f0e8]">
-      <Shell className="flex items-center justify-between gap-4 pt-5 pb-4">
+      <Shell className="flex items-center justify-between gap-3 pt-4 pb-3 sm:gap-4 sm:pt-5 sm:pb-4">
         <div className="flex min-w-0 items-baseline gap-8 sm:gap-10 lg:gap-12">
           <Link
             href="/"
-            className="text-[#1a1a1a] no-underline"
+            className="shrink-0 text-[#1a1a1a] no-underline"
             aria-label="VEYRA home"
           >
-            <BrandWordmark className="text-[28px] leading-none sm:text-[32px]" />
+            <BrandWordmark className="text-[24px] leading-none sm:text-[32px]" />
           </Link>
           <NavLinks className="hidden items-center gap-7 lg:flex" />
         </div>
         <ConnectWalletButton />
       </Shell>
-      <Shell className="flex items-center gap-6 pb-3 lg:hidden">
-        <NavLinks className="-mx-1 flex min-w-0 items-center gap-5 overflow-x-auto px-1 pb-px" />
+      <Shell className="pb-3 lg:hidden">
+        <NavLinks className="scroll-x -mx-4 gap-5 px-4 pb-px" />
       </Shell>
     </header>
   );

@@ -241,7 +241,7 @@ export function ContractView({ market }: { market: Market }) {
                     <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
                       Source
                     </p>
-                    <p className="font-mono text-[12px] text-[#1a1a1a]">
+                    <p className="min-w-0 break-words font-mono text-[12px] text-[#1a1a1a]">
                       {sourceLabel}
                     </p>
                   </div>
@@ -355,7 +355,7 @@ export function ContractView({ market }: { market: Market }) {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="scroll-x-pane">
                 <table className="w-full min-w-[720px] border-collapse text-left">
                   <thead>
                     <tr className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">

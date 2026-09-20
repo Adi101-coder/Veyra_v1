@@ -80,8 +80,8 @@ export function DashboardView() {
   return (
     <div className="bg-[#f3f0e8]">
       <Shell className="pt-5 pb-8 sm:pt-6">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 sm:gap-x-7">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="scroll-x -mx-4 gap-x-5 px-4 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
             {tabs.map((item) => {
               const active = item.id === tab;
               return (
@@ -89,7 +89,7 @@ export function DashboardView() {
                   key={item.id}
                   type="button"
                   onClick={() => setTab(item.id)}
-                  className={`text-[12px] uppercase tracking-[0.14em] transition sm:text-[13px] ${
+                  className={`shrink-0 text-[12px] uppercase tracking-[0.14em] transition sm:text-[13px] ${
                     active
                       ? "rounded-full bg-[#171614] px-4 py-1.5 text-[#f4f1ea]"
                       : "px-1 py-1.5 text-[#7a746a] hover:text-[#171614]"
@@ -116,7 +116,7 @@ export function DashboardView() {
           </p>
         ) : null}
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="scroll-x -mx-4 gap-2 px-4 pb-1 sm:mx-0 sm:px-0">
           {categories.map((item) => {
             const active = item.id === category;
             return (

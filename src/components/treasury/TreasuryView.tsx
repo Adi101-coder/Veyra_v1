@@ -72,7 +72,7 @@ export function TreasuryView() {
       <div className="bg-[#f4f2ed]">
         <Shell className="max-w-3xl pt-10 pb-20">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Custody</p>
-          <h1 className="mt-3 font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
             Balances.
           </h1>
           <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#6e6e6e] italic">
@@ -87,7 +87,7 @@ export function TreasuryView() {
     <div className="bg-[#f4f2ed]">
       <Shell className="max-w-3xl pt-8 pb-20">
         <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Custody</p>
-        <h1 className="mt-3 font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+        <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
           Balances.
         </h1>
         <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">

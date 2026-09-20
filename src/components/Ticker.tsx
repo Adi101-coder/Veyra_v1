@@ -37,7 +37,7 @@ export function Ticker() {
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
           <span className="whitespace-nowrap text-brass">VEYRA</span>
           <span className="hidden opacity-40 sm:inline">·</span>
-          <span className="whitespace-nowrap">{mastheadDate(now)}</span>
+          <span className="min-w-0 truncate">{mastheadDate(now)}</span>
         </div>
         <div className="hidden min-w-0 items-center gap-[18px] sm:flex">
           <div className="flex min-w-0 items-center gap-1.5">

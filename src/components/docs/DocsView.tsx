@@ -195,7 +195,7 @@ export function DocsView() {
           <p className="text-[11px] font-medium tracking-[0.28em] text-[#8d939c] uppercase">
             Documentation
           </p>
-          <h1 className="mt-5 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text text-[40px] leading-[1.05] font-light tracking-[-0.045em] text-transparent sm:text-[64px] lg:text-[72px]">
+          <h1 className="mt-5 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text text-[32px] leading-[1.1] font-light tracking-[-0.045em] text-transparent sm:text-[64px] lg:text-[72px]">
             Everything you need
             <br />
             to build on VEYRA.

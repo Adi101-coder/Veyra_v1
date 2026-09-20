@@ -22,7 +22,7 @@ export function ActivityView() {
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">
             Ledger
           </p>
-          <h1 className="mt-3 font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
             Activity.
           </h1>
           <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#6e6e6e] italic">
@@ -49,7 +49,7 @@ export function ActivityView() {
         </p>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-serif text-[36px] leading-none tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+            <h1 className="font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
               Wallet ledger.
             </h1>
             <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
@@ -67,21 +67,21 @@ export function ActivityView() {
           </button>
         </div>
 
-        <div className="mt-8 flex items-center gap-4 rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-5">
-          <Identicon seed={address} className="h-12 w-12" />
+        <div className="mt-8 flex flex-col gap-4 rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-white px-4 py-4 sm:flex-row sm:items-center sm:px-5 sm:py-5">
+          <Identicon seed={address} className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
               {walletName ?? "Wallet"} · {chain === "evm" ? "Ethereum" : "Solana"}
             </p>
-            <p className="mt-1 truncate font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+            <p className="mt-1 truncate font-serif text-[18px] tracking-[-0.03em] text-[#1a1a1a] sm:text-[20px]">
               {shortenAddress(address, 6)}
             </p>
           </div>
-          <div className="text-right">
+          <div className="sm:text-right">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
               Balance
             </p>
-            <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+            <p className="mt-1 break-all font-serif text-[18px] tracking-[-0.03em] text-[#1a1a1a] sm:text-[20px]">
               {activity.data?.balanceLabel ?? "—"}
             </p>
           </div>
