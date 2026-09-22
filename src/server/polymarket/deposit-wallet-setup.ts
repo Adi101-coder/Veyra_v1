@@ -54,7 +54,7 @@ export async function ensureDepositWalletTrading(env: NodeJS.ProcessEnv = proces
     if (!hasBuilderApiKey(env)) {
       throw new BettingError(
         "DEPOSIT_WALLET",
-        "Polymarket rejected this EOA as a maker. Create Builder API keys at polymarket.com → Settings → Builders (not a trade), set POLYMARKET_BUILDER_API_KEY/SECRET/PASSPHRASE, restart, and place again in Veyra.",
+        "Polymarket rejected this EOA as a maker. Create Builder API keys at polymarket.com → Settings → Builders (not a trade), set POLYMARKET_BUILDER_API_KEY/SECRET/PASSPHRASE, restart, and place again in Split.",
         503,
       );
     }

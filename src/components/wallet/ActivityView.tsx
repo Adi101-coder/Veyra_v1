@@ -26,7 +26,7 @@ export function ActivityView() {
             Activity.
           </h1>
           <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
-            Connect a wallet first. VEYRA reads the public chain for that address and
+            Connect a wallet first. Split reads the public chain for that address and
             lists the recent transactions it already made.
           </p>
         </Shell>
@@ -54,7 +54,7 @@ export function ActivityView() {
             </h1>
             <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               Recent confirmed transactions for the address you connected — pulled from
-              {chain === "evm" ? " Ethereum" : " Solana"}, not from VEYRA’s own books.
+              {chain === "evm" ? " Ethereum" : " Solana"}, not from Split’s own books.
             </p>
           </div>
           <button

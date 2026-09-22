@@ -199,7 +199,7 @@ export function DocsView() {
           <h1 className="mt-5 font-serif text-[32px] leading-[1.1] font-normal tracking-[-0.045em] text-[#182d4a] sm:text-[64px] lg:text-[72px]">
             Everything you need
             <br />
-            to build on VEYRA.
+            to build on Split.
           </h1>
           <p className="mx-auto mt-6 max-w-[34rem] text-[16px] leading-7 text-[#65758b]">
             Explore the protocol, trading infrastructure, APIs, integrations, and tools powering
@@ -473,7 +473,7 @@ export function DocsView() {
             <div className="mt-10 rounded-2xl border border-[#dce5f1] bg-[#ffffff] p-5">
               <p className="text-[15px] text-[#182d4a]">Need help?</p>
               <p className="mt-2 text-[13px] leading-6 text-[#65758b]">
-                Join the VEYRA community and talk with other traders and developers.
+                Join the Split community and talk with other traders and developers.
               </p>
               <Link
                 href="/community"
@@ -501,7 +501,7 @@ export function DocsView() {
               Build on the future of markets.
             </h2>
             <p className="mt-5 max-w-[28rem] text-[16px] leading-7 text-[#65758b]">
-              Explore the API, integrate VEYRA into your product, or join the community.
+              Explore the API, integrate Split into your product, or join the community.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button

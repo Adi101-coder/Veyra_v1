@@ -9,7 +9,7 @@ export const communityChannels = [
   {
     id: "discord",
     name: "Discord",
-    description: "Talk markets, strategies, ideas, and everything VEYRA.",
+    description: "Talk markets, strategies, ideas, and everything Split.",
     members: "4.8K members",
     href: "#discord",
     cta: "Join Discord",
@@ -25,7 +25,7 @@ export const communityChannels = [
   {
     id: "telegram",
     name: "Telegram",
-    description: "Stay connected with the VEYRA community wherever you are.",
+    description: "Stay connected with the Split community wherever you are.",
     members: "6.2K members",
     href: "#telegram",
     cta: "Join Telegram",
@@ -55,7 +55,7 @@ export const communityActivity = [
   },
   {
     kind: "Protocol update",
-    title: "VEYRA v1.2 is now live",
+    title: "Split v1.2 is now live",
     body: "Matching latency is down and settlement receipts are easier to verify.",
     time: "1h ago",
   },
@@ -86,12 +86,12 @@ export const communityEvents = [
     n: "02",
     title: "Builder Sessions",
     cadence: "Monthly",
-    body: "Build, experiment, and ship with VEYRA.",
+    body: "Build, experiment, and ship with Split.",
   },
   {
     n: "03",
     title: "Community AMA",
     cadence: "Coming soon",
-    body: "Ask questions directly to the VEYRA team.",
+    body: "Ask questions directly to the Split team.",
   },
 ] as const;

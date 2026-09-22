@@ -4,9 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { BrandMark } from "@/components/Logo";
+import { SplitWordmark } from "@/components/Logo";
 import { PremiumButton } from "@/components/landing/PremiumButton";
-import { siteConfig } from "@/lib/site";
 import { IconClose, IconDiscord, IconMenu, IconX } from "@/components/landing/icons";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -59,9 +58,8 @@ export function Navbar() {
       }`}
     >
       <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="flex items-center gap-2.5 text-[#182d4a] no-underline">
-          <BrandMark className="h-7 w-7" />
-          <span className="text-[15px] font-medium tracking-[-0.02em]">{siteConfig.name}</span>
+        <Link href="/" className="flex items-center text-[#182d4a] no-underline" aria-label="Split home">
+          <SplitWordmark className="w-[118px] sm:w-[140px]" />
         </Link>
 
         <nav className="hidden items-center gap-9 text-[14px] font-medium text-[#65758b] lg:flex">
@@ -127,7 +125,7 @@ export function Navbar() {
             transition={{ duration: 0.28, ease }}
           >
             <div className="flex h-[72px] items-center justify-between px-5">
-              <span className="text-[15px] font-medium">{siteConfig.name}</span>
+              <SplitWordmark className="w-[118px]" />
               <button type="button" aria-label="Close menu" onClick={() => setOpenForPath(null)}>
                 <IconClose className="h-6 w-6" />
               </button>

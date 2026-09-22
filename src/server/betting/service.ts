@@ -126,7 +126,7 @@ export type BettingDeps = {
   store: BettingStore;
   executor: ExecutorPort;
   getCatalogMarket: (id: string) => CatalogMarket | null;
-  /** Veyra-native pools, which live in the database rather than the catalog. */
+  /** Split-native pools, which live in the database rather than the catalog. */
   getPoolMarket?: (id: string) => Promise<CatalogMarket | null>;
   getLiveMarket: (id: string) => Promise<CatalogMarket | null>;
   getBook: (tokenId: string) => Promise<OrderBookSnapshot>;
@@ -146,7 +146,7 @@ export function createDefaultDeps(): BettingDeps {
       if (!live) {
         const synthetic = syntheticBookForToken(tokenId, getMarket);
         if (synthetic) return synthetic;
-        // Veyra-native pools are database rows, so the catalog lookup above
+        // Split-native pools are database rows, so the catalog lookup above
         // misses them; without this their tokens have no book and execution fails.
         const pool = await poolSyntheticBook(tokenId).catch(() => null);
         if (pool) return pool;
@@ -322,7 +322,7 @@ export async function resolveMarket(id: string, deps: BettingDeps) {
     return local;
   }
   if (!local) {
-    // Veyra-native pools (created by a voting round) live in the database rather
+    // Split-native pools (created by a voting round) live in the database rather
     // than the static catalog, so the catalog lookup above misses them.
     const pool = deps.getPoolMarket ? await deps.getPoolMarket(id).catch(() => null) : null;
     if (pool) return pool;
@@ -344,7 +344,7 @@ async function resolveBook(
       throw new BettingError("NO_ORDER_BOOK", "This Polymarket market has no CLOB token for that outcome.", 422);
     }
     if (market.source === VEYRA_POOL_SOURCE) {
-      // A Veyra pool quotes its own AMM curve. Without liquidity it has no
+      // A Split pool quotes its own AMM curve. Without liquidity it has no
       // counterparty, so it must refuse rather than show an invented price.
       const book = await poolBook(getPrisma(), market.id, outcome);
       if (!book) {
@@ -377,7 +377,7 @@ async function assertNotPoolProposer(market: CatalogMarket, walletAddress: strin
   if (proposer && proposer === walletAddress.toLowerCase()) {
     throw new BettingError(
       "PROPOSER_CANNOT_TRADE",
-      "The proposer cannot trade their own pool while Veyra is the counterparty.",
+      "The proposer cannot trade their own pool while Split is the counterparty.",
       403,
     );
   }
@@ -1091,7 +1091,7 @@ export async function enqueueMarketResolution(
   return getReputation(deps).enqueueResolution(marketId, outcome);
 }
 
-/** Worker: resolve every open Polymarket market with Veyra predictions once Gamma finalizes it. */
+/** Worker: resolve every open Polymarket market with Split predictions once Gamma finalizes it. */
 export async function syncMarketResolutions(deps: BettingDeps = createDefaultDeps()) {
   const ids = await deps.store.listOpenVenueMarketIds();
   const results: { marketId: string; outcome?: ResolutionOutcome; error?: string }[] = [];

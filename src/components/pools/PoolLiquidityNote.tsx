@@ -16,8 +16,8 @@ const usd = (micros: string | undefined) => {
 };
 
 /**
- * Explains, on the pool itself, that Veyra is the counterparty here and where that
- * money comes from. Veyra-native pools price against a Veyra-funded market maker
+ * Explains, on the pool itself, that Split is the counterparty here and where that
+ * money comes from. Split-native pools price against a Split-funded market maker
  * rather than a peer, which is a materially different deal from a Polymarket
  * market, so it is stated on the page rather than only in the docs.
  */
@@ -46,7 +46,7 @@ export function PoolLiquidityNote({ marketId }: { marketId: string }) {
       <p className="mt-4 rounded-md border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#65758b]">
         <span className="text-[#182d4a]">Awaiting liquidity.</span> This pool was voted in but
         the liquidity fund cannot cover it yet, so it is not quoting a price. A pool with no
-        counterparty has no honest odds, so Veyra shows none.
+        counterparty has no honest odds, so Split shows none.
       </p>
     );
   }
@@ -56,9 +56,9 @@ export function PoolLiquidityNote({ marketId }: { marketId: string }) {
 
   return (
     <p className="mt-4 rounded-md border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#65758b]">
-      <span className="text-[#182d4a]">Veyra pool.</span> The five most-voted questions each
-      day open against Veyra&apos;s liquidity fund, which is built from trading fees; whatever is
-      not committed to a pool stays in the reserve. Veyra takes the other side of your trade
+      <span className="text-[#182d4a]">Split pool.</span> The five most-voted questions each
+      day open against Split&apos;s liquidity fund, which is built from trading fees; whatever is
+      not committed to a pool stays in the reserve. Split takes the other side of your trade
       here{cap ? <> and caps what this pool can lose at {cap}</> : null}. Prices move as people
       buy, so what you pay depends on size.
       {fee ? <> A {fee}% fee applies to profit when the pool resolves.</> : null}

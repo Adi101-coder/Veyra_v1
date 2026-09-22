@@ -34,7 +34,7 @@ export const docsNav: DocsGroup[] = [
     heading: "Getting Started",
     items: [
       { id: "introduction", title: "Introduction" },
-      { id: "what-is-veyra", title: "What is VEYRA?" },
+      { id: "what-is-veyra", title: "What is Split?" },
       { id: "quickstart", title: "Quickstart" },
       { id: "connect-a-wallet", title: "Connect a wallet" },
     ],
@@ -146,8 +146,8 @@ export const articles: Record<string, DocsArticle> = {
         id: "markets-reimagined",
         heading: "Probability is the order",
         paragraphs: [
-          "Every other venue asks how many shares you want. VEYRA asks how likely you think the outcome is. That single number is the order: the engine reads the live book, measures your edge against it, and sizes the position with fractional Kelly.",
-          "Positions route to Polymarket's CLOB for liquidity. Resolution, scoring and custody are VEYRA's own. Your forecasting record becomes a Brier-scored reputation, and the capital-weighted beliefs of every trader become a Conviction signal the venue itself cannot see.",
+          "Every other venue asks how many shares you want. Split asks how likely you think the outcome is. That single number is the order: the engine reads the live book, measures your edge against it, and sizes the position with fractional Kelly.",
+          "Positions route to Polymarket's CLOB for liquidity. Resolution, scoring and custody are Split's own. Your forecasting record becomes a Brier-scored reputation, and the capital-weighted beliefs of every trader become a Conviction signal the venue itself cannot see.",
           "Every mechanism on these pages is specified to the formula, with the file it lives in — nothing is described that cannot be read in code.",
         ],
         diagram: "system",
@@ -167,7 +167,7 @@ export const articles: Record<string, DocsArticle> = {
         id: "settlement",
         heading: "Settlement",
         paragraphs: [
-          "Polymarket-backed markets settle from the venue's resolution. VEYRA-native pools are resolved by an operator behind a dispute window, then paid from the scored result. Every resolved position emits a settlement reference to Robinhood Chain.",
+          "Polymarket-backed markets settle from the venue's resolution. Split-native pools are resolved by an operator behind a dispute window, then paid from the scored result. Every resolved position emits a settlement reference to Robinhood Chain.",
         ],
       },
     ],
@@ -176,7 +176,7 @@ export const articles: Record<string, DocsArticle> = {
   "what-is-veyra": article(
     "what-is-veyra",
     "Getting Started",
-    "What is VEYRA?",
+    "What is Split?",
     "Three layers: a confidence engine on top of external liquidity, a native AMM for community markets, and a custody ledger underneath both.",
     [
       {
@@ -184,7 +184,7 @@ export const articles: Record<string, DocsArticle> = {
         heading: "The stack",
         paragraphs: [
           "Engine — converts a stated probability into a sized, priced order against a live book (Kelly sizing, ladder walking, slippage and spread guards).",
-          "Venues — Polymarket's CLOB for external markets; an LMSR market maker for VEYRA-native pools opened by daily voting.",
+          "Venues — Polymarket's CLOB for external markets; an LMSR market maker for Split-native pools opened by daily voting.",
           "Ledger — an append-only, integer-precision record of every fill, hold, payout and fee, with a solvency invariant checked against chain state.",
         ],
       },
@@ -260,7 +260,7 @@ POST /api/auth/verify  { walletAddress, nonce, signature } -> Set-Cookie (HttpOn
         heading: "The Kelly fraction",
         paragraphs: [
           "A binary contract costs q and pays 1. If your true probability is p, the growth-optimal fraction of bankroll to stake is the full Kelly fraction f* = (p − q) / (1 − q). It is zero when you have no edge (p ≤ q) and approaches one as q approaches zero with p above it.",
-          "Full Kelly is famously volatile — it maximises long-run growth but tolerates drawdowns most people would not. VEYRA stakes a fraction of it, then caps the result.",
+          "Full Kelly is famously volatile — it maximises long-run growth but tolerates drawdowns most people would not. Split stakes a fraction of it, then caps the result.",
         ],
         code: `// src/server/confidence/formula.ts  (all values in basis points)
 export function rawKellyBps(confidenceBps: number, marketPriceBps: number) {
@@ -492,7 +492,7 @@ brier = (impliedYesBps − outcomeBps)² / 100      // micros; 0 = perfect, 1e6 
     "conviction",
     "Scoring",
     "Conviction",
-    "What VEYRA traders believe, weighted by the capital behind it — against the venue price.",
+    "What Split traders believe, weighted by the capital behind it — against the venue price.",
     [
       {
         id: "formula",
@@ -779,7 +779,7 @@ settlement   outcomes -> on-chain references        one reference per prediction
         id: "venues",
         heading: "Venues",
         paragraphs: [
-          "External markets execute against Polymarket's CLOB. VEYRA-native markets execute against an LMSR maker that quotes through the same order-book interface, so the engine and ledger treat both identically. The matching specification describes the hybrid off-chain-match, on-chain-settle design that generalises both.",
+          "External markets execute against Polymarket's CLOB. Split-native markets execute against an LMSR maker that quotes through the same order-book interface, so the engine and ledger treat both identically. The matching specification describes the hybrid off-chain-match, on-chain-settle design that generalises both.",
         ],
       },
       {
@@ -867,7 +867,7 @@ redeem():       payout = winningShares × 1`,
         id: "today",
         heading: "Today",
         paragraphs: [
-          "Polymarket-backed markets resolve from the venue, which uses UMA's optimistic oracle. VEYRA-native pools are resolved by an operator, and payouts are held behind a dispute window (default 24 hours) before they can be released.",
+          "Polymarket-backed markets resolve from the venue, which uses UMA's optimistic oracle. Split-native pools are resolved by an operator, and payouts are held behind a dispute window (default 24 hours) before they can be released.",
         ],
       },
       {
@@ -895,7 +895,7 @@ redeem():       payout = winningShares × 1`,
         id: "references",
         heading: "Settlement references",
         paragraphs: [
-          "When a position is scored, a settlement reference is written to Robinhood Chain (testnet 46630, mainnet 4663). The reference links the VEYRA prediction id to an on-chain transaction, and only a mined, confirmed receipt is reported as final.",
+          "When a position is scored, a settlement reference is written to Robinhood Chain (testnet 46630, mainnet 4663). The reference links the Split prediction id to an on-chain transaction, and only a mined, confirmed receipt is reported as final.",
           "Submission is idempotent per prediction, bounded by a max fee, and retried with backoff; a reverted or failed transaction is recorded as such rather than silently retried forever.",
         ],
         code: `status: queued → signing → signed → submitted → confirmed
@@ -985,7 +985,7 @@ es.onmessage = (e) => render(JSON.parse(e.data)); // full snapshot each time`,
         id: "trusted",
         heading: "Trusted components",
         paragraphs: [
-          "The VEYRA server, for matching VEYRA-native pools and for applying fills to the ledger. The operator, for resolving VEYRA-native pools (behind a dispute window). Polymarket, for external matching and resolution. These are stated plainly because a security model that hides its trust assumptions is not one.",
+          "The Split server, for matching Split-native pools and for applying fills to the ledger. The operator, for resolving Split-native pools (behind a dispute window). Polymarket, for external matching and resolution. These are stated plainly because a security model that hides its trust assumptions is not one.",
         ],
       },
       {
@@ -1021,7 +1021,7 @@ es.onmessage = (e) => render(JSON.parse(e.data)); // full snapshot each time`,
           "LMSR — logarithmic market scoring rule; an AMM with a bounded worst-case loss.",
           "b — the LMSR liquidity parameter. Larger b means a deeper book and a larger maximum loss.",
           "Brier score — squared error between a forecast and the outcome. Lower is better.",
-          "Conviction — capital-weighted belief of VEYRA traders on a market.",
+          "Conviction — capital-weighted belief of Split traders on a market.",
           "Divergence — Conviction minus the venue price.",
           "Hold — funds reserved against an open order.",
           "Treasury (X) / Execution (Y) — the deposit wallet and the trading wallet.",

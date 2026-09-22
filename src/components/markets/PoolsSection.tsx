@@ -6,7 +6,7 @@ import { cardClass } from "@/components/markets/primitives";
 import { listPools, type PoolSummary } from "@/lib/betting-api";
 
 /**
- * Veyra-native pools, voted in by the community. Real data — unlike the sample
+ * Split-native pools, voted in by the community. Real data — unlike the sample
  * sections on this page, every row here is a market that exists in the database.
  */
 export function PoolsSection() {
@@ -33,7 +33,7 @@ export function PoolsSection() {
     <section>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-[20px] font-semibold tracking-[-0.03em] text-[#182d4a]">
-          Veyra pools
+          Split pools
         </h2>
         <Link href="/vote" className="font-mono text-[11px] text-[#65758b] underline">
           Vote on tomorrow&apos;s

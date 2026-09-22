@@ -91,7 +91,7 @@ export function CommunityView() {
         <div className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(38,91,255,0.14),transparent_70%)]" />
         <Reveal className="relative mx-auto max-w-[860px] text-center">
           <p className="text-[11px] font-medium tracking-[0.28em] text-[#65758b] uppercase">
-            The VEYRA community
+            The Split community
           </p>
           <h1 className="mt-6 font-serif text-[32px] leading-[1.08] font-normal tracking-[-0.045em] text-[#182d4a] sm:text-[72px] lg:text-[88px]">
             Built by traders.
@@ -214,7 +214,7 @@ export function CommunityView() {
               Meet the people building the future.
             </h2>
             <p className="mt-4 text-[16px] leading-7 text-[#65758b]">
-              From traders and analysts to developers and researchers, VEYRA is powered by an open
+              From traders and analysts to developers and researchers, Split is powered by an open
               community.
             </p>
             <Link
@@ -290,7 +290,7 @@ export function CommunityView() {
             Markets are better when everyone can participate.
           </p>
           <p className="mt-8 text-[13px] tracking-[0.22em] text-[#65758b] uppercase">
-            VEYRA Community
+            Split Community
           </p>
         </Reveal>
       </section>

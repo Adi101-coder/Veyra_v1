@@ -9,7 +9,7 @@ import type {
 } from "@/server/conviction/types";
 
 /**
- * Veyra Conviction methodology (v2). All numbers are derived here, server-side, from
+ * Split Conviction methodology (v2). All numbers are derived here, server-side, from
  * persisted filled positions; clients only format them.
  *
  * Inputs: one row per prediction whose position currently holds filled shares
@@ -47,7 +47,7 @@ export const CONVICTION_DOCUMENTATION = {
   capitalWeightedConfidence: "Σ(implied P(YES) × capital) / Σ capital across every wallet-side holding.",
   conviction: "Blend of average and capital-weighted implied P(YES) (VEYRA_CONVICTION_CAPITAL_BLEND_BPS, default 55% capital-weighted).",
   polymarket: "Polymarket CLOB midpoint for the YES token. After resolution, the resolved YES price. Null when unavailable.",
-  divergence: "Veyra conviction − Polymarket YES probability, in percentage points. Null without both values.",
+  divergence: "Split conviction − Polymarket YES probability, in percentage points. Null without both values.",
 };
 
 /** Round-half-up integer division for non-negative bigints. */

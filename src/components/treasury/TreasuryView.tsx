@@ -91,7 +91,7 @@ export function TreasuryView() {
           Balances.
         </h1>
         <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
-          Deposits sit in a watch-only wallet Veyra cannot spend from. Venue exposure is
+          Deposits sit in a watch-only wallet Split cannot spend from. Venue exposure is
           tracked separately, and the two are never mixed.
         </p>
         <p className="mt-2 font-mono text-[11px] text-[#657da0]">{shortenAddress(address, 6)}</p>

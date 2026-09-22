@@ -285,7 +285,7 @@ export function describeBettingError(error: unknown, fallback: string) {
     case "INSUFFICIENT_FUNDS":
       return "Not enough deposited USDC for this order. Deposit from Balances, then try again.";
     case "PROPOSER_CANNOT_TRADE":
-      return "You proposed this pool, so you cannot trade it while Veyra is the counterparty.";
+      return "You proposed this pool, so you cannot trade it while Split is the counterparty.";
     default:
       return serverMessage ?? fallback;
   }

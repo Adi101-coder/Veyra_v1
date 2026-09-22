@@ -79,8 +79,8 @@ export function ContractView({ market }: { market: Market }) {
       ? "Polymarket"
       : isVeyraPool
         ? market.proposerWallet
-          ? `Veyra pool · proposed by ${market.proposerWallet.slice(0, 6)}…${market.proposerWallet.slice(-4)}`
-          : "Veyra pool · community voted"
+          ? `Split pool · proposed by ${market.proposerWallet.slice(0, 6)}…${market.proposerWallet.slice(-4)}`
+          : "Split pool · community voted"
         : "Demo · paper only";
   const liquidityLabel =
     typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)

@@ -135,7 +135,7 @@ export const coreMarkets: Market[] = [
   },
   {
     id: "vantage-mcap",
-    title: "Will VEYRA's token hit a $5M market cap within its first week?",
+    title: "Will Split's token hit a $5M market cap within its first week?",
     category: "science",
     tag: "vantage",
     staked: "3.10 SOL",

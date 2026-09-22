@@ -58,7 +58,7 @@ export function ReputationView() {
             Reputation.
           </h1>
           <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
-            Connect a wallet first. VEYRA scores the predictions that address opened once
+            Connect a wallet first. Split scores the predictions that address opened once
             their markets resolve.
           </p>
         </Shell>

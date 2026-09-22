@@ -8,11 +8,11 @@ export type FaqItem = {
 };
 
 export const siteConfig = {
-  name: "VEYRA",
-  wordmark: "VEYRA",
-  title: "VEYRA - trade the future on-chain",
+  name: "Split",
+  wordmark: "Split",
+  title: "Split — Trade the future, Split with conviction.",
   description:
-    "Trade real-world outcomes on-chain. VEYRA is a prediction protocol where participants discover markets, take positions, and settle transparently.",
+    "Express your confidence in outcomes as percentages. Split turns that probability into an order, then scores how accurate the forecast was.",
   tagline: "On-chain markets for the future.",
   nav: [
     { href: "/", label: "Home" },
@@ -74,8 +74,8 @@ export const siteConfig = {
   faqTitle: "Questions",
   faq: [
     {
-      q: "What is VEYRA?",
-      a: "VEYRA is a prediction protocol where users trade positions on future outcomes and settle transparently on-chain.",
+      q: "What is Split?",
+      a: "Split is a prediction protocol where you express confidence as a percentage. That probability becomes the order, and settlement scores how accurate it was.",
     },
     {
       q: "How are outcomes determined?",
@@ -117,7 +117,7 @@ export const siteConfig = {
   ],
   docs: {
     kicker: "Documentation",
-    title: "How VEYRA Works",
+    title: "How Split Works",
     body: "A market is a question about the future. Positions price that question. Settlement pays the people who were right.",
     steps: [
       {
@@ -155,7 +155,7 @@ export const siteConfig = {
   notFound: {
     title: "Market not found.",
     body: "That contract never opened. Step back to the floor and pick a live market.",
-    cta: "Return to VEYRA",
+    cta: "Return to Split",
   },
   footer: [
     {

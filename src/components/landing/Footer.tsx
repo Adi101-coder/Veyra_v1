@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion";
-import { BrandMark } from "@/components/Logo";
+import { SplitWordmark } from "@/components/Logo";
 import { siteConfig } from "@/lib/site";
 import { IconDiscord, IconX } from "@/components/landing/icons";
 
@@ -53,9 +53,8 @@ export function Footer() {
       <Reveal className="landing-card mx-auto max-w-[1280px] rounded-[28px] border border-[#dce5f1] bg-[#ffffff] px-6 py-12 sm:px-10">
         <div className="grid grid-cols-2 gap-8 lg:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))] lg:gap-10">
           <div className="col-span-2 lg:col-span-1">
-            <Link href="/" className="inline-flex items-center gap-2.5 text-[#182d4a] no-underline">
-              <BrandMark className="h-7 w-7" />
-              <span className="text-[15px] font-medium">{siteConfig.name}</span>
+            <Link href="/" className="inline-flex items-center text-[#182d4a] no-underline" aria-label="Split home">
+              <SplitWordmark className="w-[140px]" />
             </Link>
             <p className="mt-4 max-w-[22ch] text-[14px] leading-6 text-[#65758b]">
               {siteConfig.tagline}

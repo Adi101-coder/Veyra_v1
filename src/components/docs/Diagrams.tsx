@@ -97,7 +97,7 @@ function SystemDiagram() {
       <Box x={20} y={150} w={120} h={80} title="Trader" lines={["wallet signature", "p = 0.72"]} />
       <Box x={185} y={110} w={180} h={160} title="Confidence engine" accent={C.blue} lines={["edge = p − q", "f* = (p−q)/(1−q)", "book age · spread", "integral ladder"]} />
       <Box x={410} y={60} w={170} h={90} title="Polymarket CLOB" lines={["external markets", "FAK · FOK · GTC"]} />
-      <Box x={410} y={230} w={170} h={90} title="LMSR pool" accent={C.green} lines={["veyra-native", "max loss b·ln 2"]} />
+      <Box x={410} y={230} w={170} h={90} title="LMSR pool" accent={C.green} lines={["split-native", "max loss b·ln 2"]} />
       <Box x={625} y={30} w={155} h={62} title="Robinhood Chain" lines={["settlement refs"]} />
       <Box x={625} y={125} w={155} h={130} title="Fill ledger" accent={C.amber} lines={["PostgreSQL", "BigInt micros", "1 row / venue trade"]} />
       <Box x={625} y={290} w={155} h={62} title="Scoring" lines={["Brier · Conviction"]} />
@@ -221,7 +221,7 @@ function KellyDiagram() {
   }
   const fraction = fStar * 0.25;
   return (
-    <Frame height={300} caption="fig. 4 — expected log-growth vs stake: past ~2·f* over-betting turns growth negative, so VEYRA stakes a fraction of f*">
+    <Frame height={300} caption="fig. 4 — expected log-growth vs stake: past ~2·f* over-betting turns growth negative, so Split stakes a fraction of f*">
       <rect x={sx(0)} y={top} width={sx(fraction) - sx(0)} height={bottom - top} fill={C.green} fillOpacity={0.07} />
       <line x1={left} x2={right} y1={sy(0)} y2={sy(0)} stroke={C.stroke} />
       <line x1={left} x2={left} y1={top} y2={bottom} stroke={C.stroke} />

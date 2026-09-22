@@ -4,7 +4,7 @@ import { CommunityView } from "@/components/community/CommunityView";
 export const metadata: Metadata = {
   title: "Community",
   description:
-    "Connect with traders, builders, and researchers in the VEYRA community.",
+    "Connect with traders, builders, and researchers in the Split community.",
 };
 
 export default function CommunityPage() {

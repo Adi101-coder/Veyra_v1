@@ -80,11 +80,11 @@ export function VotingView() {
         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-serif text-[28px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
-              What should Veyra ask?
+              What should Split ask?
             </h1>
             <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               {round
-                ? `Propose a question or back one you want settled. The top ${round.selectionCount} open as Veyra pools when the round closes.`
+                ? `Propose a question or back one you want settled. The top ${round.selectionCount} open as Split pools when the round closes.`
                 : "Rounds run every 24 hours."}
             </p>
           </div>

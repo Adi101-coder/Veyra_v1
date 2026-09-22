@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BrandWordmark } from "@/components/Logo";
+import { SplitWordmark } from "@/components/Logo";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { Shell } from "@/components/Shell";
 
@@ -53,9 +53,9 @@ export function DashboardHeader() {
           <Link
             href="/"
             className="shrink-0 text-[#182d4a] no-underline"
-            aria-label="VEYRA home"
+            aria-label="Split home"
           >
-            <BrandWordmark className="text-[24px] leading-none sm:text-[32px]" />
+            <SplitWordmark className="w-[118px] sm:w-[148px]" />
           </Link>
           <NavLinks className="hidden items-center gap-7 lg:flex" />
         </div>

@@ -119,7 +119,7 @@ export function MarketsView() {
           <PoolsSection />
           {live && visible.length === 0 ? (
             <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#65758b]`}>
-              No live Polymarket markets in this channel. Vote to create a Veyra pool.
+              No live Polymarket markets in this channel. Vote to create a Split pool.
             </p>
           ) : null}
           {visible.length > 0 ? (

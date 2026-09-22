@@ -29,7 +29,7 @@ export async function relayerCreateDepositWallet(owner: `0x${string}`, env: Node
   if (!key || !secret || !passphrase) {
     throw new BettingError(
       "DEPOSIT_WALLET",
-      "Polymarket will not take this EOA as a maker. Create Builder API keys at polymarket.com → Settings → Builders and set POLYMARKET_BUILDER_API_KEY, POLYMARKET_BUILDER_SECRET, and POLYMARKET_BUILDER_PASSPHRASE. That deploys the deposit wallet; you still place the wager in Veyra.",
+      "Polymarket will not take this EOA as a maker. Create Builder API keys at polymarket.com → Settings → Builders and set POLYMARKET_BUILDER_API_KEY, POLYMARKET_BUILDER_SECRET, and POLYMARKET_BUILDER_PASSPHRASE. That deploys the deposit wallet; you still place the wager in Split.",
       503,
     );
   }

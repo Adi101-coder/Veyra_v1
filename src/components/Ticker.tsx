@@ -35,7 +35,7 @@ export function Ticker() {
     <div className="bg-[#102951] text-[#d5e4ff]">
       <Shell className="flex items-center justify-between gap-3 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] sm:text-[10.5px]">
         <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-          <span className="whitespace-nowrap text-[#9fc3ff]">VEYRA</span>
+          <span className="whitespace-nowrap text-[#9fc3ff]">SPLIT</span>
           <span className="hidden opacity-40 sm:inline">·</span>
           <span className="min-w-0 truncate">{mastheadDate(now)}</span>
         </div>

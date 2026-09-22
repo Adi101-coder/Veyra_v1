@@ -5,7 +5,7 @@ import { DocsView } from "@/components/docs/DocsView";
 export const metadata: Metadata = {
   title: "Docs",
   description:
-    "Explore the protocol, trading infrastructure, APIs, and tools powering VEYRA.",
+    "Explore the protocol, trading infrastructure, APIs, and tools powering Split.",
 };
 
 export default function DocsPage() {

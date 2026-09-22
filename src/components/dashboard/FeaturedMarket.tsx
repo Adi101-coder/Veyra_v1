@@ -313,7 +313,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </div>
             <p className="mt-2 text-[11px] text-[#657da0]">
               {conviction?.conviction != null
-                ? `Veyra ${Math.round(conviction.conviction)}% · Polymarket ${conviction.polymarketProbability == null ? "—" : `${Math.round(conviction.polymarketProbability)}%`} · ${formatDivergence(conviction.divergence)} divergence`
+                ? `Split ${Math.round(conviction.conviction)}% · Polymarket ${conviction.polymarketProbability == null ? "—" : `${Math.round(conviction.polymarketProbability)}%`} · ${formatDivergence(conviction.divergence)} divergence`
                 : "Each dot matches a player's avatar"}
             </p>
           </div>
@@ -439,7 +439,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             Open contract →
           </Link>
           <p className="mt-3 text-[12px] leading-5 text-[#65758b]">
-            Prices from Polymarket. Stakes on Veyra are in USD.
+            Prices from Polymarket. Stakes on Split are in USD.
           </p>
             </>
           )}

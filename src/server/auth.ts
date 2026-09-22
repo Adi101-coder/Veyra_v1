@@ -39,7 +39,7 @@ function safeEqual(a: string, b: string) {
 
 export function signInMessage(walletAddress: string, nonce: string, host: string, issuedAt: string) {
   return [
-    `${host} wants you to sign in to Veyra with your wallet:`,
+    `${host} wants you to sign in to Split with your wallet:`,
     walletAddress,
     "",
     "Signing proves you control this wallet. It does not move funds or cost gas.",

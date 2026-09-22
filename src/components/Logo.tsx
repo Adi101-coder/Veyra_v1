@@ -1,43 +1,50 @@
 import { siteConfig } from "@/lib/site";
 
+type SplitWordmarkProps = {
+  className?: string;
+};
+
+/** The landing-page Split wordmark, cropped the same way as the homepage brand. */
+export function SplitWordmark({ className = "w-[140px] sm:w-[160px]" }: SplitWordmarkProps) {
+  return (
+    <span
+      className={`relative block shrink-0 overflow-hidden rounded-[5px] bg-[#265bff] leading-none ${className}`.trim()}
+      style={{ aspectRatio: "3.2" }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/split-assets/split-logo.png"
+        alt={siteConfig.name}
+        width={2172}
+        height={724}
+        className="absolute top-1/2 left-1/2 block h-auto w-[176%] max-w-none -translate-x-[49.24%] -translate-y-[51.17%]"
+      />
+    </span>
+  );
+}
+
 type BrandMarkProps = {
   className?: string;
 };
 
 export function BrandMark({ className = "h-9 w-9" }: BrandMarkProps) {
   return (
-    <svg
-      viewBox="0 0 48 48"
-      className={className}
-      aria-hidden
-      fill="none"
-    >
+    <svg viewBox="0 0 48 48" className={className} aria-hidden>
+      <rect width="48" height="48" rx="11" fill="#265bff" />
       <path
-        d="M8 38 L24 8 L40 38"
-        stroke="currentColor"
-        strokeWidth="2.4"
-        strokeLinejoin="miter"
-        strokeLinecap="square"
+        d="M11 24h9m16-12L17 24l19 12"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
-      <path
-        d="M16.5 28 H31.5"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="square"
-      />
-      <circle cx="24" cy="8" r="2.2" fill="currentColor" />
     </svg>
   );
 }
 
 export function BrandWordmark({ className = "" }: { className?: string }) {
-  return (
-    <span
-      className={`font-serif font-normal lowercase tracking-[-0.03em] ${className}`.trim()}
-    >
-      {siteConfig.name}
-    </span>
-  );
+  return <SplitWordmark className={className || "w-[140px] sm:w-[160px]"} />;
 }
 
 type BrandLockupProps = {
@@ -46,22 +53,10 @@ type BrandLockupProps = {
   wordmarkClassName?: string;
 };
 
-export function BrandLockup({
-  className = "",
-  markClassName,
-  wordmarkClassName,
-}: BrandLockupProps) {
+export function BrandLockup({ className = "" }: BrandLockupProps) {
   return (
-    <span className={`inline-flex items-center gap-2.5 text-inherit ${className}`.trim()}>
-      <BrandMark className={markClassName ?? "h-8 w-8 sm:h-9 sm:w-9"} />
-      <span
-        className={
-          wordmarkClassName ??
-          "font-sans text-[15px] font-semibold tracking-[0.22em] sm:text-[17px]"
-        }
-      >
-        {siteConfig.wordmark}
-      </span>
+    <span className={`inline-flex items-center text-inherit ${className}`.trim()}>
+      <SplitWordmark />
     </span>
   );
 }
