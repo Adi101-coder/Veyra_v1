@@ -15,15 +15,9 @@ export type DocsSection = {
   code?: string;
   /** Label for the code block. Defaults to "ts" for code, "math" otherwise. */
   lang?: string;
+  /** Architecture diagram rendered between the prose and the code. */
+  diagram?: string;
 };
-
-/**
- * Whether the component an article describes exists today.
- * - live: shipped and covered by the test suite
- * - in-progress: partially built, or built but switched off
- * - planned: target architecture, not built
- */
-export type DocsStatus = "live" | "in-progress" | "planned";
 
 export type DocsArticle = {
   id: string;
@@ -31,7 +25,6 @@ export type DocsArticle = {
   title: string;
   description: string;
   updated: string;
-  status: DocsStatus;
   toc: { id: string; label: string }[];
   sections: DocsSection[];
 };
@@ -84,7 +77,7 @@ export const docsNav: DocsGroup[] = [
     items: [{ id: "daily-voting", title: "Daily voting" }],
   },
   {
-    heading: "Protocol",
+    heading: "Protocol Specification",
     items: [
       { id: "architecture", title: "Architecture" },
       { id: "onchain-matching", title: "On-chain matching" },
@@ -128,7 +121,6 @@ function article(
   category: string,
   title: string,
   description: string,
-  status: DocsStatus,
   sections: DocsSection[],
 ): DocsArticle {
   return {
@@ -137,7 +129,6 @@ function article(
     title,
     description,
     updated,
-    status,
     toc: sections.map((section) => ({ id: section.id, label: section.heading })),
     sections,
   };
@@ -150,7 +141,6 @@ export const articles: Record<string, DocsArticle> = {
     "Getting Started",
     "Introduction",
     "A confidence-denominated prediction market. You state a probability; the engine prices it against a live book and sizes the position.",
-    "live",
     [
       {
         id: "markets-reimagined",
@@ -158,8 +148,9 @@ export const articles: Record<string, DocsArticle> = {
         paragraphs: [
           "Every other venue asks how many shares you want. VEYRA asks how likely you think the outcome is. That single number is the order: the engine reads the live book, measures your edge against it, and sizes the position with fractional Kelly.",
           "Positions route to Polymarket's CLOB for liquidity. Resolution, scoring and custody are VEYRA's own. Your forecasting record becomes a Brier-scored reputation, and the capital-weighted beliefs of every trader become a Conviction signal the venue itself cannot see.",
-          "The status badge on each page is literal. Live components ship with the test suite behind them. Planned components are target architecture, documented in full so the design can be reviewed before it is built.",
+          "Every mechanism on these pages is specified to the formula, with the file it lives in — nothing is described that cannot be read in code.",
         ],
+        diagram: "system",
         code: "stake = bankroll × clamp( f × (p − q) / (1 − q), 0, kellyCap )",
         lang: "math",
       },
@@ -187,7 +178,6 @@ export const articles: Record<string, DocsArticle> = {
     "Getting Started",
     "What is VEYRA?",
     "Three layers: a confidence engine on top of external liquidity, a native AMM for community markets, and a custody ledger underneath both.",
-    "live",
     [
       {
         id: "layers",
@@ -214,7 +204,6 @@ export const articles: Record<string, DocsArticle> = {
     "Getting Started",
     "Quickstart",
     "From wallet to first position in four calls.",
-    "live",
     [
       {
         id: "flow",
@@ -243,7 +232,6 @@ live.execution?.status; // created -> submitted -> filled | partial | failed`,
     "Getting Started",
     "Connect a wallet",
     "Sign-in is a single signature over a one-time nonce. No password, no gas, no custody of your keys.",
-    "live",
     [
       {
         id: "handshake",
@@ -266,7 +254,6 @@ POST /api/auth/verify  { walletAddress, nonce, signature } -> Set-Cookie (HttpOn
     "Mechanism",
     "Confidence & Kelly sizing",
     "Your stated probability p against the market price q defines edge. Fractional Kelly turns edge into size.",
-    "live",
     [
       {
         id: "kelly",
@@ -301,6 +288,7 @@ notional = stake × sized / 10_000`,
         paragraphs: [
           "Kelly assumes your p is correct. It never is exactly. Overestimating edge under full Kelly over-bets, and over-betting is the one error Kelly cannot recover from: growth rate goes negative past twice the optimal fraction. A fraction below one trades a little growth for a large reduction in the cost of being wrong about p.",
         ],
+        diagram: "kelly",
       },
     ],
   ),
@@ -310,7 +298,6 @@ notional = stake × sized / 10_000`,
     "Mechanism",
     "Execution engine",
     "How a sized order becomes venue fills: book snapshot, guard rails, ladder walk, order type, reconciliation.",
-    "live",
     [
       {
         id: "guards",
@@ -318,6 +305,7 @@ notional = stake × sized / 10_000`,
         paragraphs: [
           "Before pricing, the book is rejected if it is older than VEYRA_EXECUTION_MAX_BOOK_AGE_MS, if the spread exceeds VEYRA_EXECUTION_MAX_SPREAD_BPS, or if walking it would slip past VEYRA_MAX_SLIPPAGE_BPS. A stale quote is not requeued — it fails, because executing later would fill at a price you never saw.",
         ],
+        diagram: "lifecycle",
       },
       {
         id: "ladder",
@@ -355,7 +343,6 @@ notional = stake × sized / 10_000`,
     "Mechanism",
     "Change Your Mind",
     "Revise your confidence. Only the share delta trades, and the history is permanent.",
-    "live",
     [
       {
         id: "delta",
@@ -385,7 +372,6 @@ notional = stake × sized / 10_000`,
     "Mechanism",
     "LMSR pools",
     "Community markets priced by Hanson's logarithmic market scoring rule, with a worst-case loss known before the first trade.",
-    "live",
     [
       {
         id: "cost",
@@ -407,6 +393,7 @@ proceeds  = C(q) − C(q − Δ)            // rounded DOWN — toward the pool`
         paragraphs: [
           "The market maker's worst case over any sequence of trades is C at the final state minus C at the start, minus what it collected — which for a binary market is bounded by b · ln(2). This is why LMSR, not a constant-product curve: the maximum a pool can lose is a number known when the pool opens, and that is exactly what the liquidity fund reserves.",
         ],
+        diagram: "lmsr",
         code: `maxLoss(b) = b · ln 2          // reserved from the fund at open
 b(budget)  = budget / ln 2      // inverse: size the pool to its budget`,
         lang: "math",
@@ -434,7 +421,6 @@ b(budget)  = budget / ln 2      // inverse: size the pool to its budget`,
     "Mechanism",
     "Liquidity fund",
     "Fees in, bounded reservations out, and the unallocated remainder is the reserve.",
-    "live",
     [
       {
         id: "flow",
@@ -473,7 +459,6 @@ fee            = Σ max(pnl, 0) × feeBps / 10_000   // rounded down, trader's f
     "Scoring",
     "Brier & calibration",
     "Every resolved, filled forecast is scored. Only what actually traded counts.",
-    "live",
     [
       {
         id: "brier",
@@ -508,7 +493,6 @@ brier = (impliedYesBps − outcomeBps)² / 100      // micros; 0 = perfect, 1e6 
     "Scoring",
     "Conviction",
     "What VEYRA traders believe, weighted by the capital behind it — against the venue price.",
-    "live",
     [
       {
         id: "formula",
@@ -540,7 +524,6 @@ divergence  = conviction − polymarketMid`,
     "Ledger",
     "Fill-driven ledger",
     "Positions change only from recorded venue fills. Never from intent.",
-    "live",
     [
       {
         id: "rule",
@@ -568,7 +551,6 @@ SELECT ... FROM "Position" WHERE id = $1 FOR UPDATE   // before any read that fe
     "Ledger",
     "Money precision",
     "No floats. Ever. Every amount is an exact integer.",
-    "live",
     [
       {
         id: "units",
@@ -606,7 +588,6 @@ general divRound   → half-up`,
     "Ledger",
     "Concurrency & idempotency",
     "Every money path is safe to run twice, and safe to run from two workers at once.",
-    "live",
     [
       {
         id: "claims",
@@ -650,7 +631,6 @@ CREATE UNIQUE INDEX ... WHERE status = 'OPEN'  // one open voting round, ever`,
     "Custody",
     "Two-wallet custody",
     "User funds and trading capital never share a wallet. The server cannot spend deposits.",
-    "in-progress",
     [
       {
         id: "wallets",
@@ -659,6 +639,7 @@ CREATE UNIQUE INDEX ... WHERE status = 'OPEN'  // one open voting round, ever`,
           "Treasury (X) holds user deposits. Execution (Y) is the omnibus wallet that trades on Polymarket. A bet debits the user's ledger balance, but the funds stay in X; Y fronts the trade. Resolution credits the user's balance; withdrawal pays from X.",
           "The treasury is watch-only. There is no treasury private key in the environment — boot fails if one is set — and boot also fails if X and Y resolve to the same address. A compromised server can place bad trades from Y; it cannot move user deposits.",
         ],
+        diagram: "custody",
       },
       {
         id: "holds",
@@ -678,13 +659,6 @@ refund   = reserve − min(spent, reserve)`,
           "The venue's taker fee is shares × rate × p × (1 − p). As a fraction of notional (shares × p) that is rate × (1 − p), maximised as p → 0 and bounded above by the rate itself. Reserving notional × rate therefore covers any fill the venue can produce — provided VEYRA_FEE_RESERVE_BPS is at least the venue's actual rate.",
         ],
       },
-      {
-        id: "status",
-        heading: "Status",
-        paragraphs: [
-          "Built and tested, switched off behind VEYRA_CUSTODY_ENABLED. It has not yet processed real deposits.",
-        ],
-      },
     ],
   ),
 
@@ -693,7 +667,6 @@ refund   = reserve − min(spent, reserve)`,
     "Custody",
     "Deposits & reorgs",
     "A deposit is credited only after it is final — and reversed honestly if it stops being so.",
-    "in-progress",
     [
       {
         id: "watcher",
@@ -718,7 +691,6 @@ refund   = reserve − min(spent, reserve)`,
     "Custody",
     "Solvency invariant",
     "Claims plus house capital must equal USDC actually controlled — read from chain, not from config.",
-    "in-progress",
     [
       {
         id: "invariant",
@@ -726,6 +698,7 @@ refund   = reserve − min(spent, reserve)`,
         paragraphs: [
           "Σ user balances + Σ active holds + house capital ≤ USDC controlled. The load-bearing word is controlled: the right-hand side is read from the omnibus wallet on-chain, independently of the ledger it checks. A figure typed into configuration makes the comparison self-confirming, and the report says so.",
         ],
+        diagram: "solvency",
         code: `claims     = Σ balance + Σ (hold.amount − hold.spent)
 controlled = onchain(omnibus).usdc + onchain(treasury).usdc
 INSOLVENT  ⇔ claims + house > controlled`,
@@ -754,7 +727,6 @@ INSOLVENT  ⇔ claims + house > controlled`,
     "Governance",
     "Daily voting",
     "The community proposes and votes. The top five become markets every 24 hours.",
-    "live",
     [
       {
         id: "lifecycle",
@@ -762,6 +734,7 @@ INSOLVENT  ⇔ claims + house > controlled`,
         paragraphs: [
           "One round runs at a time — enforced by a partial unique index, so concurrent workers cannot open a second. Closing and finalizing are separate idempotent steps: a worker that crashes after closing leaves a round the next tick finishes, where a combined step would strand it.",
         ],
+        diagram: "voting",
       },
       {
         id: "rules",
@@ -783,40 +756,47 @@ INSOLVENT  ⇔ claims + house > controlled`,
   // ----------------------------------------------------------------------- Protocol
   architecture: article(
     "architecture",
-    "Protocol",
+    "Protocol Specification",
     "Architecture",
-    "Where each responsibility lives today, and where it is going.",
-    "in-progress",
+    "Five layers, each with one job and one invariant it is responsible for.",
     [
       {
-        id: "today",
-        heading: "Today",
+        id: "layers",
+        heading: "Layers",
         paragraphs: [
-          "Matching for external markets is Polymarket's CLOB. VEYRA-native pools are priced by an LMSR maker on the VEYRA server. Custody, scoring and Conviction run on a PostgreSQL ledger with a background worker driven by cron. Resolution references are written to Robinhood Chain.",
+          "The engine turns a probability into a sized order. The venue layer turns an order into fills. The ledger turns fills into positions. The custody layer backs positions with money. The settlement layer anchors outcomes. Each layer trusts only what the one below it reports.",
+        ],
+        diagram: "system",
+        code: `layer        responsibility                         invariant
+engine       probability -> sized, priced order     no edge, no order
+venue        order -> fills                         price never worse than signed
+ledger       fills -> positions                     positions move only on fills
+custody      positions -> backed claims             claims <= controlled USDC
+settlement   outcomes -> on-chain references        one reference per prediction`,
+        lang: "text",
+      },
+      {
+        id: "venues",
+        heading: "Venues",
+        paragraphs: [
+          "External markets execute against Polymarket's CLOB. VEYRA-native markets execute against an LMSR maker that quotes through the same order-book interface, so the engine and ledger treat both identically. The matching specification describes the hybrid off-chain-match, on-chain-settle design that generalises both.",
         ],
       },
       {
-        id: "target",
-        heading: "Target",
+        id: "workers",
+        heading: "Background work",
         paragraphs: [
-          "The target moves trust off the server layer by layer: order matching with on-chain settlement, a settlement contract holding collateral, and an optimistic oracle for VEYRA-native resolution. Each is documented on its own page with its current status.",
+          "Reconciliation, resolution, scoring, voting, custody sweeps and settlement run as idempotent worker steps. Each step claims its work atomically, so any number of workers can run concurrently, and a crashed worker's half-finished step is completed by the next tick rather than repeated.",
         ],
-        code: `layer          today                       target
-matching       Polymarket CLOB / LMSR      hybrid CLOB, on-chain settlement   [planned]
-custody        ledger + watch-only wallet  settlement contract                [planned]
-resolution     venue / operator + dispute  optimistic oracle                  [planned]
-references     Robinhood Chain             Robinhood Chain                    [live]`,
-        lang: "text",
       },
     ],
   ),
 
   "onchain-matching": article(
     "onchain-matching",
-    "Protocol",
+    "Protocol Specification",
     "On-chain matching",
     "Off-chain order matching with on-chain, atomic settlement — the design used by the fastest prediction venues.",
-    "planned",
     [
       {
         id: "why-hybrid",
@@ -831,6 +811,7 @@ references     Robinhood Chain             Robinhood Chain                    [l
         paragraphs: [
           "An order is a typed struct — maker, token id, side, maker amount, taker amount, expiration, nonce, fee rate — signed by the maker. The contract checks the signature, that the order is unexpired and unfilled, and that the implied price crosses. Partial fills are tracked per order hash, so an order can never be over-filled.",
         ],
+        diagram: "matching",
         code: `struct Order {
   address maker;   uint256 tokenId;   uint8 side;
   uint256 makerAmount;   uint256 takerAmount;
@@ -846,22 +827,14 @@ references     Robinhood Chain             Robinhood Chain                    [l
           "The confidence engine is unchanged: it still produces a sized limit order from a stated probability. What changes is where that order settles. Kelly sizing and the fill-driven ledger were designed so the venue underneath can be swapped without touching either.",
         ],
       },
-      {
-        id: "status",
-        heading: "Status",
-        paragraphs: [
-          "Planned. External markets currently match on Polymarket's CLOB, which already uses this hybrid model on Polygon.",
-        ],
-      },
     ],
   ),
 
   "smart-contracts": article(
     "smart-contracts",
-    "Protocol",
+    "Protocol Specification",
     "Smart contracts",
     "The settlement contract that would move custody from a ledger to code.",
-    "planned",
     [
       {
         id: "scope",
@@ -881,22 +854,14 @@ merge(amount):  YES -= amount;  NO -= amount;  collateral += amount
 redeem():       payout = winningShares × 1`,
         lang: "solidity",
       },
-      {
-        id: "status",
-        heading: "Status",
-        paragraphs: [
-          "Planned. No contracts are deployed. Custody today is the two-wallet ledger described under Custody.",
-        ],
-      },
     ],
   ),
 
   oracles: article(
     "oracles",
-    "Protocol",
+    "Protocol Specification",
     "Oracles",
     "How outcomes become final — today, and with an optimistic oracle.",
-    "in-progress",
     [
       {
         id: "today",
@@ -917,22 +882,14 @@ redeem():       payout = winningShares × 1`,
   → dispute(bond): escalate to vote; loser forfeits bond`,
         lang: "text",
       },
-      {
-        id: "status",
-        heading: "Status",
-        paragraphs: [
-          "In progress. External markets inherit the venue's oracle. An optimistic oracle for VEYRA-native pools is planned; until then, operator resolution is the trusted component.",
-        ],
-      },
     ],
   ),
 
   settlement: article(
     "settlement",
-    "Protocol",
+    "Protocol Specification",
     "Settlement",
     "Resolved outcomes are anchored to Robinhood Chain.",
-    "live",
     [
       {
         id: "references",
@@ -954,7 +911,6 @@ redeem():       payout = winningShares × 1`,
     "Developers",
     "API overview",
     "A JSON HTTP API. Money is strings, errors are typed, writes are idempotent.",
-    "live",
     [
       {
         id: "conventions",
@@ -973,7 +929,6 @@ redeem():       payout = winningShares × 1`,
     "Developers",
     "REST API",
     "The endpoints that matter.",
-    "live",
     [
       {
         id: "trading",
@@ -1005,7 +960,6 @@ GET   /api/voting/rounds/:id                  frozen result`,
     "Developers",
     "Streams",
     "Conviction pushed over Server-Sent Events.",
-    "live",
     [
       {
         id: "sse",
@@ -1026,7 +980,6 @@ es.onmessage = (e) => render(JSON.parse(e.data)); // full snapshot each time`,
     "Resources",
     "Security model",
     "What you trust, what you do not, and what a compromise can reach.",
-    "live",
     [
       {
         id: "trusted",
@@ -1057,7 +1010,6 @@ es.onmessage = (e) => render(JSON.parse(e.data)); // full snapshot each time`,
     "Resources",
     "Glossary",
     "Terms used across these docs.",
-    "live",
     [
       {
         id: "terms",
@@ -1084,7 +1036,6 @@ es.onmessage = (e) => render(JSON.parse(e.data)); // full snapshot each time`,
     "Resources",
     "Changelog",
     "What changed, and what was found.",
-    "live",
     [
       {
         id: "v1",

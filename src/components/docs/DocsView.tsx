@@ -6,6 +6,7 @@ import Image from "next/image";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Item, Reveal, Stagger, motion } from "@/components/motion";
 import { CodeBlock } from "@/components/docs/CodeBlock";
+import { Diagram } from "@/components/docs/Diagrams";
 import {
   IconArrowRight,
   IconChevronDown,
@@ -57,23 +58,6 @@ const infoCards = [
     body: "What runs today, and the target: hybrid on-chain matching, settlement contracts, optimistic oracles.",
   },
 ];
-
-const STATUS_STYLE = {
-  live: { label: "Live", dot: "bg-[#3ecf8e]", text: "text-[#3ecf8e]" },
-  "in-progress": { label: "In progress", dot: "bg-[#e8b04b]", text: "text-[#e8b04b]" },
-  planned: { label: "Planned", dot: "bg-[#7c8cff]", text: "text-[#7c8cff]" },
-} as const;
-
-/** Whether the component an article describes exists today. */
-function StatusBadge({ status }: { status: keyof typeof STATUS_STYLE }) {
-  const style = STATUS_STYLE[status];
-  return (
-    <span className={`inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.12em] uppercase ${style.text}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-      {style.label}
-    </span>
-  );
-}
 
 export function DocsView() {
   const router = useRouter();
@@ -307,7 +291,6 @@ export function DocsView() {
               {article.description}
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-4 text-[12px] text-[#6f737c]">
-              <StatusBadge status={article.status} />
               <span>Last updated {article.updated}</span>
               <span className="h-1 w-1 rounded-full bg-[#3a3e46]" />
               <span>{versions[0]}</span>
@@ -331,16 +314,12 @@ export function DocsView() {
                           {paragraph}
                         </p>
                       ))}
-                      <p className="mt-4 max-w-[38rem] text-[15px] leading-7 text-[#9a9ea8]">
-                        Install the SDK and you are one{" "}
-                        <code className="rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-[13px] text-[#d7dbe2]">
-                          Veyra()
-                        </code>{" "}
-                        call away from live market data.
-                      </p>
-                      <div className="mt-6">
-                        <CodeBlock code={section.code ?? ""} />
-                      </div>
+                      {section.diagram ? <Diagram name={section.diagram} /> : null}
+                      {section.code ? (
+                        <div className="mt-6">
+                          <CodeBlock code={section.code} lang={section.lang ?? "math"} />
+                        </div>
+                      ) : null}
                     </section>
                   ))}
 
@@ -434,6 +413,7 @@ export function DocsView() {
                       {paragraph}
                     </p>
                   ))}
+                  {section.diagram ? <Diagram name={section.diagram} /> : null}
                   {section.code ? (
                     <div className="mt-6">
                       <CodeBlock
