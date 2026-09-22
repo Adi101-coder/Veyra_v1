@@ -220,6 +220,27 @@ export async function listRounds() {
 
 export type TreasuryBalance = { asset: string; balanceBase: string; decimals: number };
 
+export type DepositAsset = {
+  symbol: string;
+  contract: string;
+  chainId: number;
+  decimals: number;
+  /** The asset a balance can actually be bet with. */
+  isCashAsset: boolean;
+};
+
+export type DepositInfo = {
+  treasuryAddress: string | null;
+  cashAsset: string;
+  assets: DepositAsset[];
+  acceptsDeposits: boolean;
+};
+
+export async function getDepositInfo() {
+  const response = await fetch("/api/treasury/deposit-info", { cache: "no-store", credentials: "same-origin" });
+  return readJson<DepositInfo>(response);
+}
+
 export async function getTreasuryBalances() {
   const response = await fetch("/api/treasury/balances", { cache: "no-store", credentials: "same-origin" });
   return readJson<{ walletAddress: string; balances: TreasuryBalance[] }>(response);

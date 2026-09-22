@@ -65,6 +65,43 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
       const collateral = await timed(() => venue.getCollateralBalance(), 20_000);
       // Authenticated, read-only: proves the key, API credentials and signature type work.
       checks.polymarketAccount = { ok: true, critical: true, detail: { network: venue.network, collateralMicros: collateral.toString() } };
+
+      // Reachable and authenticated is not the same as able to trade. The CLOB
+      // reports USABLE collateral: real money in the funder with no allowance to
+      // the exchanges reads as zero here and every order fails with
+      // "not enough balance / allowance ... balance: 0" only once submitted.
+      // Reporting that in preflight is the difference between a config note and
+      // a failed live order.
+      try {
+        const { readOmnibusOnchain, POLYMARKET_USDC_SPENDERS } = await import(
+          "@/server/treasury/omnibus-onchain"
+        );
+        const snapshot = await timed(() => readOmnibusOnchain(), 20_000);
+        const held = BigInt(snapshot?.usdcEMicros ?? "0");
+        const missing = (snapshot?.allowances ?? [])
+          .filter((row) => BigInt(row.usdcE) <= 0n)
+          .map((row) => row.name);
+        const ok = collateral > 0n && missing.length === 0;
+        checks.polymarketCollateral = {
+          ok,
+          critical: true,
+          detail: {
+            funder: snapshot?.address ?? null,
+            usableCollateralMicros: collateral.toString(),
+            heldUsdcEMicros: held.toString(),
+            missingAllowances: missing,
+            hint:
+              missing.length > 0
+                ? `The funder holds ${held} USDC.e but has not approved ${missing.join(" and ")}. Orders will be refused until it does. A funder that is a Polymarket deposit wallet cannot approve for itself: connect its signer at polymarket.com and make one trade, which sets these.`
+                : collateral <= 0n
+                  ? "The venue reports no usable collateral. Fund the funder address with USDC.e (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174), not native USDC."
+                  : undefined,
+            spenders: POLYMARKET_USDC_SPENDERS.map((row) => row.name),
+          },
+        };
+      } catch (error) {
+        checks.polymarketCollateral = { ok: false, critical: false, detail: { error: message(error) } };
+      }
     } catch (error) {
       checks.polymarketAccount = { ok: false, critical: true, detail: { error: message(error) } };
     }

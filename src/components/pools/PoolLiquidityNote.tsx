@@ -30,10 +30,10 @@ export function usePoolInfo(marketId: string | null) {
   const [info, setInfo] = useState<PoolInfo | null>(null);
 
   useEffect(() => {
-    if (!marketId) {
-      setInfo(null);
-      return;
-    }
+    // No pool to read: return without touching state. Clearing it here would be a
+    // synchronous setState inside an effect, which cascades a render; the hook
+    // returns null for a null marketId instead.
+    if (!marketId) return;
     let cancelled = false;
     fetch(`/api/pools/${encodeURIComponent(marketId)}`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
@@ -48,7 +48,7 @@ export function usePoolInfo(marketId: string | null) {
     };
   }, [marketId]);
 
-  return info;
+  return marketId ? info : null;
 }
 
 /**

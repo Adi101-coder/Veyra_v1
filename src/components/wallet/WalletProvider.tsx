@@ -18,6 +18,7 @@ import {
   type WalletId,
   signSessionMessage,
 } from "@/lib/solana-wallet";
+import { encodeFunctionData, erc20Abi } from "viem";
 import { registerSessionEnsurer } from "@/lib/betting-api";
 import { isRobinhoodChainId, publicRobinhoodChain } from "@/lib/robinhood-chain";
 import { parseChainId, readWalletChainId, switchWalletToChain } from "@/lib/wallet-network";
@@ -50,6 +51,17 @@ type WalletContextValue = {
   onRobinhoodChain: boolean;
   switchingNetwork: boolean;
   switchToRobinhoodChain: () => Promise<void>;
+  /**
+   * Sends an ERC-20 deposit to the treasury from the connected wallet, switching
+   * chain first if needed. Returns the transaction hash. The wallet signs it; the
+   * server never can, because it holds no treasury key.
+   */
+  depositToTreasury: (input: {
+    chainId: number;
+    contract: string;
+    treasury: string;
+    amountBase: bigint;
+  }) => Promise<string>;
   /** True while the one-time wallet sign-in signature (nonce → sign → verify) runs. */
   signingIn: boolean;
   /** Message from the last failed wallet sign-in; cleared when a new one starts. */
@@ -328,6 +340,44 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [evmProvider, robinhoodChain]);
 
+  /**
+   * Sends a deposit straight from the user's wallet: switch to the asset's chain,
+   * then an ERC-20 transfer to the treasury.
+   *
+   * The wallet signs it, this app never does — the treasury is watch-only and the
+   * server holds no key for it. Deposits are credited from the confirmed Transfer
+   * log, keyed by (chainId, txHash, logIndex), so a user who sends twice or
+   * resubmits is credited once per real transfer and no more.
+   */
+  const depositToTreasury = useCallback(
+    async (input: { chainId: number; contract: string; treasury: string; amountBase: bigint }) => {
+      if (!evmProvider) throw new Error("Connect an EVM wallet to deposit.");
+      if (!address) throw new Error("Connect a wallet first.");
+      if (input.amountBase <= 0n) throw new Error("Enter an amount greater than zero.");
+
+      const current = await readWalletChainId(evmProvider).catch(() => null);
+      if (current !== input.chainId) {
+        // Only chains this app knows can be added to a wallet that lacks them.
+        if (input.chainId !== robinhoodChain.id) {
+          throw new Error(`Switch your wallet to chain ${input.chainId} and try again.`);
+        }
+        await switchWalletToChain(evmProvider, robinhoodChain);
+      }
+
+      const data = encodeFunctionData({
+        abi: erc20Abi,
+        functionName: "transfer",
+        args: [input.treasury as `0x${string}`, input.amountBase],
+      });
+      const hash = (await evmProvider.request({
+        method: "eth_sendTransaction",
+        params: [{ from: address, to: input.contract, data }],
+      })) as string;
+      return hash;
+    },
+    [address, evmProvider, robinhoodChain],
+  );
+
   const detectedChainId = evmProvider ? networkChainId : null;
 
   const value = useMemo(
@@ -347,6 +397,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       onRobinhoodChain: isRobinhoodChainId(detectedChainId, robinhoodChain),
       switchingNetwork,
       switchToRobinhoodChain,
+      depositToTreasury,
       signingIn,
       signInError,
       hasSession,
@@ -359,6 +410,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       robinhoodChain,
       switchingNetwork,
       switchToRobinhoodChain,
+      depositToTreasury,
       address,
       walletId,
       chain,
