@@ -18,7 +18,8 @@
     "worker:deposit-wallet": "node scripts/omnibus-deposit-wallet.mjs",
     "worker:wrap-pusd": "node scripts/omnibus-wrap-pusd.mjs",
     "check:wallets": "node scripts/check-wallets.mjs",
-    "fund:deposit-wallet": "node scripts/fund-deposit-wallet.mjs"
+    "fund:deposit-wallet": "node scripts/fund-deposit-wallet.mjs",
+    "e2e:live": "node scripts/e2e-live-trade.mjs"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.1.0",
