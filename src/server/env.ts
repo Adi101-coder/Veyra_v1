@@ -1,5 +1,6 @@
 import { ChainConfigError } from "@/lib/robinhood-chain";
 import { loadRobinhoodChainConfig } from "@/server/chain/config";
+import { isLoopbackPostgresUrl } from "@/server/postgres-env";
 
 /**
  * Production environment preflight. Pure: reads only the env record it is given and
@@ -43,6 +44,15 @@ export function validateEnvironment(env: Env): EnvReport {
   } else if (!/^postgres(ql)?:\/\//.test(env.DATABASE_URL!.trim())) {
     // The schema and migrations are PostgreSQL-only.
     (production ? errors : warnings).push("DATABASE_URL must be a postgresql:// connection string.");
+  } else if (production && isLoopbackPostgresUrl(env.DATABASE_URL)) {
+    errors.push(
+      "DATABASE_URL points at localhost. Vercel cannot reach 127.0.0.1. Use the Neon/Vercel Postgres pooled URL, or POSTGRES_PRISMA_URL from the Vercel Postgres integration.",
+    );
+  }
+  if (production && set(env.DIRECT_URL) && isLoopbackPostgresUrl(env.DIRECT_URL)) {
+    errors.push(
+      "DIRECT_URL points at localhost. prisma migrate deploy needs the unpooled Neon/Vercel Postgres URL (POSTGRES_URL_NON_POOLING).",
+    );
   }
   if (production && !set(env.DIRECT_URL)) {
     // schema.prisma references env("DIRECT_URL"): the CLI refuses to run without it,

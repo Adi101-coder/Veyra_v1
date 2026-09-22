@@ -193,7 +193,7 @@ export function WriteView() {
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c4a46a]">
                 New contract
               </p>
-              <h1 className="mt-2 font-serif text-[34px] leading-[0.95] tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+              <h1 className="mt-2 font-serif text-[28px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
                 Write a Contract.
               </h1>
               <p className="mt-3 max-w-[36rem] text-[15px] leading-6 text-[#6e6e6e]">

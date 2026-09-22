@@ -1,6 +1,7 @@
 import "server-only";
 
 import { PrismaClient } from "@prisma/client";
+import { applyHostedPostgresEnv } from "@/server/postgres-env";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
@@ -9,6 +10,7 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
  * PostgreSQL URL; on Vercel use the pooled connection string.
  */
 export function getPrisma() {
+  applyHostedPostgresEnv();
   if (!globalForPrisma.prisma) {
     globalForPrisma.prisma = new PrismaClient();
   }

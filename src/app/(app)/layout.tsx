@@ -11,7 +11,7 @@ export default function AppLayout({
     <WalletProvider>
       <Ticker />
       <DashboardHeader />
-      <main className="flex-1">{children}</main>
+      <main className="min-w-0 flex-1">{children}</main>
     </WalletProvider>
   );
 }

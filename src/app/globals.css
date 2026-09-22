@@ -64,12 +64,36 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
 }
 
 body {
   background: var(--color-bg);
   color: var(--color-primary);
   font-family: var(--font-sans);
+  overflow-x: clip;
+  max-width: 100%;
+}
+
+.scroll-x {
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.scroll-x-pane {
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.scroll-x-pane::-webkit-scrollbar {
+  display: none;
 }
 
 @keyframes vantage-pill-sheen {

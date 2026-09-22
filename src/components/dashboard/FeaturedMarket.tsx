@@ -128,7 +128,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
         transition={{ duration: 0.55, ease: [0.16, 1, 0.36, 1] }}
         className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_20.5rem]"
       >
-        <div className="px-5 py-5 sm:px-7 sm:py-6">
+        <div className="px-4 py-5 sm:px-7 sm:py-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#7a746a]">
               {market.image ? (

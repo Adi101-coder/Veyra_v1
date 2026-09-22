@@ -277,16 +277,16 @@ export function WagerView({
               <ClockIcon />
             </span>
             {prediction?.score ? (
-              <p className="mt-3 font-mono text-[11px] text-[#8a8a8a]">
-                Brier {brier(prediction.score.brierScore)}
-                <span className="text-[#c8c4bc]"> · </span>
+              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 font-mono text-[11px] text-[#8a8a8a]">
+                <span>Brier {brier(prediction.score.brierScore)}</span>
+                <span className="text-[#c8c4bc]">·</span>
                 <span className={prediction.score.pnlUsd.startsWith("-") ? "text-[#c45c6a]" : "text-[#1a1a1a]"}>
                   PnL {usd(prediction.score.pnlUsd, true)}
                 </span>
-                <span className="text-[#c8c4bc]"> · </span>
-                Payout {usd(prediction.score.payoutUsd)}
-                <span className="text-[#c8c4bc]"> · </span>
-                Scored at {Math.round(prediction.score.confidencePct)}%
+                <span className="text-[#c8c4bc]">·</span>
+                <span>Payout {usd(prediction.score.payoutUsd)}</span>
+                <span className="text-[#c8c4bc]">·</span>
+                <span>Scored at {Math.round(prediction.score.confidencePct)}%</span>
               </p>
             ) : null}
           </div>
@@ -392,12 +392,12 @@ function SeatPanel({
   const open = seat.wallet === "Open seat";
   return (
     <div
-      className={`flex items-center gap-3 rounded-2xl border border-[rgba(26,26,26,0.06)] bg-white/70 px-4 py-4 ${
+      className={`flex min-w-0 items-center gap-3 rounded-2xl border border-[rgba(26,26,26,0.06)] bg-white/70 px-4 py-4 ${
         align === "right" ? "sm:flex-row-reverse sm:border-l sm:pl-6" : "sm:pr-6"
       }`}
     >
-      <Identicon seed={open ? "open" : seat.avatar} className="h-11 w-11" />
-      <div className={align === "right" ? "sm:text-right" : ""}>
+      <Identicon seed={open ? "open" : seat.avatar} className="h-11 w-11 shrink-0" />
+      <div className={`min-w-0 ${align === "right" ? "sm:text-right" : ""}`}>
         <p className="font-mono text-[12px] text-[#1a1a1a]">
           {open ? "Open seat" : shortenKey(seat.wallet, 4, 4)}
         </p>
@@ -406,7 +406,7 @@ function SeatPanel({
         </p>
       </div>
       <p
-        className={`ml-auto font-serif text-[34px] leading-none tracking-[-0.04em] text-[#1a1a1a] ${
+        className={`ml-auto shrink-0 font-serif text-[28px] leading-none tracking-[-0.04em] text-[#1a1a1a] sm:text-[34px] ${
           align === "right" ? "sm:ml-0 sm:mr-auto" : ""
         }`}
       >

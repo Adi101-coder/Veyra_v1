@@ -53,7 +53,7 @@ export function Hero() {
           </p>
         </Item>
         <Item>
-          <h1 className="mt-6 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text font-light text-[48px] leading-[1.02] tracking-[-0.045em] text-transparent sm:text-[76px] lg:text-[96px] xl:text-[104px]">
+          <h1 className="mt-6 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text font-light text-[36px] leading-[1.08] tracking-[-0.045em] text-transparent sm:text-[76px] lg:text-[96px] xl:text-[104px]">
             Trade the future,
             <br />
             before it happens.

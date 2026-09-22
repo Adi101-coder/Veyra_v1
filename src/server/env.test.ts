@@ -70,6 +70,16 @@ describe("production environment preflight", () => {
     expect(report.mode).toBe("paper");
     expect(report.warnings.join("\n")).toMatch(/SESSION_SECRET/);
   });
+
+  it("refuses a localhost DATABASE_URL in production (Vercel cannot reach 127.0.0.1)", () => {
+    const report = validateEnvironment({
+      ...PROD_LIVE,
+      POLYMARKET_EXECUTION_MODE: "paper",
+      DATABASE_URL: "postgresql://veyra@127.0.0.1:5432/veyra",
+      DIRECT_URL: "postgresql://veyra@127.0.0.1:5432/veyra",
+    });
+    expect(report.errors.join("\n")).toMatch(/localhost/);
+  });
 });
 
 describe("two-wallet separation", () => {

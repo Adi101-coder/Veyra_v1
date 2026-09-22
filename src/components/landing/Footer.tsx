@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Reveal } from "@/components/motion";
 import { BrandMark } from "@/components/Logo";
 import { siteConfig } from "@/lib/site";
-import { IconDiscord, IconSend, IconX } from "@/components/landing/icons";
+import { IconDiscord, IconX } from "@/components/landing/icons";
 
 const columns = [
   {
@@ -51,8 +51,8 @@ export function Footer() {
   return (
     <footer className="px-4 pb-8 sm:px-6 lg:px-10">
       <Reveal className="landing-card mx-auto max-w-[1280px] rounded-[28px] border border-[#121417] bg-[#0b0c0e] px-6 py-12 sm:px-10">
-        <div className="grid gap-10 lg:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
-          <div>
+        <div className="grid grid-cols-2 gap-8 lg:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))] lg:gap-10">
+          <div className="col-span-2 lg:col-span-1">
             <Link href="/" className="inline-flex items-center gap-2.5 text-white no-underline">
               <BrandMark className="h-7 w-7" />
               <span className="text-[15px] font-medium">{siteConfig.name}</span>
@@ -85,7 +85,6 @@ export function Footer() {
             {[
               { href: "/community", label: "X", Icon: IconX },
               { href: "/community#discord", label: "Discord", Icon: IconDiscord },
-              { href: "/community#telegram", label: "Telegram", Icon: IconSend },
             ].map((item) => (
               <motion.div key={item.label} tabIndex={-1} whileHover={reduce ? undefined : { y: -2 }}>
                 <Link href={item.href} aria-label={item.label} className="block hover:text-white">
