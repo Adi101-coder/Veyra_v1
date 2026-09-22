@@ -27,6 +27,7 @@ const columns = [
     heading: "Company",
     links: [
       { href: "/#insights", label: "About" },
+      { href: siteConfig.x.href, label: `X · ${siteConfig.x.handle}`, external: true },
     ],
   },
 ];
@@ -50,12 +51,23 @@ export function Footer() {
               <ul className="mt-4 flex flex-col gap-2">
                 {column.links.map((link) => (
                   <li key={link.label}>
-                    <Link
-                      href={link.href}
-                      className="text-[14px] text-[#536780] no-underline transition hover:text-[#265bff]"
-                    >
-                      {link.label}
-                    </Link>
+                    {"external" in link && link.external ? (
+                      <a
+                        href={link.href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[14px] text-[#536780] no-underline transition hover:text-[#265bff]"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        href={link.href}
+                        className="text-[14px] text-[#536780] no-underline transition hover:text-[#265bff]"
+                      >
+                        {link.label}
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

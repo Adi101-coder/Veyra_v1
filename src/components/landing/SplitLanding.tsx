@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { siteConfig } from "@/lib/site";
 import "./split-landing.css";
 
 const MARKET_PROBABILITY = 61;
@@ -80,6 +81,9 @@ export function SplitLanding() {
             <a href="#how-it-works">How it works</a>
             <a href="#technology">Technology</a>
             <a href="#faq">FAQ</a>
+            <a href={siteConfig.x.href} target="_blank" rel="noopener noreferrer">
+              X
+            </a>
           </nav>
           <Link className="button header-launch" href="/markets">
             Launch app <span aria-hidden="true">↗</span>
@@ -781,6 +785,12 @@ export function SplitLanding() {
             <div className="footer-column">
               <h3>Company</h3>
               <a href="#insights">About</a>
+            </div>
+            <div className="footer-column">
+              <h3>Follow</h3>
+              <a href={siteConfig.x.href} target="_blank" rel="noopener noreferrer">
+                X · {siteConfig.x.handle}
+              </a>
             </div>
           </div>
           <div className="footer-bottom">

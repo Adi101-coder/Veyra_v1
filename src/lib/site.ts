@@ -20,6 +20,10 @@ export const siteConfig = {
   ],
   cta: "Take a position",
   ctaHref: "/dashboard",
+  x: {
+    handle: "@Splitahead",
+    href: "https://x.com/Splitahead",
+  },
   hero: {
     kicker: "Prediction markets",
     status: "Updated live",
@@ -107,10 +111,10 @@ export const siteConfig = {
       "A community of analysts, bettors, traders, forecasters, and curious minds testing their understanding of the future.",
     footnoteKicker: "Channels",
     footnote:
-      "X, Discord, and Telegram open with the public floor. Until then, this is where the sharpest views collect.",
+      "Follow @Splitahead on X for market notes and product updates. Discord and Telegram open with the public floor.",
   },
   channels: [
-    { label: "X", handle: "Opening soon", href: "#x" },
+    { label: "X", handle: "@Splitahead", href: "https://x.com/Splitahead" },
     { label: "Discord", handle: "Opening soon", href: "#discord" },
     { label: "Telegram", handle: "Opening soon", href: "#telegram" },
   ],
@@ -168,7 +172,7 @@ export const siteConfig = {
     {
       heading: "Channels",
       links: [
-        { label: "X", href: "#x" },
+        { label: "X", href: "https://x.com/Splitahead" },
         { label: "Discord", href: "#discord" },
         { label: "Telegram", href: "#telegram" },
       ],

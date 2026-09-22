@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { IconX } from "@/components/icons";
 import { SplitWordmark } from "@/components/Logo";
 import { PremiumButton } from "@/components/landing/PremiumButton";
 import { IconClose, IconMenu } from "@/components/landing/icons";
+import { siteConfig } from "@/lib/site";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -80,6 +82,15 @@ export function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-5 lg:flex">
+          <a
+            href={siteConfig.x.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 text-[14px] font-medium text-[#65758b] no-underline transition-colors duration-200 hover:text-[#265bff]"
+          >
+            <IconX className="h-3.5 w-3.5" />
+            {siteConfig.x.handle}
+          </a>
           <PremiumButton href="/markets" variant="dark" size="sm">
             Launch app
           </PremiumButton>
@@ -129,6 +140,22 @@ export function Navbar() {
                   </Link>
                 </motion.div>
               ))}
+              <motion.div
+                initial={reduce ? false : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, delay: 0.28, ease }}
+              >
+                <a
+                  href={siteConfig.x.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => setOpenForPath(null)}
+                  className="flex items-center gap-3 border-b border-[#dce5f1] py-4 text-[#536780] no-underline"
+                >
+                  <IconX className="h-4 w-4" />
+                  {siteConfig.x.handle}
+                </a>
+              </motion.div>
               <motion.div
                 initial={reduce ? false : { opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
