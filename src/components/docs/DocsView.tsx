@@ -25,38 +25,55 @@ import {
 const how = [
   {
     n: "01",
-    title: "Discover",
-    body: "Browse live markets. Each one is a question about a future outcome, with rules published before the first trade.",
+    title: "State a probability",
+    body: "Pick an outcome and say how likely it is. That number is the order — not a share count.",
   },
   {
     n: "02",
-    title: "Trade",
-    body: "Take YES or NO. Size the position to your conviction. The book is the same whether you use the app or the API.",
+    title: "Kelly sizes it",
+    body: "The engine reads the live book, measures your edge p − q, and stakes a fraction of the Kelly optimum. No edge, no trade.",
   },
   {
     n: "03",
-    title: "Resolve",
-    body: "When the outcome is known, the oracle posts resolution and settlement follows automatically.",
+    title: "Fills, then scoring",
+    body: "Your position moves only when the venue reports a fill. At resolution it is Brier-scored into your reputation.",
   },
 ];
 
 const infoCards = [
   {
-    id: "markets",
-    title: "Markets",
-    body: "Explore live markets and discover opportunities.",
+    id: "confidence-model",
+    title: "Mechanism",
+    body: "Kelly sizing, the execution engine, and LMSR pools with a worst-case loss fixed at b · ln 2.",
   },
   {
-    id: "api-overview",
-    title: "API",
-    body: "Build applications using VEYRA's developer infrastructure.",
+    id: "concurrency",
+    title: "Ledger",
+    body: "Integer money, fill-driven positions, and every money path idempotent and claim-guarded.",
   },
   {
     id: "architecture",
     title: "Protocol",
-    body: "Understand the contracts, oracle system, and settlement layer.",
+    body: "What runs today, and the target: hybrid on-chain matching, settlement contracts, optimistic oracles.",
   },
 ];
+
+const STATUS_STYLE = {
+  live: { label: "Live", dot: "bg-[#3ecf8e]", text: "text-[#3ecf8e]" },
+  "in-progress": { label: "In progress", dot: "bg-[#e8b04b]", text: "text-[#e8b04b]" },
+  planned: { label: "Planned", dot: "bg-[#7c8cff]", text: "text-[#7c8cff]" },
+} as const;
+
+/** Whether the component an article describes exists today. */
+function StatusBadge({ status }: { status: keyof typeof STATUS_STYLE }) {
+  const style = STATUS_STYLE[status];
+  return (
+    <span className={`inline-flex items-center gap-1.5 font-mono text-[11px] tracking-[0.12em] uppercase ${style.text}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+      {style.label}
+    </span>
+  );
+}
 
 export function DocsView() {
   const router = useRouter();
@@ -290,6 +307,7 @@ export function DocsView() {
               {article.description}
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-4 text-[12px] text-[#6f737c]">
+              <StatusBadge status={article.status} />
               <span>Last updated {article.updated}</span>
               <span className="h-1 w-1 rounded-full bg-[#3a3e46]" />
               <span>{versions[0]}</span>
@@ -420,7 +438,7 @@ export function DocsView() {
                     <div className="mt-6">
                       <CodeBlock
                         code={section.code}
-                        lang={section.code.includes("import") ? "ts" : "bash"}
+                        lang={section.lang ?? (section.code.includes("import") ? "ts" : "math")}
                       />
                     </div>
                   ) : null}

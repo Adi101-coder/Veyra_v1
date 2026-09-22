@@ -22,7 +22,7 @@ const columns = [
     links: [
       { href: "/docs", label: "Docs" },
       { href: "/docs?page=api-overview", label: "API" },
-      { href: "/docs?page=sdk", label: "SDK" },
+      { href: "/docs?page=architecture", label: "Architecture" },
       { href: "/community#github", label: "GitHub" },
     ],
   },
