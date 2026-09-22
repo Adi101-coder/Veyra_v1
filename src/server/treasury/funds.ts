@@ -27,7 +27,7 @@ import { isUniqueViolation } from "@/server/prisma-retry";
  *
  * ## Paper never touches real cash
  *
- * Only executions with `mode === "live"` reserve funds. Paper fills are simulated,
+ * Executions with mode "live" or "pool" reserve funds. Paper fills are simulated,
  * so debiting a real balance against them would be the worst available combination:
  * real money at risk on imaginary trades. `settlesInCash` is the single gate.
  */
@@ -51,7 +51,9 @@ export function custodyEnabled(env: NodeJS.ProcessEnv = process.env) {
 
 /** Whether an execution moves real money. Paper never does, nor does custody-off. */
 export function settlesInCash(mode: string, env: NodeJS.ProcessEnv = process.env) {
-  return custodyEnabled(env) && mode === "live";
+  // "pool" is real money with the liquidity fund as counterparty, so it funds and
+  // pays out exactly like a venue order. Only "paper" moves nothing.
+  return custodyEnabled(env) && (mode === "live" || mode === "pool");
 }
 
 /**

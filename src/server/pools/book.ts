@@ -103,7 +103,7 @@ export async function poolBook(
     tickSize,
     negRisk: false,
     lastTradePrice: formatPrice(marginalPriceBps(state, outcome)),
-    source: "synthetic",
+    source: "pool",
   };
 }
 

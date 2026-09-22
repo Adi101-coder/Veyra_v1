@@ -196,7 +196,9 @@ describe("Veyra pool liquidity (Prisma)", () => {
     for (const outcome of ["YES", "NO"] as const) {
       const book = await poolBook(prisma, MARKET, outcome, CONFIG);
       expect(book!.asks.length).toBeGreaterThan(0);
-      expect(book!.source).toBe("synthetic");
+      // "pool", not "synthetic": a demo book is fiction and must not trade live,
+      // while a pool book is the LMSR curve the fund stands behind.
+      expect(book!.source).toBe("pool");
     }
 
     // An unknown id resolves to nothing rather than inventing a market.

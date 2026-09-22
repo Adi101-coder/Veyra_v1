@@ -41,6 +41,8 @@ import { toConfidenceHistoryDTO, toEngineQuote, toPredictionDTO } from "@/server
 import { fetchClobBook } from "@/server/polymarket/clob";
 import {
   executionMode,
+  executionModeForToken,
+  isPoolToken,
   type ExecutionRequest,
   type ExecutorPort,
 } from "@/server/polymarket/executor";
@@ -140,16 +142,20 @@ export type BettingDeps = {
 export function createDefaultDeps(): BettingDeps {
   const live = executionMode() === "live";
   const client = createPolymarketClient({
-    // Synthetic (catalog demo) tokens have no CLOB book; they are paper-only and
-    // never reach the live venue (assertExecutable rejects them before this).
     getBook: async (tokenId) => {
+      // A Split pool's book is its LMSR curve, and that curve is authoritative in
+      // every mode — the pool is a real counterparty, not a stand-in for one.
+      // Gating this on paper mode sent pool tokens to the CLOB in live mode, which
+      // answers 404 because the token exists only in Postgres.
+      if (isPoolToken(tokenId)) {
+        const pool = await poolSyntheticBook(tokenId).catch(() => null);
+        if (pool) return pool;
+      }
+      // Catalog demo tokens are fiction: paper-only, and assertExecutable refuses
+      // them in live mode before execution ever gets here.
       if (!live) {
         const synthetic = syntheticBookForToken(tokenId, getMarket);
         if (synthetic) return synthetic;
-        // Split-native pools are database rows, so the catalog lookup above
-        // misses them; without this their tokens have no book and execution fails.
-        const pool = await poolSyntheticBook(tokenId).catch(() => null);
-        if (pool) return pool;
       }
       return fetchClobBook(tokenId);
     },
@@ -394,6 +400,11 @@ async function assertMarketOpen(market: CatalogMarket, deps: BettingDeps) {
 }
 
 function assertExecutable(snapshot: OrderBookSnapshot, deps: BettingDeps) {
+  // Demo catalog markets quote a made-up book, so they must not trade for real.
+  // A Split pool also quotes its own book, but that book is the LMSR curve the
+  // liquidity fund stands behind — it is a real counterparty, not a fiction, so it
+  // stays tradable in live mode. Lumping the two together as "synthetic" is what
+  // made every voted pool untradable the moment live mode was switched on.
   if (snapshot.source === "synthetic" && deps.executor.mode === "live") {
     throw new BettingError(
       "NOT_EXECUTABLE",
@@ -528,7 +539,7 @@ export async function placePrediction(
         status: "pending",
         execution: {
           venue: "polymarket",
-          mode: deps.executor.mode,
+          mode: executionModeForToken(output.tokenId, deps.executor.mode),
           status: "created",
           tokenId: output.tokenId,
           side: output.side,

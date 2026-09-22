@@ -16,7 +16,8 @@
     "worker:balance": "node scripts/omnibus-balance.mjs",
     "worker:approve": "node scripts/omnibus-approve.mjs",
     "worker:deposit-wallet": "node scripts/omnibus-deposit-wallet.mjs",
-    "worker:wrap-pusd": "node scripts/omnibus-wrap-pusd.mjs"
+    "worker:wrap-pusd": "node scripts/omnibus-wrap-pusd.mjs",
+    "check:wallets": "node scripts/check-wallets.mjs"
   },
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.1.0",

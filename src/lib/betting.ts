@@ -18,7 +18,8 @@ export type OrderBookSnapshot = {
   tickSize: string;
   negRisk: boolean;
   lastTradePrice?: string;
-  source: "polymarket" | "synthetic";
+  /** "pool" = a Split LMSR pool: internal, but a real counterparty. "synthetic" = demo only. */
+  source: "polymarket" | "synthetic" | "pool";
 };
 
 export type QuoteRequest = {
@@ -99,7 +100,7 @@ export type FillDTO = {
 export type ExecutionDTO = {
   id: string;
   venue: string;
-  mode: "paper" | "live";
+  mode: "paper" | "live" | "pool";
   status: string;
   orderType: string;
   limitPrice: string;

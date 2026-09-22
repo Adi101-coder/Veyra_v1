@@ -699,6 +699,7 @@ export class ExecutionEngine {
           tickSize: snapshot.tickSize,
           negRisk: snapshot.negRisk,
           book: snapshot,
+          clientOrderId: row.id,
         });
       } catch (error) {
         // A thrown venue call has an unknown outcome: never assume it failed.

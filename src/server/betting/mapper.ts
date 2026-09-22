@@ -97,7 +97,7 @@ export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
     ? {
         id: execution.id,
         venue: execution.venue,
-        mode: execution.mode === "live" ? "live" : "paper",
+        mode: execution.mode === "live" ? "live" : execution.mode === "pool" ? "pool" : "paper",
         status: execution.status,
         orderType: execution.orderType,
         limitPrice: formatPrice(execution.limitPriceBps),

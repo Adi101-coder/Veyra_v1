@@ -63,7 +63,13 @@ export async function reconcileSolvency(
       _sum: { amountMicros: true, spentMicros: true },
     }),
     auditBalances(prisma),
-    prisma.fill.count({ where: { isSimulated: true } }),
+    // Only a simulated fill on a REAL-money execution is a finding. Paper fills are
+    // simulated by definition, so counting those made this warning permanent noise.
+    // A pool fill is no longer simulated, because the fund genuinely takes the
+    // other side; one that still is means money is being claimed against fiction.
+    prisma.fill.count({
+      where: { isSimulated: true, execution: { mode: { in: ["live", "pool"] } } },
+    }),
   ]);
 
   const userBalances = balances._sum.balanceBase ?? 0n;
@@ -165,9 +171,8 @@ export async function reconcileSolvency(
   if (simulatedPoolFills > 0) {
     findings.push({
       code: "SIMULATED_POOL_FILLS",
-      severity: "warning",
-      message:
-        "Pool fills are marked simulated and are excluded from venue inventory. Include them before taking real pool cash.",
+      severity: "error",
+      message: `${simulatedPoolFills} simulated fill(s) sit on real-money executions. Cash has been moved against a fill that never happened.`,
     });
   }
   if (controlled == null) {

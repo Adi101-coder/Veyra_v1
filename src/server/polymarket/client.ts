@@ -6,7 +6,15 @@ import { formatPrice, formatShares, sharesCostMicros } from "@/server/money";
 import { defaultExecutionEngineConfig } from "@/server/execution/config";
 import { filledShares, walkSide } from "@/server/execution/math";
 import type { ExecutionSide } from "@/server/execution/types";
-import type { ExecutionRequest, ExecutionSubmitResult, ExecutorPort } from "@/server/polymarket/executor";
+import {
+  executionModeForToken,
+  internalTradeId,
+  isPoolToken,
+  type ExecutionMode,
+  type ExecutionRequest,
+  type ExecutionSubmitResult,
+  type ExecutorPort,
+} from "@/server/polymarket/executor";
 import { fetchClobBook, fetchClobPrice } from "@/server/polymarket/clob";
 import { findLiveActivity, getLiveOrder, submitLiveOrder } from "@/server/polymarket/live";
 
@@ -20,6 +28,8 @@ export type VenueOrderRequest = {
   tickSize: string;
   negRisk: boolean;
   book?: OrderBookSnapshot;
+  /** Slice identity, so internally-filled orders get unique venue trade ids. */
+  clientOrderId?: string;
 };
 
 export type VenueFill = {
@@ -33,7 +43,7 @@ export type VenueFill = {
 };
 
 export type VenueOrderResult = {
-  mode: "paper" | "live";
+  mode: ExecutionMode;
   /**
    * filled/partial/rejected/failed are terminal. open = accepted by the venue and
    * may still (partially) fill; unknown = submission outcome is unknown (timeout,
@@ -49,7 +59,7 @@ export type VenueOrderResult = {
 };
 
 export type PolymarketClient = {
-  mode: "paper" | "live";
+  mode: ExecutionMode;
   getBook(tokenId: string): Promise<OrderBookSnapshot>;
   getPrice(tokenId: string, side: ExecutionSide): Promise<string | null>;
   getOrder(orderId: string): Promise<VenueOrderResult | null>;
@@ -59,7 +69,7 @@ export type PolymarketClient = {
 };
 
 export function createPolymarketClient(options?: {
-  mode?: "paper" | "live";
+  mode?: ExecutionMode;
   getBook?: (tokenId: string) => Promise<OrderBookSnapshot>;
   submitOrder?: (request: VenueOrderRequest) => Promise<VenueOrderResult>;
   getOrder?: (orderId: string) => Promise<VenueOrderResult | null>;
@@ -80,7 +90,7 @@ export function createPolymarketClient(options?: {
       ((request) =>
         mode === "live" && !isInternalToken(request.tokenId)
           ? submitLiveOrder(request)
-          : Promise.resolve(paperFill(request))),
+          : Promise.resolve(paperFill(request, mode))),
   };
 }
 
@@ -98,8 +108,8 @@ export function clientFromExecutor(
       return result ? toVenue(result) : null;
     },
     async submitOrder(request) {
-      // A synthetic token has no venue listing, so it must never be submitted.
-      if (isInternalToken(request.tokenId)) return paperFill(request);
+      // A pool token has no venue listing, so it must never be submitted.
+      if (isInternalToken(request.tokenId)) return paperFill(request, executor.mode);
       const mapped: ExecutionRequest = {
         tokenId: request.tokenId,
         side: request.side,
@@ -110,6 +120,7 @@ export function clientFromExecutor(
         tickSize: request.tickSize,
         negRisk: request.negRisk,
         book: request.book,
+        clientOrderId: request.clientOrderId,
       };
       return toVenue(await executor.submit(mapped));
     },
@@ -146,7 +157,7 @@ function toVenue(result: ExecutionSubmitResult): VenueOrderResult {
  * mode, decides the venue.
  */
 function isInternalToken(tokenId: string) {
-  return tokenId.startsWith("synthetic:");
+  return isPoolToken(tokenId);
 }
 
 /** Orders filled internally carry a paper id; the venue has never heard of them. */
@@ -154,7 +165,8 @@ function isInternalOrderId(orderId: string) {
   return orderId.startsWith("paper_");
 }
 
-function paperFill(request: VenueOrderRequest): VenueOrderResult {
+function paperFill(request: VenueOrderRequest, venueMode: ExecutionMode = "paper"): VenueOrderResult {
+  const settledMode = executionModeForToken(request.tokenId, venueMode);
   const lot = defaultExecutionEngineConfig.shareLotMicros;
   const fills: EngineWalkFill[] = request.book
     ? walkSide(request.book, request.side, request.limitPriceBps, request.sharesMicros, lot)
@@ -162,13 +174,14 @@ function paperFill(request: VenueOrderRequest): VenueOrderResult {
   const mapped: VenueFill[] = fills.map((fill, index) => ({
     ...fill,
     feeMicros: 0n,
-    venueTradeId: `paper-${index + 1}`,
-    simulated: true,
+    venueTradeId: internalTradeId(settledMode === "pool" ? "pool" : "paper", request.clientOrderId, index),
+    // A pool fill is not simulated: the liquidity fund really took the other side.
+    simulated: settledMode !== "pool",
     raw: fill,
   }));
   const filled = filledShares(mapped);
   return {
-    mode: "paper",
+    mode: settledMode,
     status: filled >= request.sharesMicros ? "filled" : filled > 0n ? "partial" : "rejected",
     polymarketOrderId: `paper_${request.tokenId}_${Date.now()}`,
     response: {

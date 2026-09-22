@@ -44,9 +44,13 @@ describe("synthetic tokens never reach the venue in live mode", () => {
   it("createPolymarketClient fills a pool token internally even when mode is live", async () => {
     const client = createPolymarketClient({ mode: "live" });
     const result = await client.submitOrder(order("synthetic:veyra-abc:YES"));
-    expect(result.mode).toBe("paper");
+    // Settled as "pool": real money, internal counterparty, never the venue. It is
+    // not "paper" — tagging it paper is what stopped pool trades moving custodial
+    // cash — and its fills are not simulated, because the fund really took the
+    // other side.
+    expect(result.mode).toBe("pool");
     expect(result.fills.length).toBeGreaterThan(0);
-    expect(result.fills.every((fill) => fill.simulated)).toBe(true);
+    expect(result.fills.every((fill) => fill.simulated)).toBe(false);
   });
 
   it("createPolymarketClient still routes a real venue token to the live venue", async () => {

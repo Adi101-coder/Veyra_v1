@@ -21,6 +21,13 @@ export type ExecutionRequest = {
   engine?: EngineResult;
   adjustmentFills?: EngineWalkFill[];
   book?: OrderBookSnapshot;
+  /**
+   * The slice row this submit belongs to. Internally-filled orders have no venue
+   * trade ids of their own, so they derive theirs from this; without it every
+   * slice of one execution names its first fill the same thing and the unique
+   * index on (executionId, venueTradeId) silently drops all but one.
+   */
+  clientOrderId?: string;
 };
 
 export type ExecutionFill = {
@@ -33,7 +40,7 @@ export type ExecutionFill = {
 };
 
 export type ExecutionSubmitResult = {
-  mode: "paper" | "live";
+  mode: ExecutionMode;
   status: VenueOrderResult["status"];
   polymarketOrderId: string | null;
   response: unknown;
@@ -43,15 +50,28 @@ export type ExecutionSubmitResult = {
 };
 
 export type ExecutorPort = {
-  mode: "paper" | "live";
+  mode: ExecutionMode;
   submit(request: ExecutionRequest): Promise<ExecutionSubmitResult>;
   getOrder(orderId: string): Promise<ExecutionSubmitResult | null>;
 };
 
-export function paperExecutor(): ExecutorPort {
+/**
+ * A trade id for a fill that no venue produced. Unique per slice, because slices of
+ * one execution all write into the same (executionId, venueTradeId) unique index.
+ */
+export function internalTradeId(label: string, clientOrderId: string | undefined, index: number) {
+  return clientOrderId ? `${label}-${clientOrderId}-${index + 1}` : `${label}-${index + 1}`;
+}
+
+export function paperExecutor(venueMode: ExecutionMode = "paper"): ExecutorPort {
   return {
-    mode: "paper",
+    mode: venueMode,
     async submit(request) {
+      // A pool order settles internally whatever the deployment mode is, so the
+      // mode is decided per token rather than per deployment.
+      const settledMode = executionModeForToken(request.tokenId, venueMode);
+      const simulated = settledMode !== "pool";
+      const label = simulated ? "paper" : "pool";
       const source =
         request.adjustmentFills ??
         request.engine?.fills ??
@@ -68,18 +88,18 @@ export function paperExecutor(): ExecutorPort {
         priceBps: fill.priceBps,
         sharesMicros: fill.sharesMicros,
         notionalMicros: fill.notionalMicros,
-        venueTradeId: `paper-${index + 1}`,
-        simulated: true,
+        venueTradeId: internalTradeId(label, request.clientOrderId, index),
+        simulated,
         raw: fill,
       }));
       const filled = filledShares(fills);
       return {
-        mode: "paper",
+        mode: settledMode,
         status: filled >= request.sharesMicros ? "filled" : fills.length ? "partial" : "rejected",
         polymarketOrderId: `paper_${request.tokenId}_${Date.now()}`,
         response: {
           venue: "polymarket",
-          mode: "paper",
+          mode: settledMode,
           tokenId: request.tokenId,
           side: request.side,
           orderType: request.orderType,
@@ -87,14 +107,47 @@ export function paperExecutor(): ExecutorPort {
           size: formatShares(request.sharesMicros),
         },
         fills,
-        errorMessage: filled > 0n ? null : "Paper book walk produced no fills.",
+        errorMessage:
+          filled > 0n
+            ? null
+            : simulated
+              ? "Paper book walk produced no fills."
+              : "The pool's curve produced no fills at this limit.",
       };
     },
     async getOrder() {
-      // Paper orders settle synchronously in submit(); there is no venue order to query.
+      // Settled synchronously in submit(); there is no venue order to query.
       return null;
     },
   };
+}
+
+/**
+ * How an order settles.
+ *
+ * paper — simulated; no real money moves.
+ * live  — routed to Polymarket; real money at the venue.
+ * pool  — filled against a Split pool's LMSR curve; REAL money, but the liquidity
+ *         fund is the counterparty and nothing reaches a venue. A pool is not a
+ *         simulation: the fund genuinely wins or loses on the other side.
+ *
+ * Treating a pool as "paper" is why pool trades moved no custodial cash, and
+ * treating its book as a demo made pools untradable the moment live mode was on.
+ */
+export type ExecutionMode = "paper" | "live" | "pool";
+
+/** True when a token is a Split pool's, which is settled internally, never at a venue. */
+export function isPoolToken(tokenId: string) {
+  return tokenId.startsWith("synthetic:");
+}
+
+/**
+ * The mode a specific order settles in. A pool order is real money only when the
+ * deployment itself is live; in paper mode everything stays simulated.
+ */
+export function executionModeForToken(tokenId: string, venueMode: ExecutionMode): ExecutionMode {
+  if (!isPoolToken(tokenId)) return venueMode;
+  return venueMode === "live" ? "pool" : "paper";
 }
 
 export function executionMode(env: NodeJS.ProcessEnv = process.env): "paper" | "live" {
@@ -104,7 +157,18 @@ export function executionMode(env: NodeJS.ProcessEnv = process.env): "paper" | "
 
 export function createExecutor(env: NodeJS.ProcessEnv = process.env): ExecutorPort {
   if (executionMode(env) !== "live") return paperExecutor();
-  return liveExecutor();
+  // Live deployment: venue orders go to Polymarket, pool orders are filled against
+  // the pool's own curve. Routing on deployment mode alone sent pool tokens — which
+  // exist only in Postgres — to the CLOB, where they match nothing.
+  const venue = liveExecutor();
+  const internal = paperExecutor("live");
+  return {
+    mode: "live",
+    submit: (request) =>
+      isPoolToken(request.tokenId) ? internal.submit(request) : venue.submit(request),
+    getOrder: (orderId) =>
+      orderId.startsWith("paper_") ? internal.getOrder(orderId) : venue.getOrder(orderId),
+  };
 }
 
 function liveExecutor(): ExecutorPort {
