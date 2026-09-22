@@ -17,7 +17,6 @@ export const siteConfig = {
   nav: [
     { href: "/", label: "Home" },
     { href: "/docs", label: "How it works" },
-    { href: "/community", label: "Socials" },
   ],
   cta: "Take a position",
   ctaHref: "/dashboard",
@@ -162,7 +161,7 @@ export const siteConfig = {
       heading: "Product",
       links: [
         { label: "About", href: "/how-it-works" },
-        { label: "Community", href: "/social" },
+        { label: "Dashboard", href: "/dashboard" },
         { label: "Markets", href: "/markets" },
       ],
     },

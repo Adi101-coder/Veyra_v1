@@ -777,20 +777,10 @@ export function SplitLanding() {
               <Link href="/docs">Documentation</Link>
               <Link href="/docs?page=api-overview">API</Link>
               <Link href="/docs?page=sdk">SDK</Link>
-              <Link href="/community#github">GitHub</Link>
-            </div>
-            <div className="footer-column">
-              <h3>Community</h3>
-              <Link href="/community">X / Twitter</Link>
-              <Link href="/community#discord">Discord</Link>
-              <Link href="/community#telegram">Telegram</Link>
-              <Link href="/community#events">Events</Link>
             </div>
             <div className="footer-column">
               <h3>Company</h3>
               <a href="#insights">About</a>
-              <Link href="/community">Careers</Link>
-              <Link href="/community">Contact</Link>
             </div>
           </div>
           <div className="footer-bottom">

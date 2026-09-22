@@ -30,8 +30,8 @@ function NavLinks({ className = "" }: { className?: string }) {
           <Link
             key={link.href}
             href={link.href}
-            className={`relative shrink-0 pb-1 font-serif text-[12px] uppercase tracking-[0.12em] no-underline sm:text-[13px] sm:tracking-[0.16em] ${
-              active ? "text-[#265bff]" : "text-[#65758b] hover:text-[#182d4a]"
+            className={`relative shrink-0 py-1 font-serif text-[12px] font-semibold uppercase tracking-[0.08em] no-underline sm:text-[13px] sm:tracking-[0.14em] ${
+              active ? "text-[#265bff]" : "text-black"
             }`}
           >
             {link.label}
@@ -48,21 +48,14 @@ function NavLinks({ className = "" }: { className?: string }) {
 export function DashboardHeader() {
   return (
     <header className="bg-[#f8fbff]">
-      <Shell className="flex items-center justify-between gap-3 pt-4 pb-3 sm:gap-4 sm:pt-5 sm:pb-4">
-        <div className="flex min-w-0 items-baseline gap-8 sm:gap-10 lg:gap-12">
-          <Link
-            href="/"
-            className="shrink-0 text-[#182d4a] no-underline"
-            aria-label="Split home"
-          >
-            <SplitWordmark className="w-[118px] sm:w-[148px]" />
-          </Link>
-          <NavLinks className="hidden items-center gap-7 lg:flex" />
-        </div>
+      <Shell className="flex items-center justify-between gap-3 pt-4 pb-2 sm:pt-5">
+        <Link href="/" className="shrink-0 text-[#182d4a] no-underline" aria-label="Split home">
+          <SplitWordmark className="w-[108px] sm:w-[140px]" />
+        </Link>
         <ConnectWalletButton />
       </Shell>
-      <Shell className="pb-3 lg:hidden">
-        <NavLinks className="scroll-x -mx-4 gap-5 px-4 pb-px" />
+      <Shell className="pb-3">
+        <NavLinks className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 sm:gap-x-6" />
       </Shell>
     </header>
   );

@@ -93,7 +93,7 @@ export function CommunityView() {
           <p className="text-[11px] font-medium tracking-[0.28em] text-[#65758b] uppercase">
             The Split community
           </p>
-          <h1 className="mt-6 font-serif text-[32px] leading-[1.08] font-normal tracking-[-0.045em] text-[#182d4a] sm:text-[72px] lg:text-[88px]">
+          <h1 className="mt-6 font-serif text-[clamp(2.1rem,8vw,5.5rem)] leading-[1.05] font-normal tracking-[-0.03em] text-[#182d4a]">
             Built by traders.
             <br />
             Shaped by the community.
@@ -166,7 +166,7 @@ export function CommunityView() {
         <Stagger className="mx-auto grid max-w-[1280px] grid-cols-2 gap-y-10 lg:grid-cols-4">
           {communityStats.map((stat) => (
             <Item key={stat.label}>
-              <p className="text-[40px] leading-none font-extralight tracking-[-0.05em] text-[#182d4a] sm:text-[56px] lg:text-[64px]">
+              <p className="text-[clamp(1.75rem,7vw,4rem)] leading-none font-extralight tracking-[-0.04em] text-[#182d4a]">
                 <CountUp value={stat.value} decimals={stat.decimals} suffix={stat.suffix} />
               </p>
               <p className="mt-3 text-[13px] text-[#65758b]">{stat.label}</p>

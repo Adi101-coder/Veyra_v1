@@ -196,7 +196,7 @@ export function DocsView() {
           <p className="text-[11px] font-medium tracking-[0.28em] text-[#65758b] uppercase">
             Documentation
           </p>
-          <h1 className="mt-5 font-serif text-[32px] leading-[1.1] font-normal tracking-[-0.045em] text-[#182d4a] sm:text-[64px] lg:text-[72px]">
+          <h1 className="mt-5 font-serif text-[clamp(2rem,8vw,4.5rem)] leading-[1.05] font-normal tracking-[-0.03em] text-[#182d4a]">
             Everything you need
             <br />
             to build on Split.
@@ -230,9 +230,9 @@ export function DocsView() {
                     key={item.id}
                     type="button"
                     onMouseDown={() => go(item.id)}
-                    className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-[13px] text-[#536780] hover:bg-[#e8f0ff] hover:text-[#265bff]"
+                    className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-[13px] text-[#536780] hover:bg-[#e8f0ff] hover:text-[#265bff]"
                   >
-                    <span>{item.title}</span>
+                    <span className="min-w-0">{item.title}</span>
                     <span className="text-[11px] tracking-[0.14em] text-[#657da0] uppercase">
                       {item.category}
                     </span>
@@ -283,7 +283,7 @@ export function DocsView() {
             </p>
             <h2
               id={article.id === "introduction" ? "introduction" : undefined}
-              className="mt-3 scroll-mt-28 text-[36px] leading-none font-light tracking-[-0.04em] text-[#182d4a] sm:text-[44px]"
+              className="mt-3 scroll-mt-28 text-[clamp(1.75rem,6vw,2.75rem)] leading-[1.1] font-light tracking-[-0.04em] text-[#182d4a]"
             >
               {article.title}
             </h2>
@@ -473,13 +473,13 @@ export function DocsView() {
             <div className="mt-10 rounded-2xl border border-[#dce5f1] bg-[#ffffff] p-5">
               <p className="text-[15px] text-[#182d4a]">Need help?</p>
               <p className="mt-2 text-[13px] leading-6 text-[#65758b]">
-                Join the Split community and talk with other traders and developers.
+                Open the app and explore live markets, or read the API docs.
               </p>
               <Link
-                href="/community"
+                href="/markets"
                 className="mt-4 inline-flex items-center gap-1 text-[13px] text-[#536780] no-underline transition hover:text-[#265bff]"
               >
-                Join community
+                Explore markets
                 <IconArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
@@ -501,7 +501,7 @@ export function DocsView() {
               Build on the future of markets.
             </h2>
             <p className="mt-5 max-w-[28rem] text-[16px] leading-7 text-[#65758b]">
-              Explore the API, integrate Split into your product, or join the community.
+              Explore the API and integrate Split into your product.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <button
@@ -513,10 +513,10 @@ export function DocsView() {
                 <IconArrowRight className="h-4 w-4" />
               </button>
               <Link
-                href="/community"
+                href="/markets"
                 className="inline-flex h-12 items-center justify-center rounded-full border border-[#bed2f4] px-7 text-[15px] font-medium text-[#182d4a] no-underline transition hover:border-[#83a6e9]"
               >
-                Join community
+                Explore markets
               </Link>
             </div>
           </div>

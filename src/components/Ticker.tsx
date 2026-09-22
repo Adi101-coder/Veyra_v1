@@ -33,22 +33,18 @@ export function Ticker() {
 
   return (
     <div className="bg-[#102951] text-[#d5e4ff]">
-      <Shell className="flex items-center justify-between gap-3 py-2 font-mono text-[9.5px] uppercase tracking-[0.14em] sm:text-[10.5px]">
-        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
-          <span className="whitespace-nowrap text-[#9fc3ff]">SPLIT</span>
-          <span className="hidden opacity-40 sm:inline">·</span>
-          <span className="min-w-0 truncate">{mastheadDate(now)}</span>
-        </div>
-        <div className="hidden min-w-0 items-center gap-[18px] sm:flex">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <motion.span
-              aria-hidden
-              animate={{ scale: [1, 1.25, 1], opacity: [1, 0.7, 1] }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-              className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#9fc3ff] shadow-[0_0_0_2px_rgba(159,195,255,0.28)]"
-            />
-            <span className="max-w-[36rem] truncate">{headline}</span>
-          </div>
+      <Shell className="flex h-9 items-center gap-3 overflow-hidden font-mono text-[10px] uppercase tracking-[0.12em] sm:text-[10.5px]">
+        <span className="shrink-0 text-[#9fc3ff]">SPLIT</span>
+        <span className="hidden shrink-0 opacity-40 sm:inline">·</span>
+        <span className="hidden min-w-0 truncate sm:inline">{mastheadDate(now)}</span>
+        <div className="ml-auto hidden min-w-0 items-center gap-1.5 md:flex">
+          <motion.span
+            aria-hidden
+            animate={{ scale: [1, 1.25, 1], opacity: [1, 0.7, 1] }}
+            transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+            className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#9fc3ff] shadow-[0_0_0_2px_rgba(159,195,255,0.28)]"
+          />
+          <span className="truncate">{headline}</span>
         </div>
       </Shell>
     </div>

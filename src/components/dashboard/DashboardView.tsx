@@ -81,7 +81,7 @@ export function DashboardView() {
     <div className="bg-[#f8fbff]">
       <Shell className="pt-5 pb-8 sm:pt-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="scroll-x -mx-4 gap-x-5 px-4 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             {tabs.map((item) => {
               const active = item.id === tab;
               return (
@@ -116,7 +116,7 @@ export function DashboardView() {
           </p>
         ) : null}
 
-        <div className="scroll-x -mx-4 gap-2 px-4 pb-1 sm:mx-0 sm:px-0">
+        <div className="flex flex-wrap gap-2">
           {categories.map((item) => {
             const active = item.id === category;
             return (

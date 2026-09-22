@@ -83,6 +83,8 @@ body {
 
 .scroll-x {
   display: flex;
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
@@ -91,6 +93,8 @@ body {
 }
 
 .scroll-x-pane {
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;

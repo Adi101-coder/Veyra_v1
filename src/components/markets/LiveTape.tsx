@@ -41,7 +41,7 @@ export function LiveTape({
             <li key={trade.id}>
               <Link
                 href={`/contract/${encodeURIComponent(trade.marketId)}`}
-                className={`${cardClass} flex items-center gap-3 px-4 py-3 no-underline`}
+                className={`${cardClass} flex min-w-0 items-center gap-3 px-3 py-3 no-underline sm:px-4`}
               >
                 <Avatar seed={trade.trader} src={trade.avatar} />
                 <div className="min-w-0 flex-1">
@@ -50,7 +50,7 @@ export function LiveTape({
                     {trade.trader} · {trade.side} · {trade.ago}
                   </p>
                 </div>
-                <div className="text-right">
+                <div className="shrink-0 text-right">
                   <p className="text-[14px] font-semibold tabular-nums text-[#182d4a]">{trade.invested}</p>
                   <p className={`font-mono text-[10px] ${trade.up ? "text-[#2c7a55]" : "text-[#ad4c62]"}`}>
                     {trade.payout}

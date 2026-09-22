@@ -10,7 +10,7 @@ export function CategoryTable({ categories }: { categories: ReputationCategory[]
   }
 
   return (
-    <div className="-mx-1 overflow-x-auto">
+    <div className="min-w-0 overflow-x-auto">
       <table className="w-full min-w-[20rem] border-collapse text-left">
         <thead>
           <tr className="border-b border-[rgba(24,45,74,0.08)]">

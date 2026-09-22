@@ -6,27 +6,18 @@ import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { SplitWordmark } from "@/components/Logo";
 import { PremiumButton } from "@/components/landing/PremiumButton";
-import { IconClose, IconDiscord, IconMenu, IconX } from "@/components/landing/icons";
+import { IconClose, IconMenu } from "@/components/landing/icons";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
 const links = [
   { href: "/", label: "Home" },
   { href: "/docs", label: "How it works" },
-  { href: "/community", label: "Socials" },
-] as const;
-
-const social = [
-  { href: "/community", label: "X", Icon: IconX },
-  { href: "/community", label: "Discord", Icon: IconDiscord },
 ] as const;
 
 function isActive(pathname: string, href: string) {
   if (href === "/") return pathname === "/";
   if (href === "/docs") return pathname.startsWith("/docs");
-  if (href === "/community") {
-    return pathname.startsWith("/community") || pathname.startsWith("/social");
-  }
   return pathname === href;
 }
 
@@ -89,17 +80,6 @@ export function Navbar() {
         </nav>
 
         <div className="hidden items-center gap-5 lg:flex">
-          {social.map((item) => (
-            <motion.div key={item.label} tabIndex={-1} whileHover={reduce ? undefined : { y: -2 }}>
-              <Link
-                href={item.href}
-                aria-label={item.label}
-                className="block text-[#65758b] transition-colors hover:text-[#265bff]"
-              >
-                <item.Icon className="h-4 w-4" />
-              </Link>
-            </motion.div>
-          ))}
           <PremiumButton href="/markets" variant="dark" size="sm">
             Launch app
           </PremiumButton>

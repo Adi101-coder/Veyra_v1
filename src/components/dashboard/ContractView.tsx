@@ -187,8 +187,8 @@ export function ContractView({ market }: { market: Market }) {
   return (
     <div className="bg-[#f8fbff]">
       <Shell className="pt-4 pb-16 sm:pt-6">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <p className="flex items-center gap-2 font-serif text-[13px] tracking-[0.01em] text-[#65758b]">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <p className="flex min-w-0 flex-wrap items-center gap-2 font-serif text-[13px] tracking-[0.01em] text-[#65758b]">
             <Link href="/dashboard" className="text-[#536780] no-underline hover:text-[#182d4a]">
               ← Dashboard
             </Link>
@@ -214,7 +214,7 @@ export function ContractView({ market }: { market: Market }) {
                   </span>
                   <span>Finalized</span>
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
                     Public
                   </span>
@@ -329,7 +329,7 @@ export function ContractView({ market }: { market: Market }) {
                   Wagers{" "}
                   <span className="text-[#65758b]">{visible.length}</span>
                 </p>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setHideExpired((value) => !value)}

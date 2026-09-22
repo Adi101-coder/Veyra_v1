@@ -239,7 +239,7 @@ export function PillTabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto text-[13px] font-medium text-[#65758b]">
+    <div className="flex w-full min-w-0 flex-wrap items-center gap-1 text-[13px] font-medium text-[#65758b]">
       {tabs.map((tab) => {
         const active = tab.id === value;
         return (
@@ -324,7 +324,7 @@ export function RailTrack({
   return (
     <div
       ref={railRef}
-      className="flex gap-3.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex w-full min-w-0 gap-3.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
     >
       {children}
     </div>

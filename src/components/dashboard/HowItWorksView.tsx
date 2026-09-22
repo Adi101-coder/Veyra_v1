@@ -106,7 +106,7 @@ export function HowItWorksView() {
               onOpponent={setOpponent}
             />
 
-            <div className="mt-3 flex items-center gap-5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
+            <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
               <span className="inline-flex items-center gap-2">
                 <span className="h-px w-5 bg-[#265bff]/50" />
                 Your risk
@@ -120,7 +120,7 @@ export function HowItWorksView() {
 
           <div className="mt-10">
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#65758b]">Vault</p>
-            <div className="mt-3 flex items-center justify-between gap-4 font-mono text-[11px] uppercase tracking-[0.12em] text-[#536780]">
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 font-mono text-[11px] uppercase tracking-[0.12em] text-[#536780]">
               <span>
                 Risk: {riskYou.toFixed(4)} SOL
               </span>
