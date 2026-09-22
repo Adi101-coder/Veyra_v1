@@ -70,11 +70,17 @@ export function createPolymarketClient(options?: {
     mode,
     getBook: options?.getBook ?? fetchClobBook,
     getPrice: (tokenId, side) => fetchClobPrice(tokenId, side),
-    getOrder: options?.getOrder ?? (mode === "live" ? getLiveOrder : async () => null),
+    getOrder:
+      options?.getOrder ??
+      ((orderId) =>
+        mode === "live" && !isInternalOrderId(orderId) ? getLiveOrder(orderId) : Promise.resolve(null)),
     findActivity: options?.findActivity ?? (mode === "live" ? findLiveActivity : undefined),
     submitOrder:
       options?.submitOrder ??
-      (mode === "live" ? submitLiveOrder : (request) => Promise.resolve(paperFill(request))),
+      ((request) =>
+        mode === "live" && !isInternalToken(request.tokenId)
+          ? submitLiveOrder(request)
+          : Promise.resolve(paperFill(request))),
   };
 }
 
@@ -87,10 +93,13 @@ export function clientFromExecutor(
     getBook,
     getPrice: async () => null,
     async getOrder(orderId) {
+      if (isInternalOrderId(orderId)) return null;
       const result = await executor.getOrder(orderId);
       return result ? toVenue(result) : null;
     },
     async submitOrder(request) {
+      // A synthetic token has no venue listing, so it must never be submitted.
+      if (isInternalToken(request.tokenId)) return paperFill(request);
       const mapped: ExecutionRequest = {
         tokenId: request.tokenId,
         side: request.side,
@@ -124,6 +133,25 @@ function toVenue(result: ExecutionSubmitResult): VenueOrderResult {
     })),
     errorMessage: result.errorMessage,
   };
+}
+
+/**
+ * A Split pool and a demo market quote a synthetic token ("synthetic:<marketId>:
+ * <YES|NO>") that exists only in this database. The pool itself is the counterparty
+ * and its book IS the LMSR curve, so filling against that book is the real trade,
+ * not a simulation of one.
+ *
+ * Routing on execution mode alone would hand such a token to the CLOB the moment
+ * POLYMARKET_EXECUTION_MODE=live, where it matches nothing. The token, not the
+ * mode, decides the venue.
+ */
+function isInternalToken(tokenId: string) {
+  return tokenId.startsWith("synthetic:");
+}
+
+/** Orders filled internally carry a paper id; the venue has never heard of them. */
+function isInternalOrderId(orderId: string) {
+  return orderId.startsWith("paper_");
 }
 
 function paperFill(request: VenueOrderRequest): VenueOrderResult {
