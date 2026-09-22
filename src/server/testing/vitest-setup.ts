@@ -14,4 +14,7 @@ process.env.VEYRA_MAX_STAKE_USD = "100000.00";
 process.env.VEYRA_MIN_STAKE_USD = "1.00";
 process.env.VEYRA_CUSTODY_ENABLED = "false";
 process.env.POLYMARKET_EXECUTION_MODE = "paper";
+// The cash ledger's asset is read once at import. A deployment settling in USDG
+// would otherwise rename the asset the suite asserts on.
+process.env.VEYRA_CASH_ASSET = "USDC";
 delete process.env.POLYMARKET_PRIVATE_KEY;

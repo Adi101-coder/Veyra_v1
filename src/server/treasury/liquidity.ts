@@ -4,7 +4,7 @@ import type { PrismaClient } from "@prisma/client";
 import { createPublicClient, erc20Abi, http } from "viem";
 import { polygon, polygonAmoy } from "viem/chains";
 import { getPrisma } from "@/server/db";
-import { treasuryAddress } from "@/server/treasury/config";
+import { findAsset, treasuryAddress } from "@/server/treasury/config";
 import { CASH_ASSET } from "@/server/treasury/funds";
 import { POLYGON_USDC, POLYGON_USDC_E } from "@/server/treasury/omnibus-onchain";
 
@@ -44,27 +44,55 @@ function chainFor(env: EnvRecord) {
   return env.POLYMARKET_CHAIN_ID === "80002" ? polygonAmoy : polygon;
 }
 
-/** Live USDC held by the treasury wallet, summing both Polygon USDC variants. */
+/**
+ * The RPC for a given chain, following the deposit watcher's convention so the
+ * treasury is read over the same endpoint its deposits are scanned on.
+ */
+function rpcFor(chainId: number, env: EnvRecord) {
+  return (
+    (env[`VEYRA_RPC_URL_${chainId}`] ?? "").trim() ||
+    (env.VEYRA_RPC_URL ?? "").trim() ||
+    (chainId === 137 || chainId === 80002 ? (env.POLYGON_RPC_URL ?? "").trim() : "")
+  );
+}
+
+/**
+ * Live balance of the cash asset held by the treasury wallet.
+ *
+ * The cash asset is whatever the deployment settles in, on whatever chain it is
+ * configured for — reading Polygon USDC unconditionally reported a treasury that
+ * holds USDG on Robinhood Chain as permanently empty, which makes the solvency
+ * check say "short" forever and the sweep meaningless.
+ *
+ * Polygon USDC is the one case needing two reads: the native and bridged (USDC.e)
+ * contracts are both spendable and users arrive holding either.
+ */
 export async function readTreasuryUsdc(env: EnvRecord = process.env): Promise<bigint | null> {
   const address = treasuryAddress(env as NodeJS.ProcessEnv);
-  const rpc = (env.POLYGON_RPC_URL ?? "").trim();
-  if (!address || !rpc) return null;
+  if (!address) return null;
 
-  const client = createPublicClient({ chain: chainFor(env), transport: http(rpc) });
-  const [usdcE, usdc] = await Promise.all([
+  const asset = findAsset(CASH_ASSET, env as NodeJS.ProcessEnv);
+  const chainId = asset?.chainId ?? (env.POLYMARKET_CHAIN_ID === "80002" ? 80002 : 137);
+  const rpc = rpcFor(chainId, env);
+  if (!rpc) return null;
+
+  const onPolygon = chainId === 137 || chainId === 80002;
+  const client = createPublicClient(
+    onPolygon ? { chain: chainFor(env), transport: http(rpc) } : { transport: http(rpc) },
+  );
+  const balanceOf = (token: `0x${string}`) =>
     client.readContract({
-      address: POLYGON_USDC_E,
+      address: token,
       abi: erc20Abi,
       functionName: "balanceOf",
       args: [address as `0x${string}`],
-    }),
-    client.readContract({
-      address: POLYGON_USDC,
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [address as `0x${string}`],
-    }),
-  ]);
+    });
+
+  // A non-Polygon cash asset has exactly one contract: the configured one.
+  if (asset && !(onPolygon && CASH_ASSET === "USDC")) {
+    return balanceOf(asset.contract as `0x${string}`);
+  }
+  const [usdcE, usdc] = await Promise.all([balanceOf(POLYGON_USDC_E), balanceOf(POLYGON_USDC)]);
   return usdcE + usdc;
 }
 

@@ -32,7 +32,20 @@ import { isUniqueViolation } from "@/server/prisma-retry";
  * real money at risk on imaginary trades. `settlesInCash` is the single gate.
  */
 
-export const CASH_ASSET = "USDC";
+/**
+ * The asset the cash ledger is denominated in — what a spendable balance, a hold
+ * and a payout are all measured in. One asset per deployment on purpose: a bet
+ * reserves a single balance row, so a second cash asset would need its own
+ * accounting rather than a second symbol.
+ *
+ * Defaults to USDC. A deployment settling in a different 6-decimal stablecoin
+ * (USDG on Robinhood Chain, say) sets VEYRA_CASH_ASSET. That symbol must also
+ * appear in VEYRA_TREASURY_ASSETS, or deposits of it are never credited and users
+ * would fund an account they cannot bet from.
+ *
+ * Read once at startup: it describes the deployment, not a request.
+ */
+export const CASH_ASSET = (process.env.VEYRA_CASH_ASSET ?? "USDC").trim().toUpperCase() || "USDC";
 export const CASH_DECIMALS = 6;
 
 type Tx = Prisma.TransactionClient;

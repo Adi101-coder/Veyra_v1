@@ -33,7 +33,10 @@ const fail = (m) => { problems += 1; console.log(`  FAIL  ${m}`); };
 const note = (m) => console.log(`        ${m}`);
 
 const ADDR = /^0x[0-9a-fA-F]{40}$/;
-const KEY = /^0x[0-9a-fA-F]{64}$/;
+// The app accepts a key with or without the 0x prefix and normalises it, so this
+// check must not be stricter than the thing it is checking.
+const KEY = /^(0x)?[0-9a-fA-F]{64}$/;
+const normalizeKey = (k) => (k.startsWith("0x") ? k : `0x${k}`);
 
 console.log("\nWallet 1 — deposit / treasury (holds user money)");
 const treasury = env.VEYRA_TREASURY_ADDRESS ?? "";
@@ -56,7 +59,7 @@ if (!rawKey) {
   fail("POLYMARKET_PRIVATE_KEY is not 0x + 64 hex characters.");
 } else {
   try {
-    derived = privateKeyToAccount(rawKey).address;
+    derived = privateKeyToAccount(normalizeKey(rawKey)).address;
     ok(`key is valid and controls ${derived}`);
     note("(the key itself is never printed, stored or sent anywhere)");
   } catch {
@@ -70,10 +73,35 @@ else if (derived && derived.toLowerCase() !== funder.toLowerCase()) {
   note("Orders would be signed by one wallet and funded from another.");
 } else if (derived) ok(`funder matches the signing key`);
 
+console.log("\nWallet 3 — Robinhood settlement signer (writes receipts only)");
+const rhKey = env.RH_SETTLEMENT_PRIVATE_KEY ?? "";
+let rhDerived = null;
+if (!rhKey) {
+  note("not set (only needed when RH_SETTLEMENT_ENABLED=true)");
+} else if (!KEY.test(rhKey)) {
+  fail("RH_SETTLEMENT_PRIVATE_KEY is not 64 hex characters.");
+} else {
+  try {
+    rhDerived = privateKeyToAccount(normalizeKey(rhKey)).address;
+    ok(`key is valid and controls ${rhDerived}`);
+  } catch {
+    fail("RH_SETTLEMENT_PRIVATE_KEY could not be parsed as a key.");
+  }
+}
+if (env.RH_SETTLEMENT_ENABLED === "true") console.log("  settlement is ENABLED");
+else note("settlement disabled — this key is not used yet");
+
 console.log("\nSeparation");
 if (treasury && derived && treasury.toLowerCase() === derived.toLowerCase()) {
   fail("Wallet 1 and wallet 2 are the SAME address. User deposits would be traded.");
 } else if (treasury && derived) ok("wallet 1 and wallet 2 are different addresses");
+if (treasury && rhDerived && treasury.toLowerCase() === rhDerived.toLowerCase()) {
+  fail("The settlement key controls the TREASURY wallet. It holds user deposits; its key must not be on the server.");
+  note("The app refuses to boot in this state. Use a fresh gas-only wallet to sign receipts.");
+}
+if (derived && rhDerived && derived.toLowerCase() === rhDerived.toLowerCase()) {
+  note("wallet 2 and wallet 3 are the same key — workable, but a receipt signer normally holds nothing.");
+}
 
 console.log("\nMode");
 const mode = (env.POLYMARKET_EXECUTION_MODE ?? "paper").toLowerCase();
