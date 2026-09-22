@@ -49,7 +49,7 @@ The interactive transactions and `SELECT … FOR UPDATE` locks are safe under tr
 
 ## 4. Readiness (operator)
 ```bash
-curl -H "Authorization: Bearer $VEYRA_OPERATOR_TOKEN" https://<host>/api/operator/readiness
+curl -H "Authorization: Bearer $VEYRA_OPERATOR_TOKEN" https://<host>/api/operator/
 ```
 It must return HTTP 200 and `"ready": true`. Check:
 - [ ] `checks.database`: no pending migrations.
