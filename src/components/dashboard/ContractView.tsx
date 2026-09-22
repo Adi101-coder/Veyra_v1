@@ -7,7 +7,11 @@ import { Identicon } from "@/components/dashboard/Identicon";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { isKnownStatus, statusLabel, StatusChip } from "@/components/status/StatusChip";
 import { WalletSignatureNote } from "@/components/status/WalletSignatureNote";
-import { PoolLiquidityNote } from "@/components/pools/PoolLiquidityNote";
+import {
+  PoolLiquidityNote,
+  poolLiquidityLabel,
+  usePoolInfo,
+} from "@/components/pools/PoolLiquidityNote";
 import { Shell } from "@/components/Shell";
 import {
   formatResolvesBy,
@@ -82,10 +86,15 @@ export function ContractView({ market }: { market: Market }) {
           ? `Split pool · proposed by ${market.proposerWallet.slice(0, 6)}…${market.proposerWallet.slice(-4)}`
           : "Split pool · community voted"
         : "Demo · paper only";
+  const poolInfo = usePoolInfo(isVeyraPool ? market.id : null);
+  // A Split pool has no venue, so market.liquidityUsd is 0 for it. Showing that 0
+  // claims the pool is untradable while it is quoting; its real depth is the
+  // max loss the liquidity fund has committed.
   const liquidityLabel =
-    typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)
+    (isVeyraPool ? poolLiquidityLabel(poolInfo) : null) ??
+    (typeof market.liquidityUsd === "number" && Number.isFinite(market.liquidityUsd)
       ? `$${Math.round(market.liquidityUsd).toLocaleString("en-US")}`
-      : "—";
+      : "—");
   const conditionLabel = market.conditionId ? shortenKey(market.conditionId, 4, 4) : "—";
   const [rows, setRows] = useState<WagerRow[]>([]);
   const [rowsError, setRowsError] = useState<string | null>(null);

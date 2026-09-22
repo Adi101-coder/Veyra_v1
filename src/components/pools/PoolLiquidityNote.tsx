@@ -21,10 +21,19 @@ const usd = (micros: string | undefined) => {
  * rather than a peer, which is a materially different deal from a Polymarket
  * market, so it is stated on the page rather than only in the docs.
  */
-export function PoolLiquidityNote({ marketId }: { marketId: string }) {
+/**
+ * Reads the pool record. Shared so the note and the contract header quote the same
+ * numbers: a pool's depth lives in PoolLiquidity, not in the venue fields.
+ * `marketId` is null for markets that are not Split pools, which skips the fetch.
+ */
+export function usePoolInfo(marketId: string | null) {
   const [info, setInfo] = useState<PoolInfo | null>(null);
 
   useEffect(() => {
+    if (!marketId) {
+      setInfo(null);
+      return;
+    }
     let cancelled = false;
     fetch(`/api/pools/${encodeURIComponent(marketId)}`, { cache: "no-store" })
       .then((response) => (response.ok ? response.json() : null))
@@ -32,12 +41,29 @@ export function PoolLiquidityNote({ marketId }: { marketId: string }) {
         if (!cancelled && data) setInfo(data as PoolInfo);
       })
       .catch(() => {
-        // The note is supplementary: if it cannot load, the page is still correct.
+        // Supplementary: if it cannot load, the page is still correct.
       });
     return () => {
       cancelled = true;
     };
   }, [marketId]);
+
+  return info;
+}
+
+/**
+ * What a pool can actually pay out, which is the honest answer to "how much
+ * liquidity is here". The venue's own liquidity field is zero on a Split pool
+ * because no venue is involved, and rendering that zero reads as "not tradable"
+ * on a pool that is quoting normally.
+ */
+export function poolLiquidityLabel(info: PoolInfo | null) {
+  if (!info?.funded) return null;
+  return usd(info.maxLossMicros);
+}
+
+export function PoolLiquidityNote({ marketId }: { marketId: string }) {
+  const info = usePoolInfo(marketId);
 
   if (!info) return null;
 
