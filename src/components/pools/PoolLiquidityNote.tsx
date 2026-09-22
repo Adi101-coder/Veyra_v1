@@ -43,8 +43,8 @@ export function PoolLiquidityNote({ marketId }: { marketId: string }) {
 
   if (!info.funded) {
     return (
-      <p className="mt-4 rounded-md border border-[#e4e0d8] bg-[#faf8f4] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#6a6a6a]">
-        <span className="text-[#1a1a1a]">Awaiting liquidity.</span> This pool was voted in but
+      <p className="mt-4 rounded-md border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#65758b]">
+        <span className="text-[#182d4a]">Awaiting liquidity.</span> This pool was voted in but
         the liquidity fund cannot cover it yet, so it is not quoting a price. A pool with no
         counterparty has no honest odds, so Veyra shows none.
       </p>
@@ -55,8 +55,8 @@ export function PoolLiquidityNote({ marketId }: { marketId: string }) {
   const fee = info.feeBps != null ? (info.feeBps / 100).toFixed(info.feeBps % 100 === 0 ? 0 : 2) : null;
 
   return (
-    <p className="mt-4 rounded-md border border-[#e4e0d8] bg-[#faf8f4] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#6a6a6a]">
-      <span className="text-[#1a1a1a]">Veyra pool.</span> The five most-voted questions each
+    <p className="mt-4 rounded-md border border-[#dce5f1] bg-[#f8fbff] px-4 py-3 font-mono text-[11px] leading-relaxed text-[#65758b]">
+      <span className="text-[#182d4a]">Veyra pool.</span> The five most-voted questions each
       day open against Veyra&apos;s liquidity fund, which is built from trading fees; whatever is
       not committed to a pool stays in the reserve. Veyra takes the other side of your trade
       here{cap ? <> and caps what this pool can lose at {cap}</> : null}. Prices move as people

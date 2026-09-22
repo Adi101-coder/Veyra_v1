@@ -14,7 +14,7 @@ import { CategoryTable } from "@/components/reputation/CategoryTable";
 import { PredictionHistory } from "@/components/reputation/PredictionHistory";
 import type { Loadable, Reputation, ScoredPrediction } from "@/components/reputation/types";
 
-const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]";
+const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]";
 
 export function ReputationView() {
   const { address } = useWallet();
@@ -51,13 +51,13 @@ export function ReputationView() {
 
   if (!address) {
     return (
-      <div className="bg-[#f4f2ed]">
+      <div className="bg-[#f1f6ff]">
         <Shell className="max-w-3xl pt-10 pb-20">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Track record</p>
-          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Track record</p>
+          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
             Reputation.
           </h1>
-          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
             Connect a wallet first. VEYRA scores the predictions that address opened once
             their markets resolve.
           </p>
@@ -77,15 +77,15 @@ export function ReputationView() {
   const hasScores = resolved > 0;
 
   return (
-    <div className="bg-[#f4f2ed]">
+    <div className="bg-[#f1f6ff]">
       <Shell className="max-w-3xl pt-8 pb-20">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Track record</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Track record</p>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+            <h1 className="font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
               Reputation.
             </h1>
-            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               Scores come only from resolved, filled predictions — open or unfilled orders
               never count.
             </p>
@@ -94,37 +94,37 @@ export function ReputationView() {
             type="button"
             onClick={() => setNonce((n) => n + 1)}
             disabled={refreshing}
-            className="rounded-full border border-[#1a1a1a] px-4 py-1.5 font-serif text-[14px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white disabled:opacity-50"
+            className="rounded-full border border-[#265bff] px-4 py-1.5 font-serif text-[14px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white disabled:opacity-50"
           >
             {refreshing ? "Refreshing…" : "Refresh"}
           </button>
         </div>
 
-        <div className="mt-8 flex items-center gap-4 rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-5">
+        <div className="mt-8 flex items-center gap-4 rounded-[22px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-5">
           <Identicon seed={address} className="h-12 w-12" />
           <div className="min-w-0 flex-1">
             <p className={labelClass}>Forecaster</p>
-            <p className="mt-1 truncate font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+            <p className="mt-1 truncate font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
               {shortenAddress(address, 6)}
             </p>
           </div>
           <div className="text-right">
             <p className={labelClass}>Opened</p>
-            <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+            <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
               {data ? data.totalPredictions : "—"}
             </p>
           </div>
         </div>
 
-        <section className="mt-8 border-t border-[rgba(26,26,26,0.12)] pt-6">
+        <section className="mt-8 border-t border-[rgba(24,45,74,0.12)] pt-6">
           {!rep ? (
-            <p className="py-6 text-[13px] italic text-[#8a8a8a]">Reading the record…</p>
+            <p className="py-6 text-[13px] italic text-[#65758b]">Reading the record…</p>
           ) : rep.status === "error" ? (
-            <p className="py-6 text-[13px] text-[#c45c6a]">{rep.error}</p>
+            <p className="py-6 text-[13px] text-[#ad4c62]">{rep.error}</p>
           ) : data ? (
             <>
               {!hasScores ? (
-                <p className="mb-6 text-[13px] italic text-[#8a8a8a]">
+                <p className="mb-6 text-[13px] italic text-[#65758b]">
                   No resolved predictions yet. Scores appear after markets you hold resolve.
                 </p>
               ) : null}
@@ -180,9 +180,9 @@ export function ReputationView() {
 
         <Heading label="History" title="Predictions." />
         {!preds ? (
-          <p className="py-6 text-[13px] italic text-[#8a8a8a]">Loading predictions…</p>
+          <p className="py-6 text-[13px] italic text-[#65758b]">Loading predictions…</p>
         ) : preds.status === "error" ? (
-          <p className="py-6 text-[13px] text-[#c45c6a]">{preds.error}</p>
+          <p className="py-6 text-[13px] text-[#ad4c62]">{preds.error}</p>
         ) : (
           <PredictionHistory predictions={preds.data} />
         )}
@@ -190,7 +190,7 @@ export function ReputationView() {
         <p className="mt-8">
           <Link
             href="/activity"
-            className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#8a8a8a] no-underline hover:text-[#1a1a1a]"
+            className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#65758b] no-underline hover:text-[#182d4a]"
           >
             Wallet activity
           </Link>
@@ -202,9 +202,9 @@ export function ReputationView() {
 
 function Heading({ label, title }: { label: string; title: string }) {
   return (
-    <div className="mt-12 mb-3 border-b border-[rgba(26,26,26,0.12)] pb-3">
-      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">{label}</p>
-      <h2 className="mt-2 font-serif text-[24px] leading-none tracking-[-0.03em] text-[#1a1a1a]">{title}</h2>
+    <div className="mt-12 mb-3 border-b border-[rgba(24,45,74,0.12)] pb-3">
+      <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">{label}</p>
+      <h2 className="mt-2 font-serif text-[24px] leading-none tracking-[-0.03em] text-[#182d4a]">{title}</h2>
     </div>
   );
 }
@@ -212,16 +212,16 @@ function Heading({ label, title }: { label: string; title: string }) {
 function Metric({ label, value, hint, help }: { label: string; value: string; hint: string; help?: string }) {
   return (
     <div className="min-w-0" title={help}>
-      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
         {label}
         {help ? (
-          <span aria-hidden className="ml-1 cursor-help text-[#c8c4bc]">
+          <span aria-hidden className="ml-1 cursor-help text-[#dce5f1]">
             ?
           </span>
         ) : null}
       </p>
-      <p className="mt-1 font-serif text-[24px] leading-none tracking-[-0.03em] text-[#1a1a1a]">{value}</p>
-      <p className="mt-1 text-[12px] italic leading-4 text-[#8a8a8a]">{hint}</p>
+      <p className="mt-1 font-serif text-[24px] leading-none tracking-[-0.03em] text-[#182d4a]">{value}</p>
+      <p className="mt-1 text-[12px] italic leading-4 text-[#65758b]">{hint}</p>
       {help ? <span className="sr-only">{help}</span> : null}
     </div>
   );

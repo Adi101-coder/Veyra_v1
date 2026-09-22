@@ -1,5 +1,5 @@
 export const categories = [
-  { id: "all", label: "All", color: "#1a1a1a" },
+  { id: "all", label: "All", color: "#265bff" },
   { id: "politics", label: "Politics", color: "#b45a56" },
   { id: "finance", label: "Finance", color: "#3d7d5c" },
   { id: "crypto", label: "Crypto", color: "#3f6f8c" },
@@ -815,7 +815,7 @@ export function categoryLabel(id: Exclude<CategoryId, "all">) {
 }
 
 export function categoryColor(id: Exclude<CategoryId, "all">) {
-  return categories.find((c) => c.id === id)?.color ?? "#1a1a1a";
+  return categories.find((c) => c.id === id)?.color ?? "#265bff";
 }
 
 export function yesChance(market: Market) {

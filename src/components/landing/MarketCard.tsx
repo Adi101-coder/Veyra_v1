@@ -48,13 +48,13 @@ export function MarketCard({ market, index }: { market: Market; index: number })
     >
       <Link
         href={`/contract/${market.id}`}
-        className="landing-card group block h-full rounded-[24px] border border-[#121417] bg-[#0b0c0e] p-5 no-underline transition duration-300 hover:border-[#34383f] hover:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.85)]"
+        className="landing-card group block h-full rounded-[24px] border border-[#dce5f1] bg-[#ffffff] p-5 no-underline transition duration-300 hover:border-[#dce5f1] hover:shadow-[0_24px_60px_-36px_rgba(0,0,0,0.85)]"
       >
-        <div className="flex items-center justify-between gap-3 text-[11px] tracking-[0.16em] text-[#7d818a] uppercase">
+        <div className="flex items-center justify-between gap-3 text-[11px] tracking-[0.16em] text-[#657da0] uppercase">
           <span>{categoryLabel(market.category)}</span>
           <span>{market.resolvesAt}</span>
         </div>
-        <h3 className="mt-4 min-h-[3.4rem] text-[17px] leading-snug font-medium tracking-[-0.02em] text-[#f5f5f5]">
+        <h3 className="mt-4 min-h-[3.4rem] text-[17px] leading-snug font-medium tracking-[-0.02em] text-[#182d4a]">
           {market.title}
         </h3>
         {index % 2 === 0 ? (
@@ -62,7 +62,7 @@ export function MarketCard({ market, index }: { market: Market; index: number })
             <motion.path
               d={d}
               fill="none"
-              stroke="#b8bcc4"
+              stroke="#536780"
               strokeWidth="1.3"
               initial={reduce ? false : { pathLength: 0, opacity: 0.35 }}
               whileInView={{ pathLength: 1, opacity: 1 }}
@@ -73,7 +73,7 @@ export function MarketCard({ market, index }: { market: Market; index: number })
         ) : (
           <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/10">
             <motion.div
-              className="h-full origin-left rounded-full bg-[#cfd3d8]"
+              className="h-full origin-left rounded-full bg-[#dce5f1]"
               initial={reduce ? false : { scaleX: 0 }}
               whileInView={{ scaleX: 1 }}
               viewport={{ once: true }}
@@ -83,13 +83,13 @@ export function MarketCard({ market, index }: { market: Market; index: number })
           </div>
         )}
         <div className="mt-5 grid grid-cols-2 gap-2 text-[13px]">
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5">
-            <p className="text-[10px] tracking-[0.16em] text-[#8a8e96] uppercase">Yes</p>
-            <p className="mt-1 text-[18px] text-[#f5f5f5]">{yes}¢</p>
+          <div className="rounded-2xl border border-[#dce5f1] bg-[#e8f0ff] px-3 py-2.5">
+            <p className="text-[10px] tracking-[0.16em] text-[#65758b] uppercase">Yes</p>
+            <p className="mt-1 text-[18px] text-[#182d4a]">{yes}¢</p>
           </div>
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2.5">
-            <p className="text-[10px] tracking-[0.16em] text-[#8a8e96] uppercase">No</p>
-            <p className="mt-1 text-[18px] text-[#b0b4bc]">{no}¢</p>
+          <div className="rounded-2xl border border-[#dce5f1] bg-[#e8f0ff] px-3 py-2.5">
+            <p className="text-[10px] tracking-[0.16em] text-[#65758b] uppercase">No</p>
+            <p className="mt-1 text-[18px] text-[#83a6e9]">{no}¢</p>
           </div>
         </div>
       </Link>

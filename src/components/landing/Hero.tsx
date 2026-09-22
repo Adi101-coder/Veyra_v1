@@ -45,22 +45,22 @@ export function Hero() {
 
   return (
     <section className="relative overflow-hidden px-5 pt-28 pb-20 sm:px-8 sm:pt-36 sm:pb-24 lg:px-12 lg:pt-44">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(90,98,112,0.2),transparent_70%)]" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-[70vh] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(38,91,255,0.14),transparent_70%)]" />
       <Stagger className="relative mx-auto max-w-[920px] text-center">
         <Item>
-          <p className="text-[11px] font-medium tracking-[0.32em] text-[#8d939c] uppercase">
+          <p className="text-[11px] font-medium tracking-[0.32em] text-[#65758b] uppercase">
             On-chain markets
           </p>
         </Item>
         <Item>
-          <h1 className="mt-6 bg-[linear-gradient(180deg,#ffffff_0%,#f5f5f5_42%,#9aa0a6_100%)] bg-clip-text font-light text-[36px] leading-[1.08] tracking-[-0.045em] text-transparent sm:text-[76px] lg:text-[96px] xl:text-[104px]">
+          <h1 className="mt-6 font-serif text-[36px] leading-[1.08] font-normal tracking-[-0.045em] text-[#182d4a] sm:text-[76px] lg:text-[96px] xl:text-[104px]">
             Trade the future,
             <br />
             before it happens.
           </h1>
         </Item>
         <Item>
-          <p className="mx-auto mt-7 max-w-[34rem] text-[16px] leading-7 text-[#9a9ea8] sm:text-[18px]">
+          <p className="mx-auto mt-7 max-w-[34rem] text-[16px] leading-7 text-[#65758b] sm:text-[18px]">
             Trade real-world outcomes on-chain. Discover markets, take positions, and settle
             transparently.
           </p>
@@ -78,18 +78,18 @@ export function Hero() {
         </Item>
       </Stagger>
 
-      <div className="relative mx-auto mt-16 grid max-w-[880px] grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/10 sm:grid-cols-4">
+      <div className="relative mx-auto mt-16 grid max-w-[880px] grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[#dce5f1] bg-white/10 sm:grid-cols-4">
         {siteConfig.stats.map((stat) => (
-          <div key={stat.label} className="bg-[#0b0c0e] px-4 py-5 text-center">
-            <p className="text-[22px] font-light tracking-[-0.04em] text-white sm:text-[26px]">
+          <div key={stat.label} className="bg-[#ffffff] px-4 py-5 text-center">
+            <p className="text-[22px] font-light tracking-[-0.04em] text-[#182d4a] sm:text-[26px]">
               {stat.value}
             </p>
-            <p className="mt-1 text-[11px] tracking-[0.14em] text-[#7d818a] uppercase">{stat.label}</p>
+            <p className="mt-1 text-[11px] tracking-[0.14em] text-[#657da0] uppercase">{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <p className="relative mx-auto mt-6 max-w-[880px] text-left text-[11px] tracking-[0.14em] text-[#7d818a] uppercase">
+      <p className="relative mx-auto mt-6 max-w-[880px] text-left text-[11px] tracking-[0.14em] text-[#657da0] uppercase">
         {source === "polymarket" ? "Live odds · Polymarket" : "Sample markets · demo odds"}
       </p>
       <div className="relative mx-auto mt-2 grid max-w-[880px] gap-2 sm:grid-cols-2">
@@ -99,10 +99,10 @@ export function Hero() {
             <Link
               key={market.id}
               href={`/contract/${market.id}`}
-              className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-[#0b0c0e]/80 px-4 py-3.5 no-underline transition hover:border-white/20"
+              className="flex items-center justify-between gap-4 rounded-2xl border border-[#dce5f1] bg-[#ffffff]/80 px-4 py-3.5 no-underline transition hover:border-[#bed2f4]"
             >
-              <p className="min-w-0 truncate text-[14px] text-[#e8eaee]">{market.title}</p>
-              <p className="shrink-0 text-[14px] font-medium tabular-nums text-[#cfd3d8]">{yes}%</p>
+              <p className="min-w-0 truncate text-[14px] text-[#182d4a]">{market.title}</p>
+              <p className="shrink-0 text-[14px] font-medium tabular-nums text-[#dce5f1]">{yes}%</p>
             </Link>
           );
         })}

@@ -88,9 +88,9 @@ function noteLabel(note: SeatNote) {
 
 function noteClass(note: SeatNote) {
   if (note === "LANDED") return "text-[#2f9e6e]";
-  if (note === "MISSED") return "text-[#c45c6a]";
-  if (note === "PUSH") return "text-[#d08a4a]";
-  return "text-[#8a8a8a]";
+  if (note === "MISSED") return "text-[#ad4c62]";
+  if (note === "PUSH") return "text-[#265bff]";
+  return "text-[#65758b]";
 }
 
 export function WagerView({
@@ -159,48 +159,48 @@ export function WagerView({
   };
 
   return (
-    <div className="bg-[#eceae4]">
+    <div className="bg-[#f8fbff]">
       <Shell className="pt-4 pb-20 sm:pt-6">
-        <p className="mb-6 flex flex-wrap items-center gap-2 font-serif text-[13px] text-[#8a8a8a]">
-          <Link href="/dashboard" className="text-[#5a5a5a] no-underline hover:text-[#1a1a1a]">
+        <p className="mb-6 flex flex-wrap items-center gap-2 font-serif text-[13px] text-[#65758b]">
+          <Link href="/dashboard" className="text-[#536780] no-underline hover:text-[#182d4a]">
             ← Dashboard
           </Link>
           <span>/</span>
           <Link
             href={`/contract/${market.id}`}
-            className="text-[#5a5a5a] no-underline hover:text-[#1a1a1a]"
+            className="text-[#536780] no-underline hover:text-[#182d4a]"
           >
             Contract
           </Link>
           <span>/</span>
-          <span className="text-[#1a1a1a]">Wager</span>
+          <span className="text-[#182d4a]">Wager</span>
         </p>
 
-        <section className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-6 sm:px-8 sm:py-7">
+        <section className="rounded-[22px] border border-[rgba(24,45,74,0.06)] bg-[#ffffff] px-5 py-6 sm:px-8 sm:py-7">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e]">
+            <p className="flex flex-wrap items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               <span
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ background: color }}
               />
               {categoryLabel(market.category)}
-              <span className="text-[#b0b0b0]">#{market.tag}</span>
+              <span className="text-[#83a6e9]">#{market.tag}</span>
             </p>
             <div className="flex items-center gap-2">
-              <span className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e]">
+              <span className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
                 Public
               </span>
               <button
                 type="button"
                 onClick={share}
-                className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e] hover:text-[#1a1a1a]"
+                className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b] hover:text-[#182d4a]"
               >
                 {copied ? "Copied" : "‹ Share"}
               </button>
             </div>
           </div>
 
-          <h1 className="mt-4 max-w-[38rem] font-serif text-[30px] leading-[1.15] tracking-[-0.03em] text-[#1a1a1a] sm:text-[36px]">
+          <h1 className="mt-4 max-w-[38rem] font-serif text-[30px] leading-[1.15] tracking-[-0.03em] text-[#182d4a] sm:text-[36px]">
             {market.title}
           </h1>
 
@@ -209,10 +209,10 @@ export function WagerView({
               <div className="flex items-center gap-2.5">
                 <Identicon seed={creator.avatar} className="h-8 w-8" />
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Creator
                   </p>
-                  <p className="font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="font-mono text-[12px] text-[#182d4a]">
                     {creator.wallet === "Open seat"
                       ? "Open seat"
                       : shortenKey(creator.wallet, 4, 4)}
@@ -244,25 +244,25 @@ export function WagerView({
             </div>
             <Link
               href={`/contract/${market.id}`}
-              className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a] no-underline hover:text-[#1a1a1a]"
+              className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-4 py-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b] no-underline hover:text-[#182d4a]"
             >
               Close wager
             </Link>
           </div>
         </section>
 
-        <section className="mt-4 rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-7 sm:px-8 sm:py-10">
+        <section className="mt-4 rounded-[22px] border border-[rgba(24,45,74,0.06)] bg-[#ffffff] px-5 py-7 sm:px-8 sm:py-10">
           <div className="text-center">
-            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#65758b]">
               Resolution status
             </p>
             <span
-              className={`mt-3 inline-flex items-center gap-2 rounded-full border border-[rgba(26,26,26,0.1)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${
+              className={`mt-3 inline-flex items-center gap-2 rounded-full border border-[rgba(24,45,74,0.1)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] ${
                 prediction?.score
                   ? prediction.score.correct
                     ? "text-[#2f9e6e]"
-                    : "text-[#c45c6a]"
-                  : "text-[#5a5a5a]"
+                    : "text-[#ad4c62]"
+                  : "text-[#536780]"
               }`}
             >
               {prediction?.score
@@ -277,15 +277,15 @@ export function WagerView({
               <ClockIcon />
             </span>
             {prediction?.score ? (
-              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 font-mono text-[11px] text-[#8a8a8a]">
+              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-1 font-mono text-[11px] text-[#65758b]">
                 <span>Brier {brier(prediction.score.brierScore)}</span>
-                <span className="text-[#c8c4bc]">·</span>
-                <span className={prediction.score.pnlUsd.startsWith("-") ? "text-[#c45c6a]" : "text-[#1a1a1a]"}>
+                <span className="text-[#dce5f1]">·</span>
+                <span className={prediction.score.pnlUsd.startsWith("-") ? "text-[#ad4c62]" : "text-[#182d4a]"}>
                   PnL {usd(prediction.score.pnlUsd, true)}
                 </span>
-                <span className="text-[#c8c4bc]">·</span>
+                <span className="text-[#dce5f1]">·</span>
                 <span>Payout {usd(prediction.score.payoutUsd)}</span>
-                <span className="text-[#c8c4bc]">·</span>
+                <span className="text-[#dce5f1]">·</span>
                 <span>Scored at {Math.round(prediction.score.confidencePct)}%</span>
               </p>
             ) : null}
@@ -301,41 +301,41 @@ export function WagerView({
             <RiskMeter label="Max payout" value={payoutUsd} max={payoutUsd} side="right" />
           </div>
 
-          <div className="mt-10 grid gap-6 border-t border-[rgba(26,26,26,0.08)] pt-6 sm:grid-cols-2">
+          <div className="mt-10 grid gap-6 border-t border-[rgba(24,45,74,0.08)] pt-6 sm:grid-cols-2">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                 Created at
               </p>
-              <p className="mt-2 font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a]">
+              <p className="mt-2 font-serif text-[18px] tracking-[-0.02em] text-[#182d4a]">
                 {created.date}
               </p>
-              <p className="font-mono text-[11px] text-[#8a8a8a]">{created.time}</p>
+              <p className="font-mono text-[11px] text-[#65758b]">{created.time}</p>
             </div>
             <div className="sm:text-right">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                 Resolves by
               </p>
-              <p className="mt-2 font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a]">
+              <p className="mt-2 font-serif text-[18px] tracking-[-0.02em] text-[#182d4a]">
                 {resolves.date}
               </p>
-              <p className="font-mono text-[11px] text-[#8a8a8a]">{resolves.time}</p>
+              <p className="font-mono text-[11px] text-[#65758b]">{resolves.time}</p>
             </div>
           </div>
 
           <div className="mt-10 grid gap-8 sm:grid-cols-2">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                 Outcome type
               </p>
-              <p className="mt-2 font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">
+              <p className="mt-2 font-serif text-[22px] tracking-[-0.03em] text-[#182d4a]">
                 Binary
               </p>
             </div>
             <div className="sm:text-right">
-              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+              <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                 Resolution
               </p>
-              <p className="mt-2 font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">
+              <p className="mt-2 font-serif text-[22px] tracking-[-0.03em] text-[#182d4a]">
                 Peer consensus
               </p>
             </div>
@@ -355,10 +355,10 @@ function SettlementMeta({ settlement }: { settlement: NonNullable<PredictionDTO[
   const label = <StatusChip kind="settlement" status={settlement.status} />;
   return (
     <div>
-      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">Robinhood Chain</p>
-      <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">Robinhood Chain</p>
+      <p className="mt-1 font-mono text-[12px] text-[#182d4a]">
         {settlement.txHash && settlement.explorerUrl ? (
-          <a href={settlement.explorerUrl} target="_blank" rel="noreferrer" className="underline decoration-[#c9c4b8]">
+          <a href={settlement.explorerUrl} target="_blank" rel="noreferrer" className="underline decoration-[#dce5f1]">
             <span className="inline-flex flex-wrap items-center gap-2">
               {label} {shortenKey(settlement.txHash, 4, 4)}
             </span>
@@ -374,8 +374,8 @@ function SettlementMeta({ settlement }: { settlement: NonNullable<PredictionDTO[
 function Meta({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">{label}</p>
-      <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">{value}</p>
+      <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">{label}</p>
+      <p className="mt-1 font-mono text-[12px] text-[#182d4a]">{value}</p>
     </div>
   );
 }
@@ -392,13 +392,13 @@ function SeatPanel({
   const open = seat.wallet === "Open seat";
   return (
     <div
-      className={`flex min-w-0 items-center gap-3 rounded-2xl border border-[rgba(26,26,26,0.06)] bg-white/70 px-4 py-4 ${
+      className={`flex min-w-0 items-center gap-3 rounded-2xl border border-[rgba(24,45,74,0.06)] bg-white/70 px-4 py-4 ${
         align === "right" ? "sm:flex-row-reverse sm:border-l sm:pl-6" : "sm:pr-6"
       }`}
     >
       <Identicon seed={open ? "open" : seat.avatar} className="h-11 w-11 shrink-0" />
       <div className={`min-w-0 ${align === "right" ? "sm:text-right" : ""}`}>
-        <p className="font-mono text-[12px] text-[#1a1a1a]">
+        <p className="font-mono text-[12px] text-[#182d4a]">
           {open ? "Open seat" : shortenKey(seat.wallet, 4, 4)}
         </p>
         <p className={`mt-1 font-mono text-[9px] uppercase tracking-[0.14em] ${noteClass(seat.note)}`}>
@@ -406,7 +406,7 @@ function SeatPanel({
         </p>
       </div>
       <p
-        className={`ml-auto shrink-0 font-serif text-[28px] leading-none tracking-[-0.04em] text-[#1a1a1a] sm:text-[34px] ${
+        className={`ml-auto shrink-0 font-serif text-[28px] leading-none tracking-[-0.04em] text-[#182d4a] sm:text-[34px] ${
           align === "right" ? "sm:ml-0 sm:mr-auto" : ""
         }`}
       >
@@ -435,13 +435,13 @@ function RiskMeter({
   return (
     <div>
       <p
-        className={`font-mono text-[10px] uppercase tracking-[0.14em] text-[#5a5a5a] ${
+        className={`font-mono text-[10px] uppercase tracking-[0.14em] text-[#536780] ${
           side === "right" ? "sm:text-right" : ""
         }`}
       >
         {label}: {value === null ? "—" : `$${value}`} USD
       </p>
-      <div className={`mt-2 flex h-2 overflow-hidden rounded-full bg-[#ddd8ce] ${side === "right" ? "flex-row-reverse" : ""}`}>
+      <div className={`mt-2 flex h-2 overflow-hidden rounded-full bg-[#dce5f1] ${side === "right" ? "flex-row-reverse" : ""}`}>
         <div className="h-full w-6 bg-[#3a3344]" />
         <div className="h-full bg-[#c9b8e4]" style={{ width: `${width}%` }} />
       </div>
@@ -614,24 +614,24 @@ function ChangeMindPanel({
   const unchanged = confidence === Math.round(prediction.confidencePct);
 
   return (
-    <div className="mt-10 border-t border-[rgba(26,26,26,0.08)] pt-8">
-      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+    <div className="mt-10 border-t border-[rgba(24,45,74,0.08)] pt-8">
+      <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#65758b]">
         Change your mind
       </p>
-      <p className="mt-2 max-w-[36rem] text-[13px] leading-5 text-[#6e6e6e]">
+      <p className="mt-2 max-w-[36rem] text-[13px] leading-5 text-[#65758b]">
         Move confidence after the position is open. Previous views stay in history. Only the share
         delta is sent to the book, and inventory updates after the fill is reconciled.
       </p>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
         <div>
-          <p className="font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
+          <p className="font-serif text-[44px] leading-none tracking-[-0.04em] text-[#182d4a]">
             {confidence}
-            <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
+            <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#65758b]">
               %
             </span>
           </p>
-          <p className="mt-2 font-mono text-[11px] text-[#8a8a8a]">
+          <p className="mt-2 font-mono text-[11px] text-[#65758b]">
             Now {Math.round(prediction.confidencePct)}% · {currentShares} sh
             {desiredShares && !unchanged ? ` → ${desiredShares} sh` : ""}
           </p>
@@ -646,7 +646,7 @@ function ChangeMindPanel({
               setConfidence(Number(event.target.value));
               setMessage(null);
             }}
-            className="mt-5 w-full accent-[#1a1a1a] disabled:opacity-40"
+            className="mt-5 w-full accent-[#182d4a] disabled:opacity-40"
           />
           <div className="mt-4 flex flex-wrap gap-2">
             {CONFIDENCE_PRESETS.map((value) => {
@@ -662,8 +662,8 @@ function ChangeMindPanel({
                   }}
                   className={`rounded-full border px-3 py-1.5 font-mono text-[11px] disabled:opacity-40 ${
                     active
-                      ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
-                      : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
+                      ? "border-[#265bff] bg-[#e8f0ff] text-[#182d4a]"
+                      : "border-[rgba(24,45,74,0.1)] bg-white text-[#536780]"
                   }`}
                 >
                   {value}%
@@ -672,17 +672,17 @@ function ChangeMindPanel({
             })}
           </div>
           {quoteError && !unchanged ? (
-            <p role="status" aria-live="polite" className="mt-4 text-[13px] text-[#8a6a32]">
+            <p role="status" aria-live="polite" className="mt-4 text-[13px] text-[#1847d8]">
               {quoteError}
             </p>
           ) : null}
           {owner && !changeable ? (
-            <p className="mt-4 text-[13px] text-[#8a8a8a]">
+            <p className="mt-4 text-[13px] text-[#65758b]">
               Confidence can change once the position has filled.
             </p>
           ) : null}
           {quote && !quote.accepted && !unchanged ? (
-            <p className="mt-4 text-[13px] text-[#8a6a32]">
+            <p className="mt-4 text-[13px] text-[#1847d8]">
               {quote.rejection ? describeQuoteRejection(quote.rejection) : "No edge at this confidence. Submitting will flatten the position."}
             </p>
           ) : null}
@@ -690,7 +690,7 @@ function ChangeMindPanel({
             type="button"
             disabled={!owner || submitting || unchanged || !changeable}
             onClick={() => void submit()}
-            className="mt-6 rounded-full bg-[#1a1a1a] px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white disabled:opacity-40"
+            className="mt-6 rounded-full bg-[#265bff] px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] text-white disabled:opacity-40"
           >
             {submitting ? "Adjusting…" : owner ? "Update confidence" : "Owner wallet required"}
           </button>
@@ -701,36 +701,36 @@ function ChangeMindPanel({
             />
           ) : null}
           <div aria-live="polite">
-            {message ? <p className="mt-3 text-[13px] text-[#5a5a5a]">{message}</p> : null}
+            {message ? <p className="mt-3 text-[13px] text-[#536780]">{message}</p> : null}
           </div>
         </div>
 
         <div>
-          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+          <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
             Confidence history
           </p>
           {historyError && history.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[#8a6a32]">{historyError}</p>
+            <p className="mt-3 text-[13px] text-[#1847d8]">{historyError}</p>
           ) : historyLoading && history.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[#8a8a8a]">Loading history…</p>
+            <p className="mt-3 text-[13px] text-[#65758b]">Loading history…</p>
           ) : history.length === 0 ? (
-            <p className="mt-3 text-[13px] text-[#8a8a8a]">No changes yet.</p>
+            <p className="mt-3 text-[13px] text-[#65758b]">No changes yet.</p>
           ) : (
             <ul className="mt-3 space-y-2">
               {history.map((row) => (
                 <li
                   key={row.id}
-                  className="rounded-2xl border border-[rgba(26,26,26,0.06)] bg-white/70 px-4 py-3"
+                  className="rounded-2xl border border-[rgba(24,45,74,0.06)] bg-white/70 px-4 py-3"
                 >
-                  <p className="font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+                  <p className="font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
                     {row.previousConfidencePct}% → {row.newConfidencePct}%
                   </p>
-                  <p className="mt-1 font-mono text-[11px] text-[#6e6e6e]">
+                  <p className="mt-1 font-mono text-[11px] text-[#65758b]">
                     {row.side} {row.deltaShares} sh · {row.previousPosition.shares} →{" "}
                     {row.desiredPosition.shares} ·{" "}
                     <StatusChip kind="confidence" status={row.status} />
                   </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#9a9a9a]">
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#657da0]">
                     book {row.marketPrice} · {new Date(row.createdAt).toLocaleString()}
                   </p>
                 </li>

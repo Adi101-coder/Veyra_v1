@@ -21,24 +21,24 @@ export function FAQ() {
       <Shell>
         <div className="mx-auto max-w-[880px]">
           <Reveal>
-            <h2 className="mb-4 font-serif text-[28px] tracking-[-0.02em] text-[#1a1a1a] sm:mb-6 sm:text-[32px]">
+            <h2 className="mb-4 font-serif text-[28px] tracking-[-0.02em] text-[#182d4a] sm:mb-6 sm:text-[32px]">
               {siteConfig.faqTitle}
             </h2>
           </Reveal>
-          <div className="border-b border-[rgba(26,26,26,0.14)]">
+          <div className="border-b border-[rgba(24,45,74,0.14)]">
             {faqs.map((item, index) => {
               const isOpen = open === index;
               const link = item.link ?? null;
               return (
                 <div
                   key={item.q}
-                  className="border-t border-[rgba(26,26,26,0.14)]"
+                  className="border-t border-[rgba(24,45,74,0.14)]"
                 >
                   <button
                     type="button"
                     aria-expanded={isOpen}
                     onClick={() => setOpen(isOpen ? null : index)}
-                    className="flex w-full cursor-pointer items-center justify-between gap-6 bg-transparent py-5 text-left text-[#5a5a5a] transition-colors duration-160 hover:text-accent"
+                    className="flex w-full cursor-pointer items-center justify-between gap-6 bg-transparent py-5 text-left text-[#536780] transition-colors duration-160 hover:text-accent"
                   >
                     <span className="text-base font-medium leading-[1.3] tracking-[-0.005em] sm:text-lg">
                       {item.q}
@@ -62,7 +62,7 @@ export function FAQ() {
                         transition={{ duration: 0.28, ease: [0.22, 0.61, 0.36, 1] }}
                         className="overflow-hidden"
                       >
-                        <p className="ml-2 max-w-[720px] pb-6 pr-0 text-sm leading-[1.65] text-[#6e6e6e] sm:pr-10">
+                        <p className="ml-2 max-w-[720px] pb-6 pr-0 text-sm leading-[1.65] text-[#65758b] sm:pr-10">
                           {item.a}
                           {link ? (
                             <>

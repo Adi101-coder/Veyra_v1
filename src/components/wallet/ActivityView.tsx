@@ -17,15 +17,15 @@ export function ActivityView() {
 
   if (!address || !chain) {
     return (
-      <div className="bg-[#f4f2ed]">
+      <div className="bg-[#f1f6ff]">
         <Shell className="max-w-3xl pt-10 pb-20">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">
             Ledger
           </p>
-          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
             Activity.
           </h1>
-          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
             Connect a wallet first. VEYRA reads the public chain for that address and
             lists the recent transactions it already made.
           </p>
@@ -38,21 +38,21 @@ export function ActivityView() {
   const txs = activity.data?.transactions ?? [];
 
   return (
-    <div className="bg-[#f4f2ed]">
+    <div className="bg-[#f1f6ff]">
       <Shell className="max-w-3xl pt-8 pb-20">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">
-          <Link href="/dashboard" className="text-[#b0b0b0] no-underline hover:text-[#1a1a1a]">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">
+          <Link href="/dashboard" className="text-[#83a6e9] no-underline hover:text-[#182d4a]">
             Dashboard
           </Link>
-          <span className="text-[#c8c4bc]"> / </span>
+          <span className="text-[#dce5f1]"> / </span>
           Activity
         </p>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+            <h1 className="font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
               Wallet ledger.
             </h1>
-            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               Recent confirmed transactions for the address you connected — pulled from
               {chain === "evm" ? " Ethereum" : " Solana"}, not from VEYRA’s own books.
             </p>
@@ -61,27 +61,27 @@ export function ActivityView() {
             type="button"
             onClick={() => void refreshActivity()}
             disabled={activity.status === "loading"}
-            className="rounded-full border border-[#1a1a1a] px-4 py-1.5 font-serif text-[14px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white disabled:opacity-50"
+            className="rounded-full border border-[#265bff] px-4 py-1.5 font-serif text-[14px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white disabled:opacity-50"
           >
             {activity.status === "loading" ? "Refreshing…" : "Refresh"}
           </button>
         </div>
 
-        <div className="mt-8 flex flex-col gap-4 rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-white px-4 py-4 sm:flex-row sm:items-center sm:px-5 sm:py-5">
+        <div className="mt-8 flex flex-col gap-4 rounded-[22px] border border-[rgba(24,45,74,0.08)] bg-white px-4 py-4 sm:flex-row sm:items-center sm:px-5 sm:py-5">
           <Identicon seed={address} className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               {walletName ?? "Wallet"} · {chain === "evm" ? "Ethereum" : "Solana"}
             </p>
-            <p className="mt-1 truncate font-serif text-[18px] tracking-[-0.03em] text-[#1a1a1a] sm:text-[20px]">
+            <p className="mt-1 truncate font-serif text-[18px] tracking-[-0.03em] text-[#182d4a] sm:text-[20px]">
               {shortenAddress(address, 6)}
             </p>
           </div>
           <div className="sm:text-right">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               Balance
             </p>
-            <p className="mt-1 break-all font-serif text-[18px] tracking-[-0.03em] text-[#1a1a1a] sm:text-[20px]">
+            <p className="mt-1 break-all font-serif text-[18px] tracking-[-0.03em] text-[#182d4a] sm:text-[20px]">
               {activity.data?.balanceLabel ?? "—"}
             </p>
           </div>
@@ -92,7 +92,7 @@ export function ActivityView() {
             href={explorerAddressUrl(chain, address)}
             target="_blank"
             rel="noreferrer"
-            className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#8a8a8a] hover:text-[#1a1a1a]"
+            className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#65758b] hover:text-[#182d4a]"
           >
             Open in explorer
           </a>
@@ -100,11 +100,11 @@ export function ActivityView() {
 
         {chain === "evm" ? <PolymarketPositions walletAddress={address} /> : null}
 
-        <div className="mt-8 border-t border-[rgba(26,26,26,0.12)] pt-2">
+        <div className="mt-8 border-t border-[rgba(24,45,74,0.12)] pt-2">
           {loading ? (
-            <p className="py-10 text-[13px] italic text-[#8a8a8a]">Reading the chain…</p>
+            <p className="py-10 text-[13px] italic text-[#65758b]">Reading the chain…</p>
           ) : activity.status === "error" ? (
-            <p className="py-10 text-[13px] text-[#c45c6a]">{activity.error}</p>
+            <p className="py-10 text-[13px] text-[#ad4c62]">{activity.error}</p>
           ) : (
             <TransactionRows
               transactions={txs}
@@ -139,15 +139,15 @@ function PolymarketPositions({ walletAddress }: { walletAddress: string }) {
 
   return (
     <div className="mt-8">
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
         Polymarket positions
       </p>
       {rows == null ? (
-        <p className="mt-3 text-[13px] italic text-[#8a8a8a]">Reading the venue…</p>
+        <p className="mt-3 text-[13px] italic text-[#65758b]">Reading the venue…</p>
       ) : error && rows.length === 0 ? (
-        <p className="mt-3 text-[13px] text-[#c45c6a]">{error}</p>
+        <p className="mt-3 text-[13px] text-[#ad4c62]">{error}</p>
       ) : rows.length === 0 ? (
-        <p className="mt-3 text-[13px] italic text-[#8a8a8a]">
+        <p className="mt-3 text-[13px] italic text-[#65758b]">
           This address has no open Polymarket positions.
         </p>
       ) : (
@@ -156,17 +156,17 @@ function PolymarketPositions({ walletAddress }: { walletAddress: string }) {
             <li key={row.id}>
               <Link
                 href={`/contract/${encodeURIComponent(row.marketId)}`}
-                className="flex items-center justify-between gap-3 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-4 py-3 no-underline"
+                className="flex items-center justify-between gap-3 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-4 py-3 no-underline"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-[14px] text-[#1a1a1a]">{row.title}</p>
-                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+                  <p className="truncate text-[14px] text-[#182d4a]">{row.title}</p>
+                  <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
                     {row.outcome} · {row.shares} sh · {row.avgPrice} → {row.currentPrice}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-[14px] tabular-nums text-[#1a1a1a]">{row.value}</p>
-                  <p className={`font-mono text-[10px] ${row.up ? "text-[#2c7a55]" : "text-[#c45c6a]"}`}>
+                  <p className="text-[14px] tabular-nums text-[#182d4a]">{row.value}</p>
+                  <p className={`font-mono text-[10px] ${row.up ? "text-[#2c7a55]" : "text-[#ad4c62]"}`}>
                     {row.pnl} · {row.pnlPct}
                   </p>
                 </div>

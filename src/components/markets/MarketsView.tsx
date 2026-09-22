@@ -76,7 +76,7 @@ export function MarketsView() {
   }, [live, channel, query]);
 
   return (
-    <div className="bg-[#f3f1eb]">
+    <div className="bg-[#f1f6ff]">
       <Shell className="pt-3 pb-20 sm:pt-4">
         <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="scroll-x -mx-4 gap-1.5 px-4 pb-0.5 sm:mx-0 sm:px-0">
@@ -89,8 +89,8 @@ export function MarketsView() {
                   onClick={() => setChannel(item.id)}
                   className={`shrink-0 rounded-full px-3.5 py-1.5 text-[13px] font-medium transition ${
                     active
-                      ? "bg-[#171717] text-white"
-                      : "bg-white text-[#5f5c55] hover:text-[#171717]"
+                      ? "bg-[#265bff] text-white"
+                      : "bg-white text-[#536780] hover:text-[#182d4a]"
                   }`}
                 >
                   {item.label}
@@ -99,18 +99,18 @@ export function MarketsView() {
             })}
           </div>
           <label className="relative w-full sm:w-[240px]">
-            <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-[#8b887f]" />
+            <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-[#65758b]" />
             <span className="sr-only">Search markets</span>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search markets"
-              className="h-9 w-full rounded-full border border-black/[0.07] bg-white pr-3 pl-9 text-[13px] text-[#171717] outline-none placeholder:text-[#b0ada4] focus:border-black/20"
+              className="h-9 w-full rounded-full border border-[#dce5f1] bg-white pr-3 pl-9 text-[13px] text-[#182d4a] outline-none placeholder:text-[#83a6e9] focus:border-[#265bff]"
             />
           </label>
         </div>
 
-        <p className="mb-6 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8b887f]">
+        <p className="mb-6 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
           {feedSource === "polymarket" ? "Live · Polymarket" : live === null ? "Syncing markets" : "Demo catalog · paper only"}
           {feedError ? ` · ${feedError}` : null}
         </p>
@@ -118,13 +118,13 @@ export function MarketsView() {
         <div className="flex flex-col gap-11">
           <PoolsSection />
           {live && visible.length === 0 ? (
-            <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#8b887f]`}>
+            <p className={`${cardClass} px-5 py-12 text-center text-[14px] text-[#65758b]`}>
               No live Polymarket markets in this channel. Vote to create a Veyra pool.
             </p>
           ) : null}
           {visible.length > 0 ? (
             <section>
-              <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.03em] text-[#171717]">
+              <h2 className="mb-4 text-[20px] font-semibold tracking-[-0.03em] text-[#182d4a]">
                 {feedSource === "polymarket" ? "Live markets" : "Catalog markets"}
               </h2>
               <ul className="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3">

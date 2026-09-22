@@ -10,10 +10,10 @@ export default function NotFound() {
         <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-accent">
           404
         </p>
-        <h1 className="mt-3 font-serif text-4xl font-light tracking-[-0.02em] text-[#1a1a1a]">
+        <h1 className="mt-3 font-serif text-4xl font-light tracking-[-0.02em] text-[#182d4a]">
           {siteConfig.notFound.title}
         </h1>
-        <p className="mt-4 max-w-md text-[#5a5a5a]">
+        <p className="mt-4 max-w-md text-[#536780]">
           {siteConfig.notFound.body}
         </p>
         <Link

@@ -2,20 +2,20 @@ import type { ReactNode } from "react";
 
 /**
  * Architecture diagrams for the docs, drawn as inline SVG so they stay crisp at
- * any width, inherit the page's type, and match the dark docs theme.
+ * any width, inherit the page's type, and match the landing palette.
  */
 
 const C = {
-  box: "#111317",
-  stroke: "#23262d",
-  text: "#e8eaee",
-  sub: "#9a9ea8",
-  muted: "#6f737c",
-  grid: "#1a1d22",
-  green: "#3ecf8e",
-  blue: "#7c8cff",
-  amber: "#e8b04b",
-  rose: "#ff7a90",
+  box: "#ffffff",
+  stroke: "#dce5f1",
+  text: "#182d4a",
+  sub: "#536780",
+  muted: "#65758b",
+  grid: "#f1f6ff",
+  green: "#1847d8",
+  blue: "#265bff",
+  amber: "#83a6e9",
+  rose: "#ad4c62",
 };
 
 const MONO = "ui-monospace, SFMono-Regular, Menlo, monospace";
@@ -68,7 +68,7 @@ function Arrow({ d, dashed, label, lx, ly }: { d: string; dashed?: boolean; labe
 
 function Frame({ height, children, caption }: { height: number; children: ReactNode; caption: string }) {
   return (
-    <figure className="mt-8 overflow-hidden rounded-2xl border border-[#121417] bg-[#0b0c0e]">
+    <figure className="mt-8 overflow-hidden rounded-2xl border border-[#dce5f1] bg-[#f8fbff]">
       <svg viewBox={`0 0 800 ${height}`} className="block h-auto w-full" fontFamily="inherit" role="img" aria-label={caption}>
         <defs>
           <marker id="docs-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -77,7 +77,7 @@ function Frame({ height, children, caption }: { height: number; children: ReactN
         </defs>
         {children}
       </svg>
-      <figcaption className="border-t border-[#121417] px-5 py-3 font-mono text-[11px] tracking-[0.06em] text-[#6f737c]">
+      <figcaption className="border-t border-[#dce5f1] px-5 py-3 font-mono text-[11px] tracking-[0.06em] text-[#65758b]">
         {caption}
       </figcaption>
     </figure>

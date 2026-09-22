@@ -25,21 +25,21 @@ export function HowItWorks() {
     <section id="how-it-works" className="scroll-mt-24 px-5 py-24 sm:px-8 lg:px-12">
       <Stagger className="mx-auto max-w-[1100px]">
         <Item>
-          <p className="text-[11px] tracking-[0.28em] text-[#8d939c] uppercase">How it works</p>
+          <p className="text-[11px] tracking-[0.28em] text-[#65758b] uppercase">How it works</p>
         </Item>
         <div className="mt-12 grid gap-0 lg:grid-cols-3">
           {steps.map((step, index) => (
             <Item key={step.n}>
               <article
                 className={`py-8 lg:px-8 lg:py-0 ${
-                  index > 0 ? "border-t border-[#121417] lg:border-t-0 lg:border-l" : ""
+                  index > 0 ? "border-t border-[#dce5f1] lg:border-t-0 lg:border-l" : ""
                 }`}
               >
-                <p className="text-[13px] tracking-[0.22em] text-[#6f737c]">{step.n}</p>
-                <h3 className="mt-5 text-[24px] font-light tracking-[-0.03em] text-white">
+                <p className="text-[13px] tracking-[0.22em] text-[#657da0]">{step.n}</p>
+                <h3 className="mt-5 text-[24px] font-light tracking-[-0.03em] text-[#182d4a]">
                   {step.title}
                 </h3>
-                <p className="mt-3 max-w-[28ch] text-[14px] leading-6 text-[#8f939c]">{step.body}</p>
+                <p className="mt-3 max-w-[28ch] text-[14px] leading-6 text-[#65758b]">{step.body}</p>
               </article>
             </Item>
           ))}

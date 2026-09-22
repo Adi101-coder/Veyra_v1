@@ -15,7 +15,7 @@ const nodes = [
 export function NetworkVisual() {
   return (
     <div className="relative mx-auto -mb-16 mt-6 h-[300px] w-full max-w-[760px] sm:-mb-24 sm:h-[420px] lg:-mb-28 lg:h-[520px]">
-      <div className="absolute inset-x-[10%] top-[20%] h-[62%] rounded-full bg-[radial-gradient(circle,rgba(90,100,120,0.16),transparent_68%)] blur-3xl" />
+      <div className="absolute inset-x-[10%] top-[20%] h-[62%] rounded-full bg-[radial-gradient(circle,rgba(38,91,255,0.16),transparent_68%)] blur-3xl" />
       <svg className="absolute inset-0 h-full w-full opacity-50" viewBox="0 0 760 520" aria-hidden>
         <ellipse cx="380" cy="260" rx="210" ry="78" fill="none" stroke="#3a4048" strokeWidth="0.8" />
         <ellipse

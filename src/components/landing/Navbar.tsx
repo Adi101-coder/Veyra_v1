@@ -54,17 +54,17 @@ export function Navbar() {
 
   return (
     <header
-      className={`nova-navbar-glass sticky top-0 z-50 h-[72px] border-b border-white/10 transition-[background-color] duration-500 ${
-        scrolled ? "nova-navbar-glass-scrolled border-white/12" : ""
+      className={`nova-navbar-glass sticky top-0 z-50 h-[72px] border-b border-[#dce5f1] transition-[background-color] duration-500 ${
+        scrolled ? "nova-navbar-glass-scrolled border-[#dce5f1]" : ""
       }`}
     >
       <div className="mx-auto flex h-full max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
-        <Link href="/" className="flex items-center gap-2.5 text-[#f5f5f5] no-underline">
+        <Link href="/" className="flex items-center gap-2.5 text-[#182d4a] no-underline">
           <BrandMark className="h-7 w-7" />
           <span className="text-[15px] font-medium tracking-[-0.02em]">{siteConfig.name}</span>
         </Link>
 
-        <nav className="hidden items-center gap-9 text-[14px] font-medium text-[#b8b8b8] lg:flex">
+        <nav className="hidden items-center gap-9 text-[14px] font-medium text-[#65758b] lg:flex">
           {links.map((item) => {
             const active = isActive(pathname, item.href);
             return (
@@ -72,8 +72,8 @@ export function Navbar() {
                 key={item.href}
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`relative tracking-[-0.01em] no-underline transition-colors duration-200 hover:text-white ${
-                  active ? "text-white" : ""
+                className={`relative tracking-[-0.01em] no-underline transition-colors duration-200 hover:text-[#265bff] ${
+                  active ? "text-[#182d4a]" : ""
                 }`}
               >
                 {item.label}
@@ -81,7 +81,7 @@ export function Navbar() {
                   <motion.span
                     layoutId="nav-underline"
                     aria-hidden
-                    className="absolute -bottom-2 left-1/2 h-px w-3.5 -translate-x-1/2 rounded-full bg-[#c5c8ce]"
+                    className="absolute -bottom-2 left-1/2 h-px w-3.5 -translate-x-1/2 rounded-full bg-[#265bff]"
                     transition={{ duration: 0.35, ease }}
                   />
                 ) : null}
@@ -96,7 +96,7 @@ export function Navbar() {
               <Link
                 href={item.href}
                 aria-label={item.label}
-                className="block text-[#8a8a8a] transition-colors hover:text-white"
+                className="block text-[#65758b] transition-colors hover:text-[#265bff]"
               >
                 <item.Icon className="h-4 w-4" />
               </Link>
@@ -109,7 +109,7 @@ export function Navbar() {
 
         <button
           type="button"
-          className="text-[#f5f5f5] lg:hidden"
+          className="text-[#182d4a] lg:hidden"
           aria-label="Open menu"
           onClick={() => setOpenForPath(pathname)}
         >
@@ -120,7 +120,7 @@ export function Navbar() {
       <AnimatePresence>
         {mobile ? (
           <motion.div
-            className="fixed inset-0 z-[60] bg-[#050505] lg:hidden"
+            className="fixed inset-0 z-[60] bg-[#f8fbff] lg:hidden"
             initial={reduce ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -143,8 +143,8 @@ export function Navbar() {
                   <Link
                     href={item.href}
                     onClick={() => setOpenForPath(null)}
-                    className={`block border-b border-white/5 py-4 no-underline ${
-                      isActive(pathname, item.href) ? "text-white" : "text-[#cfcfcf]"
+                    className={`block border-b border-[#dce5f1] py-4 no-underline ${
+                      isActive(pathname, item.href) ? "text-[#182d4a]" : "text-[#536780]"
                     }`}
                   >
                     {item.label}

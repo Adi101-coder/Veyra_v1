@@ -16,8 +16,8 @@ export function LandingFaq() {
   return (
     <section id="faq" className="scroll-mt-24 px-5 py-16 sm:px-8 lg:px-12">
       <Reveal className="mx-auto max-w-[800px]">
-        <h2 className="text-[32px] font-light tracking-[-0.04em] text-white">{siteConfig.faqTitle}</h2>
-        <div className="mt-8 divide-y divide-[#121417] border-y border-[#121417]">
+        <h2 className="text-[32px] font-light tracking-[-0.04em] text-[#182d4a]">{siteConfig.faqTitle}</h2>
+        <div className="mt-8 divide-y divide-[#dce5f1] border-y border-[#dce5f1]">
           {faqs.map((item, index) => {
             const isOpen = open === index;
             return (
@@ -26,14 +26,14 @@ export function LandingFaq() {
                   type="button"
                   aria-expanded={isOpen}
                   onClick={() => setOpen(isOpen ? null : index)}
-                  className="flex w-full items-center justify-between gap-4 py-5 text-left text-[16px] text-[#f5f5f5]"
+                  className="flex w-full items-center justify-between gap-4 py-5 text-left text-[16px] text-[#182d4a]"
                 >
                   {item.q}
                   <motion.span
                     aria-hidden
                     animate={{ rotate: isOpen ? 45 : 0 }}
                     transition={{ duration: 0.22, ease }}
-                    className="inline-flex text-[22px] leading-none text-[#7d818a]"
+                    className="inline-flex text-[22px] leading-none text-[#657da0]"
                   >
                     +
                   </motion.span>
@@ -47,7 +47,7 @@ export function LandingFaq() {
                       transition={{ duration: 0.32, ease }}
                       className="overflow-hidden"
                     >
-                      <p className="pb-5 text-[14px] leading-6 text-[#8f939c]">
+                      <p className="pb-5 text-[14px] leading-6 text-[#65758b]">
                         {item.a}
                         {item.link ? (
                           <>

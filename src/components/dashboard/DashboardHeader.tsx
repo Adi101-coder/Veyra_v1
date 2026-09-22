@@ -31,12 +31,12 @@ function NavLinks({ className = "" }: { className?: string }) {
             key={link.href}
             href={link.href}
             className={`relative shrink-0 pb-1 font-serif text-[12px] uppercase tracking-[0.12em] no-underline sm:text-[13px] sm:tracking-[0.16em] ${
-              active ? "text-[#1a1a1a]" : "text-[#8a8a8a] hover:text-[#1a1a1a]"
+              active ? "text-[#265bff]" : "text-[#65758b] hover:text-[#182d4a]"
             }`}
           >
             {link.label}
             {active ? (
-              <span className="absolute inset-x-0 -bottom-px h-px bg-[#1a1a1a]" />
+              <span className="absolute inset-x-0 -bottom-px h-px bg-[#265bff]" />
             ) : null}
           </Link>
         );
@@ -47,12 +47,12 @@ function NavLinks({ className = "" }: { className?: string }) {
 
 export function DashboardHeader() {
   return (
-    <header className="bg-[#f3f0e8]">
+    <header className="bg-[#f8fbff]">
       <Shell className="flex items-center justify-between gap-3 pt-4 pb-3 sm:gap-4 sm:pt-5 sm:pb-4">
         <div className="flex min-w-0 items-baseline gap-8 sm:gap-10 lg:gap-12">
           <Link
             href="/"
-            className="shrink-0 text-[#1a1a1a] no-underline"
+            className="shrink-0 text-[#182d4a] no-underline"
             aria-label="VEYRA home"
           >
             <BrandWordmark className="text-[24px] leading-none sm:text-[32px]" />

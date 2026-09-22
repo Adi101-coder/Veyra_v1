@@ -76,29 +76,29 @@ export function ConnectWalletButton() {
         <button
           type="button"
           onClick={() => setMenu((value) => !value)}
-          className="inline-flex max-w-[11rem] items-center gap-2 truncate rounded-full border border-[#1a1a1a] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:max-w-none sm:px-5 sm:text-[14px]"
+          className="inline-flex max-w-[11rem] items-center gap-2 truncate rounded-full border border-[#265bff] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white sm:max-w-none sm:px-5 sm:text-[14px]"
         >
           <span className="h-1.5 w-1.5 rounded-full bg-[#2f9e6e]" />
           {shortenAddress(address)}
         </button>
         {menu ? (
-          <div className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[rgba(26,26,26,0.12)] bg-white shadow-[0_12px_40px_-20px_rgba(26,26,26,0.45)]">
-            <div className="border-b border-[rgba(26,26,26,0.08)] px-4 py-3">
-              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <div className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[rgba(24,45,74,0.12)] bg-white shadow-[0_12px_40px_-20px_rgba(24,45,74,0.45)]">
+            <div className="border-b border-[rgba(24,45,74,0.08)] px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
                 Connected
               </p>
-              <p className="mt-1 font-serif text-[16px] text-[#1a1a1a]">
+              <p className="mt-1 font-serif text-[16px] text-[#182d4a]">
                 {shortenAddress(address, 5)}
               </p>
-              <p className="mt-0.5 text-[12px] text-[#6e6e6e]">
+              <p className="mt-0.5 text-[12px] text-[#65758b]">
                 {activity.data?.balanceLabel ?? (activity.status === "loading" ? "Reading balance…" : "—")}
               </p>
             </div>
             <div className="max-h-64 overflow-y-auto">
               {activity.status === "error" ? (
-                <p className="px-4 py-3 text-[12px] text-[#c45c6a]">{activity.error}</p>
+                <p className="px-4 py-3 text-[12px] text-[#ad4c62]">{activity.error}</p>
               ) : activity.status === "loading" && !activity.data ? (
-                <p className="px-4 py-3 text-[12px] italic text-[#8a8a8a]">Reading transactions…</p>
+                <p className="px-4 py-3 text-[12px] italic text-[#65758b]">Reading transactions…</p>
               ) : (
                 <TransactionRows
                   compact
@@ -110,13 +110,13 @@ export function ConnectWalletButton() {
             <Link
               href="/activity"
               onClick={() => setMenu(false)}
-              className="block border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-[13px] text-[#1a1a1a] no-underline hover:bg-[#f6f4ef]"
+              className="block border-t border-[rgba(24,45,74,0.08)] px-4 py-2.5 text-[13px] text-[#182d4a] no-underline hover:bg-[#f8fbff]"
             >
               View all activity
             </Link>
             {chain === "evm" ? (
               onRobinhoodChain ? (
-                <p className="border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-[12px] text-[#8a8a8a]">
+                <p className="border-t border-[rgba(24,45,74,0.08)] px-4 py-2.5 text-[12px] text-[#65758b]">
                   Network · {robinhoodChain.name}
                 </p>
               ) : (
@@ -126,17 +126,17 @@ export function ConnectWalletButton() {
                   onClick={async () => {
                     await switchToRobinhoodChain();
                   }}
-                  className="block w-full border-t border-[rgba(26,26,26,0.08)] px-4 py-2.5 text-left text-[13px] text-[#1a1a1a] hover:bg-[#f6f4ef] disabled:opacity-50"
+                  className="block w-full border-t border-[rgba(24,45,74,0.08)] px-4 py-2.5 text-left text-[13px] text-[#182d4a] hover:bg-[#f8fbff] disabled:opacity-50"
                 >
                   {switchingNetwork ? "Switching…" : `Switch to ${robinhoodChain.name}`}
                   {networkChainId != null ? (
-                    <span className="ml-1 text-[11px] text-[#8a8a8a]">(on chain {networkChainId})</span>
+                    <span className="ml-1 text-[11px] text-[#65758b]">(on chain {networkChainId})</span>
                   ) : null}
                 </button>
               )
             ) : null}
             {chain === "evm" && error ? (
-              <p className="px-4 pb-2.5 text-[12px] text-[#c45c6a]">{error}</p>
+              <p className="px-4 pb-2.5 text-[12px] text-[#ad4c62]">{error}</p>
             ) : null}
             <button
               type="button"
@@ -144,7 +144,7 @@ export function ConnectWalletButton() {
                 await navigator.clipboard.writeText(address);
                 setMenu(false);
               }}
-              className="block w-full px-4 py-2.5 text-left text-[13px] text-[#1a1a1a] hover:bg-[#f6f4ef]"
+              className="block w-full px-4 py-2.5 text-left text-[13px] text-[#182d4a] hover:bg-[#f8fbff]"
             >
               Copy address
             </button>
@@ -154,7 +154,7 @@ export function ConnectWalletButton() {
                 await disconnect();
                 setMenu(false);
               }}
-              className="block w-full px-4 py-2.5 text-left text-[13px] text-[#1a1a1a] hover:bg-[#f6f4ef]"
+              className="block w-full px-4 py-2.5 text-left text-[13px] text-[#182d4a] hover:bg-[#f8fbff]"
             >
               Disconnect
             </button>
@@ -172,14 +172,14 @@ export function ConnectWalletButton() {
           clearError();
           setOpen(true);
         }}
-        className="whitespace-nowrap rounded-full border border-[#1a1a1a] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#1a1a1a] transition hover:bg-[#1a1a1a] hover:text-white sm:px-6 sm:text-[14px]"
+        className="whitespace-nowrap rounded-full border border-[#265bff] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white sm:px-6 sm:text-[14px]"
       >
         {connecting ? "Connecting…" : <>Connect<span className="hidden sm:inline"> Wallet</span></>}
       </button>
 
       {open ? (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-4"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#265bff]/35 p-4"
           onClick={() => setOpen(false)}
         >
           <div
@@ -190,7 +190,7 @@ export function ConnectWalletButton() {
           >
             <h2
               id="wallet-modal-title"
-              className="mb-5 text-[22px] font-semibold tracking-[-0.03em] text-[#1a1a1a]"
+              className="mb-5 text-[22px] font-semibold tracking-[-0.03em] text-[#182d4a]"
             >
               Select Wallet
             </h2>
@@ -203,9 +203,9 @@ export function ConnectWalletButton() {
                       type="button"
                       disabled={connecting}
                       onClick={() => pick(option.id)}
-                      className="flex w-full items-center justify-between rounded-[18px] border border-[#e6e6e6] bg-white px-5 py-[13px] text-left transition hover:border-[#d0d0d0] hover:bg-[#fafafa] disabled:opacity-60"
+                      className="flex w-full items-center justify-between rounded-[18px] border border-[#dce5f1] bg-white px-5 py-[13px] text-left transition hover:border-[#dce5f1] hover:bg-[#fafafa] disabled:opacity-60"
                     >
-                      <span className="text-[15px] text-[#4a4a4a]">
+                      <span className="text-[15px] text-[#182d4a]">
                         {busy ? "Connecting…" : option.name}
                       </span>
                       <WalletIcon id={option.id} className="h-8 w-8 shrink-0" />
@@ -214,7 +214,7 @@ export function ConnectWalletButton() {
                 );
               })}
             </ul>
-            {error ? <p className="mt-4 text-[13px] text-[#c45c6a]">{error}</p> : null}
+            {error ? <p className="mt-4 text-[13px] text-[#ad4c62]">{error}</p> : null}
           </div>
         </div>
       ) : null}

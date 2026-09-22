@@ -10,7 +10,7 @@ import { ProposalForm } from "@/components/voting/ProposalForm";
 import { ProposalList } from "@/components/voting/ProposalList";
 import { Countdown } from "@/components/voting/Countdown";
 
-const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]";
+const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]";
 
 /**
  * The daily voting round.
@@ -74,15 +74,15 @@ export function VotingView() {
   const canAct = Boolean(address && hasSession);
 
   return (
-    <div className="bg-[#f4f2ed]">
+    <div className="bg-[#f1f6ff]">
       <Shell className="max-w-3xl pt-8 pb-20">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Daily vote</p>
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#265bff]">Daily vote</p>
         <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="font-serif text-[28px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+            <h1 className="font-serif text-[28px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
               What should Veyra ask?
             </h1>
-            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+            <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               {round
                 ? `Propose a question or back one you want settled. The top ${round.selectionCount} open as Veyra pools when the round closes.`
                 : "Rounds run every 24 hours."}
@@ -92,13 +92,13 @@ export function VotingView() {
         </div>
 
         {error ? (
-          <p className="mt-8 rounded-[18px] border border-[#e0cccc] bg-[#fbf5f5] px-5 py-4 font-mono text-[12px] text-[#a34a4a]">
+          <p className="mt-8 rounded-[18px] border border-[#e0cccc] bg-[#ffeff0] px-5 py-4 font-mono text-[12px] text-[#ad4c62]">
             {error}
           </p>
         ) : null}
 
         {!error && !round ? (
-          <p className="mt-8 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-5 text-[14px] leading-6 text-[#6e6e6e]">
+          <p className="mt-8 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-5 text-[14px] leading-6 text-[#65758b]">
             No round is open right now. The next one opens within a minute or two —
             this page will pick it up on its own.
           </p>
@@ -106,35 +106,35 @@ export function VotingView() {
 
         {round ? (
           <>
-            <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-[22px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-4">
+            <div className="mt-8 flex flex-wrap items-center gap-x-8 gap-y-3 rounded-[22px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4">
               <div>
                 <p className={labelClass}>Proposals</p>
-                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
                   {proposals.length}
                 </p>
               </div>
               <div>
                 <p className={labelClass}>Pools opening</p>
-                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
                   {round.selectionCount}
                 </p>
               </div>
               <div>
                 <p className={labelClass}>Your votes left</p>
-                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#1a1a1a]">
+                <p className="mt-1 font-serif text-[20px] tracking-[-0.03em] text-[#182d4a]">
                   {canAct ? `${votesRemaining ?? round.votesPerWallet} / ${round.votesPerWallet}` : "—"}
                 </p>
               </div>
             </div>
 
             {notice ? (
-              <p className="mt-4 font-mono text-[11px] text-[#6a6a6a]">{notice}</p>
+              <p className="mt-4 font-mono text-[11px] text-[#65758b]">{notice}</p>
             ) : null}
 
             {canAct ? (
               <ProposalForm onSubmit={onPropose} />
             ) : (
-              <p className="mt-6 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-4 text-[14px] leading-6 text-[#6e6e6e]">
+              <p className="mt-6 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4 text-[14px] leading-6 text-[#65758b]">
                 Connect a wallet to propose a question or vote. One signature, no gas.
               </p>
             )}
@@ -150,7 +150,7 @@ export function VotingView() {
           </>
         ) : null}
 
-        <p className="mt-10 font-mono text-[11px] leading-relaxed text-[#8a8a8a]">
+        <p className="mt-10 font-mono text-[11px] leading-relaxed text-[#65758b]">
           When a round closes the result is frozen — later votes cannot change it. Ties
           go to whichever question was proposed first.{" "}
           <Link href="/markets" className="underline">

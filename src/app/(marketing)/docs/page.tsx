@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function DocsPage() {
   return (
-    <Suspense fallback={<div className="min-h-[60vh] bg-[#050505]" />}>
+    <Suspense fallback={<div className="min-h-[60vh] bg-[#f8fbff]" />}>
       <DocsView />
     </Suspense>
   );

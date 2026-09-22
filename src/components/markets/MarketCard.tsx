@@ -33,13 +33,13 @@ export function MarketCard({ market }: { market: Market }) {
           <img
             src={market.image}
             alt=""
-            className="h-10 w-10 shrink-0 rounded-[12px] border border-black/[0.06] object-cover"
+            className="h-10 w-10 shrink-0 rounded-[12px] border border-[#dce5f1] object-cover"
           />
         ) : (
           <Identicon seed={market.id} className="h-10 w-10 shrink-0 rounded-[12px]" />
         )}
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#8b887f]">
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#65758b]">
             <span className="inline-flex items-center gap-1.5">
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
               {categoryLabel(market.category)}
@@ -52,7 +52,7 @@ export function MarketCard({ market }: { market: Market }) {
             ) : null}
             <span>{market.resolvesIn} left</span>
           </p>
-          <h3 className="mt-1 line-clamp-2 min-h-[2.6em] text-[15px] leading-snug font-semibold tracking-[-0.025em] text-[#171717]">
+          <h3 className="mt-1 line-clamp-2 min-h-[2.6em] text-[15px] leading-snug font-semibold tracking-[-0.025em] text-[#182d4a]">
             {market.title}
           </h3>
         </div>
@@ -63,7 +63,7 @@ export function MarketCard({ market }: { market: Market }) {
       </div>
 
       {stats.length ? (
-        <p className="mt-auto border-t border-black/[0.05] pt-3 text-[11px] text-[#8b887f]">
+        <p className="mt-auto border-t border-black/[0.05] pt-3 text-[11px] text-[#65758b]">
           {stats.join(" · ")}
         </p>
       ) : null}

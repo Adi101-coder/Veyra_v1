@@ -14,7 +14,7 @@ export function ComingSoonLink({ label, href, external }: ComingSoonLinkProps) {
   const isComingSoon = href.startsWith("#") && href !== "#faq";
 
   const className =
-    "inline-block py-1 font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-[#7b7b7b] no-underline transition duration-160 sm:text-[11px]";
+    "inline-block py-1 font-mono text-[10px] font-medium uppercase tracking-[0.28em] text-[#65758b] no-underline transition duration-160 sm:text-[11px]";
   const hoverClass = "hover:translate-x-0.5 hover:text-accent";
 
   if (isComingSoon) {

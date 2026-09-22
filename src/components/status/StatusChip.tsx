@@ -69,10 +69,10 @@ export function statusLabel(kind: StatusKind, status: string | null | undefined)
 }
 
 const TONE_CLASS: Record<StatusTone, string> = {
-  neutral: "bg-[rgba(26,26,26,0.06)] text-[#8a8a8a]",
-  pending: "bg-[#f3ead8] text-[#8a6a32]",
-  success: "bg-[#e7f4ec] text-[#2f9e6e]",
-  danger: "bg-[rgba(196,92,106,0.12)] text-[#c45c6a]",
+  neutral: "bg-[rgba(24,45,74,0.06)] text-[#65758b]",
+  pending: "bg-[#e8f0ff] text-[#1847d8]",
+  success: "bg-[#e8f0ff] text-[#2f9e6e]",
+  danger: "bg-[rgba(196,92,106,0.12)] text-[#ad4c62]",
 };
 
 export function StatusChip({

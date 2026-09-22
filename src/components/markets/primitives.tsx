@@ -25,7 +25,7 @@ function inkFor(color: string) {
   const g = Number.parseInt(raw.slice(2, 4), 16);
   const b = Number.parseInt(raw.slice(4, 6), 16);
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 165 ? "#141414" : "#ffffff";
+  return lum > 165 ? "#182d4a" : "#ffffff";
 }
 
 function FlagDot({ code, className = "" }: { code: string; className?: string }) {
@@ -85,7 +85,7 @@ export function CrestMark({
         <Photo
           src={crest.image}
           alt=""
-          className="h-full w-full rounded-full ring-1 ring-black/10"
+          className="h-full w-full rounded-full ring-1 ring-[#dce5f1]/10"
         />
         {crest.flag ? <FlagDot code={crest.flag} /> : null}
       </span>
@@ -146,14 +146,14 @@ export function AssetMark({ id, className = "h-9 w-9" }: { id: string; className
   const marks: Record<string, { bg: string; fg: string; label: string }> = {
     btc: { bg: "#f7931a", fg: "#fff", label: "₿" },
     spy: { bg: "#0f2c5c", fg: "#fff", label: "SP" },
-    tsla: { bg: "#111111", fg: "#e82127", label: "T" },
+    tsla: { bg: "#102951", fg: "#e82127", label: "T" },
     amzn: { bg: "#232f3e", fg: "#ff9900", label: "a" },
     eth: { bg: "#627eea", fg: "#fff", label: "Ξ" },
     ost: { bg: "#111827", fg: "#f59e0b", label: "Ø" },
-    spx: { bg: "#0b0b0b", fg: "#fff", label: "X" },
+    spx: { bg: "#102951", fg: "#fff", label: "X" },
     fed: { bg: "#1e3a5f", fg: "#fff", label: "F" },
   };
-  const mark = marks[id] ?? { bg: "#1a1a1a", fg: "#fff", label: id.slice(0, 1).toUpperCase() };
+  const mark = marks[id] ?? { bg: "#182d4a", fg: "#fff", label: id.slice(0, 1).toUpperCase() };
   return (
     <span
       className={`inline-flex shrink-0 items-center justify-center rounded-xl text-[13px] font-semibold tracking-[-0.04em] ${className}`}
@@ -168,7 +168,7 @@ export function AssetMark({ id, className = "h-9 w-9" }: { id: string; className
 export function LeagueMark({ id }: { id: string }) {
   if (id === "ucl") {
     return (
-      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#0b1c4a] text-[9px] font-semibold tracking-wide text-[#c9a227]">
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#0b1c4a] text-[9px] font-semibold tracking-wide text-[#265bff]">
         ★
       </span>
     );
@@ -188,7 +188,7 @@ export function LeagueMark({ id }: { id: string }) {
     );
   }
   return (
-    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#1a1a1a] text-[9px] font-semibold text-white">
+    <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-[#265bff] text-[9px] font-semibold text-white">
       {id.slice(0, 1).toUpperCase()}
     </span>
   );
@@ -197,7 +197,7 @@ export function LeagueMark({ id }: { id: string }) {
 /** Marks sections rendered from the static sample feed (not live data). */
 export function SampleBadge() {
   return (
-    <span className="rounded-full bg-[#ebe8e0] px-2 py-0.5 text-[10px] font-medium tracking-[0.12em] text-[#8b887f] uppercase">
+    <span className="rounded-full bg-[#f8fbff] px-2 py-0.5 text-[10px] font-medium tracking-[0.12em] text-[#65758b] uppercase">
       Sample data
     </span>
   );
@@ -216,12 +216,12 @@ export function SectionHead({
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-      <h2 className="flex items-center gap-2 text-[18px] font-semibold tracking-[-0.03em] text-[#171717] sm:text-[20px]">
+      <h2 className="flex items-center gap-2 text-[18px] font-semibold tracking-[-0.03em] text-[#182d4a] sm:text-[20px]">
         {title}
         {typeof count === "number" ? (
-          <span className="text-[13px] font-medium tracking-normal text-[#8b887f]">({count})</span>
+          <span className="text-[13px] font-medium tracking-normal text-[#65758b]">({count})</span>
         ) : null}
-        <ChevronRight className="h-4 w-4 text-[#c4c0b6]" />
+        <ChevronRight className="h-4 w-4 text-[#dce5f1]" />
         {sample ? <SampleBadge /> : null}
       </h2>
       {extra}
@@ -239,7 +239,7 @@ export function PillTabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-0.5 overflow-x-auto text-[13px] font-medium text-[#8b887f]">
+    <div className="flex items-center gap-0.5 overflow-x-auto text-[13px] font-medium text-[#65758b]">
       {tabs.map((tab) => {
         const active = tab.id === value;
         return (
@@ -248,7 +248,7 @@ export function PillTabs<T extends string>({
             type="button"
             onClick={() => onChange(tab.id)}
             className={`shrink-0 rounded-full px-3 py-1.5 transition ${
-              active ? "bg-white text-[#171717] shadow-[0_1px_2px_rgba(16,16,16,0.08)]" : "hover:text-[#171717]"
+              active ? "bg-white text-[#182d4a] shadow-[0_1px_2px_rgba(24,45,74,0.08)]" : "hover:text-[#182d4a]"
             }`}
           >
             {tab.label}
@@ -286,7 +286,7 @@ export function RailButtons({
         type="button"
         aria-label="Scroll left"
         onClick={onPrev}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white text-[#525252] transition hover:border-black/20 hover:text-[#171717]"
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#dce5f1] bg-white text-[#65758b] transition hover:border-[#bed2f4] hover:text-[#182d4a]"
       >
         <ChevronLeft className="h-4 w-4" />
       </button>
@@ -294,7 +294,7 @@ export function RailButtons({
         type="button"
         aria-label="Scroll right"
         onClick={onNext}
-        className="flex h-8 w-8 items-center justify-center rounded-full border border-black/[0.08] bg-white text-[#525252] transition hover:border-black/20 hover:text-[#171717]"
+        className="flex h-8 w-8 items-center justify-center rounded-full border border-[#dce5f1] bg-white text-[#65758b] transition hover:border-[#bed2f4] hover:text-[#182d4a]"
       >
         <ChevronRight className="h-4 w-4" />
       </button>
@@ -332,4 +332,4 @@ export function RailTrack({
 }
 
 export const cardClass =
-  "rounded-[18px] border border-black/[0.07] bg-white shadow-[0_1px_2px_rgba(16,16,16,0.04)] transition duration-200 hover:border-black/[0.12] hover:shadow-[0_14px_36px_-20px_rgba(16,16,16,0.35)]";
+  "rounded-[18px] border border-[#dce5f1] bg-white shadow-[0_1px_2px_rgba(24,45,74,0.04)] transition duration-200 hover:border-black/[0.12] hover:shadow-[0_14px_36px_-20px_rgba(24,45,74,0.35)]";

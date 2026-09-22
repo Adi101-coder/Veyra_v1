@@ -24,10 +24,10 @@ export function PremiumButton({
   const reduce = useReducedMotion();
   const look =
     variant === "light"
-      ? "bg-[linear-gradient(180deg,#f7f7f7,#c8ccd2)] text-[#111] shadow-[0_10px_30px_-18px_rgba(255,255,255,0.45)]"
+      ? "bg-[#265bff] text-white shadow-[inset_0_1px_0_#ffffff33,0_3px_0_#174393]"
       : variant === "dark"
-        ? "border border-white/10 bg-[linear-gradient(180deg,#2a2c31,#16171b)] text-white"
-        : "border border-white/15 bg-transparent text-white";
+        ? "border border-[#bed2f4] bg-white text-[#182d4a]"
+        : "border border-[#dce5f1] bg-transparent text-[#182d4a]";
   const dims = size === "sm" ? "h-9 px-4 text-[13px]" : "h-12 px-7 text-[15px]";
 
   return (

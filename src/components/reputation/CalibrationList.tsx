@@ -8,11 +8,11 @@ function clampPct(value: number) {
 export function CalibrationList({ bins }: { bins: ReputationBin[] }) {
   const rows = bins.filter((bin) => bin.sampleCount > 0);
   if (!rows.length) {
-    return <p className="px-1 py-6 text-[13px] italic text-[#8a8a8a]">No calibration samples yet.</p>;
+    return <p className="px-1 py-6 text-[13px] italic text-[#65758b]">No calibration samples yet.</p>;
   }
 
   return (
-    <ul className="divide-y divide-[rgba(26,26,26,0.08)]">
+    <ul className="divide-y divide-[rgba(24,45,74,0.08)]">
       {rows.map((bin) => {
         const range = bin.bin.replace("-", "–");
         const realized = pct(bin.empiricalAccuracy, 0);
@@ -20,29 +20,29 @@ export function CalibrationList({ bins }: { bins: ReputationBin[] }) {
         return (
           <li key={bin.bin} className="px-1 py-3 sm:px-2">
             <div className="flex items-baseline justify-between gap-4">
-              <p className="font-serif text-[14px] text-[#1a1a1a]">{range}% stated</p>
-              <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+              <p className="font-serif text-[14px] text-[#182d4a]">{range}% stated</p>
+              <p className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
                 {bin.sampleCount} {bin.sampleCount === 1 ? "sample" : "samples"}
               </p>
             </div>
             <div
               role="img"
               aria-label={`${range}% bin: realized accuracy ${realized}, mean stated confidence ${stated}, ${bin.sampleCount} samples`}
-              className="relative mt-2 h-[6px] rounded-full bg-[rgba(26,26,26,0.08)]"
+              className="relative mt-2 h-[6px] rounded-full bg-[rgba(24,45,74,0.08)]"
             >
               <div
-                className="absolute inset-y-0 left-0 rounded-full bg-[#1a1a1a]"
+                className="absolute inset-y-0 left-0 rounded-full bg-[#265bff]"
                 style={{ width: `${clampPct(bin.empiricalAccuracy * 100)}%` }}
               />
               <div
-                className="absolute -top-[3px] -bottom-[3px] w-[2px] -translate-x-1/2 bg-[#c45c5c]"
+                className="absolute -top-[3px] -bottom-[3px] w-[2px] -translate-x-1/2 bg-[#ad4c62]"
                 style={{ left: `${clampPct(bin.meanConfidencePct)}%` }}
               />
             </div>
-            <p className="mt-1.5 font-mono text-[11px] text-[#8a8a8a]">
+            <p className="mt-1.5 font-mono text-[11px] text-[#65758b]">
               Realized {realized}
-              <span className="text-[#c8c4bc]"> · </span>
-              <span className="text-[#c45c5c]">Stated {stated}</span>
+              <span className="text-[#dce5f1]"> · </span>
+              <span className="text-[#ad4c62]">Stated {stated}</span>
             </p>
           </li>
         );

@@ -19,10 +19,10 @@ export function Countdown({ closesAt }: { closesAt: string }) {
 
   return (
     <div className="text-right">
-      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+      <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
         {remaining > 0 ? "Closes in" : "Closing"}
       </p>
-      <p className="mt-1 font-mono text-[22px] tracking-[-0.02em] text-[#1a1a1a] tabular-nums">
+      <p className="mt-1 font-mono text-[22px] tracking-[-0.02em] text-[#182d4a] tabular-nums">
         {remaining > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : "—"}
       </p>
     </div>

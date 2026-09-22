@@ -20,12 +20,12 @@ export function WalletSignatureNote({
   let content: React.ReactNode = null;
   if (signingIn) {
     content = (
-      <p className="text-[12px] leading-5 text-[#8a6a32]">
+      <p className="text-[12px] leading-5 text-[#1847d8]">
         Confirm the signature in your wallet — verifies ownership, no gas or funds.
       </p>
     );
   } else if (!hasSession) {
-    content = <p className="text-[11px] leading-5 text-[#8a8a8a]">{hint}</p>;
+    content = <p className="text-[11px] leading-5 text-[#65758b]">{hint}</p>;
   }
 
   return (

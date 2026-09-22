@@ -13,7 +13,7 @@ export function Rules() {
           <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.28em] text-accent sm:mb-3 sm:text-[11px]">
             {siteConfig.how.kicker}
           </p>
-          <h2 className="mb-3 max-w-[960px] font-serif text-2xl leading-[1.15] tracking-[-0.02em] text-[#1a1a1a] sm:mb-4 sm:text-[32px]">
+          <h2 className="mb-3 max-w-[960px] font-serif text-2xl leading-[1.15] tracking-[-0.02em] text-[#182d4a] sm:mb-4 sm:text-[32px]">
             {siteConfig.how.title}
           </h2>
         </Reveal>
@@ -24,8 +24,8 @@ export function Rules() {
               <motion.article
                 whileHover={{ y: -4 }}
                 transition={{ duration: 0.28, ease: [0.22, 0.61, 0.36, 1] }}
-                className="group relative flex h-full flex-col items-center bg-white/80 px-[1.1rem] pt-[1.1rem] pb-5 text-center shadow-[0_6px_18px_-14px_rgba(26,26,26,0.14)] sm:px-5 sm:pt-5"
-                style={{ border: "1px solid rgba(26, 26, 26, 0.12)" }}
+                className="group relative flex h-full flex-col items-center bg-white/80 px-[1.1rem] pt-[1.1rem] pb-5 text-center shadow-[0_6px_18px_-14px_rgba(24,45,74,0.14)] sm:px-5 sm:pt-5"
+                style={{ border: "1px solid rgba(24, 45, 74, 0.12)" }}
               >
                 <span
                   aria-hidden
@@ -36,7 +36,7 @@ export function Rules() {
                     aria-hidden
                     className="h-[5px] w-[5px] rounded-full bg-accent opacity-90"
                   />
-                  <p className="font-mono text-[9.5px] uppercase tracking-[0.32em] text-[#6e6e6e] sm:text-[10.5px]">
+                  <p className="font-mono text-[9.5px] uppercase tracking-[0.32em] text-[#65758b] sm:text-[10.5px]">
                     {siteConfig.how.itemLabel} {rule.n}
                   </p>
                 </div>
@@ -49,10 +49,10 @@ export function Rules() {
                     className="relative max-h-full w-auto object-contain"
                   />
                 </div>
-                <h3 className="text-[15px] font-medium tracking-[-0.03em] text-[#1a1a1a] sm:text-base">
+                <h3 className="text-[15px] font-medium tracking-[-0.03em] text-[#182d4a] sm:text-base">
                   {rule.title}
                 </h3>
-                <p className="mt-3 text-[13px] leading-[1.45] font-light text-[#6e6e6e]">
+                <p className="mt-3 text-[13px] leading-[1.45] font-light text-[#65758b]">
                   {rule.body}
                 </p>
               </motion.article>

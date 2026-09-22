@@ -80,7 +80,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
 
   if (!market) {
     return (
-      <div className="rounded-[22px] border border-[rgba(23,22,20,0.1)] bg-[#fffcf7] px-6 py-16 text-center text-sm text-[#7a746a]">
+      <div className="rounded-[22px] border border-[rgba(24,45,74,0.1)] bg-[#ffffff] px-6 py-16 text-center text-sm text-[#65758b]">
         No markets in this view.
       </div>
     );
@@ -109,7 +109,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
 
   return (
     <article
-      className="overflow-hidden rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fffcf7] shadow-[0_18px_50px_-32px_rgba(23,22,20,0.55)]"
+      className="overflow-hidden rounded-[22px] border border-[rgba(24,45,74,0.08)] bg-[#ffffff] shadow-[0_18px_50px_-32px_rgba(24,45,74,0.55)]"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       onFocusCapture={() => setPaused(true)}
@@ -130,7 +130,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
       >
         <div className="px-4 py-5 sm:px-7 sm:py-6">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#7a746a]">
+            <p className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               {market.image ? (
                 <span className="relative h-5 w-5 overflow-hidden rounded-md">
                   <Image src={market.image} alt="" fill sizes="20px" className="object-cover" />
@@ -140,26 +140,26 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               )}
               {categoryLabel(market.category)}
               {market.live ? (
-                <span className="rounded-full bg-[#e8f3ec] px-2 py-0.5 text-[#2c7a55]">Live</span>
+                <span className="rounded-full bg-[#e8f0ff] px-2 py-0.5 text-[#2c7a55]">Live</span>
               ) : (
-                <span className="text-[#b0a99c]">#{market.tag}</span>
+                <span className="text-[#83a6e9]">#{market.tag}</span>
               )}
             </p>
             <Link
               href={`/contract/${market.id}`}
-              className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a] no-underline transition hover:text-[#1a1a1a]"
+              className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#65758b] no-underline transition hover:text-[#182d4a]"
             >
               View contract
             </Link>
           </div>
 
-          <h2 className="max-w-[36rem] font-serif text-[26px] leading-[1.2] tracking-[-0.03em] text-[#171614] sm:text-[30px]">
+          <h2 className="max-w-[36rem] font-serif text-[26px] leading-[1.2] tracking-[-0.03em] text-[#182d4a] sm:text-[30px]">
             <Link href={`/contract/${market.id}`} className="text-inherit no-underline">
               {market.title}
             </Link>
           </h2>
 
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[rgba(23,22,20,0.08)] bg-[rgba(23,22,20,0.08)] sm:grid-cols-4">
+          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-[rgba(24,45,74,0.08)] bg-[rgba(24,45,74,0.08)] sm:grid-cols-4">
             {(market.live
               ? [
                   ["Volume", market.volumeUsd ? formatUsdCompact(market.volumeUsd) : market.staked],
@@ -177,11 +177,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                   ["Resolves in", market.resolvesIn],
                 ]
             ).map(([label, value]) => (
-              <div key={label} className="bg-[#fffcf7] px-4 py-3">
-                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a847a]">
+              <div key={label} className="bg-[#ffffff] px-4 py-3">
+                <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
                   {label}
                 </p>
-                <p className="mt-1 text-[15px] font-medium tracking-[-0.02em] text-[#171614]">
+                <p className="mt-1 text-[15px] font-medium tracking-[-0.02em] text-[#182d4a]">
                   {value}
                 </p>
               </div>
@@ -191,7 +191,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           {table ? (
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.18em] text-[#8a8a8a]">
+              <p className="mb-2 font-mono text-[9px] uppercase tracking-[0.18em] text-[#65758b]">
                 Choose a table
               </p>
               <div className="flex flex-wrap items-center gap-2">
@@ -204,13 +204,13 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                       onClick={() => setTableId(option.id)}
                       className={`rounded-full border px-3 py-1.5 text-[12px] transition ${
                         active
-                          ? "border-[#1a1a1a] bg-white text-[#1a1a1a]"
-                          : "border-transparent bg-white/70 text-[#5a5a5a] hover:border-[rgba(26,26,26,0.16)]"
+                          ? "border-[#265bff] bg-white text-[#182d4a]"
+                          : "border-transparent bg-white/70 text-[#536780] hover:border-[rgba(24,45,74,0.16)]"
                       }`}
                     >
                       {option.stake}
                       {option.full ? (
-                        <span className="ml-1.5 text-[10px] uppercase tracking-[0.12em] text-[#9a9a9a]">
+                        <span className="ml-1.5 text-[10px] uppercase tracking-[0.12em] text-[#657da0]">
                           full
                         </span>
                       ) : null}
@@ -219,20 +219,20 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 })}
                 <Link
                   href={`/contract/${market.id}`}
-                  className="rounded-full border border-dashed border-[rgba(26,26,26,0.2)] px-3 py-1.5 text-[12px] text-[#6e6e6e] no-underline"
+                  className="rounded-full border border-dashed border-[rgba(24,45,74,0.2)] px-3 py-1.5 text-[12px] text-[#65758b] no-underline"
                 >
                   + New table
                 </Link>
               </div>
             </div>
-            <p className="font-mono text-[10px] text-[#8a8a8a]">
+            <p className="font-mono text-[10px] text-[#65758b]">
               stake {table.stake} · against {land.wallet}
             </p>
           </div>
           ) : null}
 
           {outcomes.length > 2 ? (
-            <div className="mt-5 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-4 py-4">
+            <div className="mt-5 rounded-xl border border-[rgba(24,45,74,0.08)] bg-white px-4 py-4">
               <OutcomeOdds outcomes={outcomes} limit={5} />
             </div>
           ) : (
@@ -240,28 +240,28 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             {market.seats.map((seat) => (
               <div
                 key={seat.id}
-                className="flex items-center gap-3 rounded-xl border border-[rgba(26,26,26,0.08)] bg-white px-3 py-3"
+                className="flex items-center gap-3 rounded-xl border border-[rgba(24,45,74,0.08)] bg-white px-3 py-3"
               >
                 <Identicon seed={seat.avatar} className="h-9 w-9 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
                     Seat {market.live ? seat.wallet : seat.id}
                   </p>
-                  <p className="truncate font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="truncate font-mono text-[12px] text-[#182d4a]">
                     {seat.wallet}
                   </p>
                 </div>
                 <div className="text-right">
                   <p
                     className={`text-[18px] font-medium tracking-[-0.03em] ${
-                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#b4454a]"
+                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#ad4c62]"
                     }`}
                   >
                     {seat.chance}¢
                   </p>
                   <p
                     className={`font-mono text-[9px] uppercase tracking-[0.14em] ${
-                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#b4454a]"
+                      seat.side === "lands" ? "text-[#2c7a55]" : "text-[#ad4c62]"
                     }`}
                   >
                     {seat.wallet}
@@ -273,7 +273,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           )}
 
           <div className="mt-6">
-            <div className="mb-2 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+            <div className="mb-2 flex items-center justify-between font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
               <span>Certainty on this table</span>
               <span>
                 {conviction
@@ -281,9 +281,9 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                   : "No bets yet"}
               </span>
             </div>
-            <div className="relative h-2 overflow-hidden rounded-full bg-[#efe8dc]">
+            <div className="relative h-2 overflow-hidden rounded-full bg-[#e8f0ff]">
               <span
-                className="absolute inset-y-0 left-0 bg-[#b4454a]/25"
+                className="absolute inset-y-0 left-0 bg-[#ad4c62]/25"
                 style={{ width: `${miss?.chance ?? 50}%` }}
               />
               <span
@@ -293,7 +293,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               {conviction?.conviction != null ? (
                 <>
               <span
-                className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#b4454a] ring-2 ring-white"
+                className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full bg-[#ad4c62] ring-2 ring-white"
                 style={{
                   left: `${Math.max(2, Math.min(96, 100 - conviction.conviction))}%`,
                 }}
@@ -308,10 +308,10 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
               ) : null}
             </div>
             <div className="mt-2 flex justify-between font-mono text-[9px] uppercase tracking-[0.14em]">
-              <span className="text-[#b4454a]">{missLabel} · {miss?.chance ?? 0}¢</span>
+              <span className="text-[#ad4c62]">{missLabel} · {miss?.chance ?? 0}¢</span>
               <span className="text-[#2c7a55]">{landLabel} · {land.chance}¢</span>
             </div>
-            <p className="mt-2 text-[11px] text-[#9a9a9a]">
+            <p className="mt-2 text-[11px] text-[#657da0]">
               {conviction?.conviction != null
                 ? `Veyra ${Math.round(conviction.conviction)}% · Polymarket ${conviction.polymarketProbability == null ? "—" : `${Math.round(conviction.polymarketProbability)}%`} · ${formatDivergence(conviction.divergence)} divergence`
                 : "Each dot matches a player's avatar"}
@@ -319,56 +319,56 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
           </div>
         </div>
 
-        <aside className="border-t border-[rgba(23,22,20,0.08)] bg-[#efebe3] px-5 py-5 lg:border-t-0 lg:border-l">
+        <aside className="border-t border-[rgba(24,45,74,0.08)] bg-[#f1f6ff] px-5 py-5 lg:border-t-0 lg:border-l">
           {table ? (
             <>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-serif text-[22px] tracking-[-0.02em] text-[#1a1a1a]">
+              <p className="font-serif text-[22px] tracking-[-0.02em] text-[#182d4a]">
                 {bothTaken ? "Table full" : "Seat open"}
               </p>
-              <p className="mt-1 text-[13px] text-[#6e6e6e]">
+              <p className="mt-1 text-[13px] text-[#65758b]">
                 Stake {table.stake} · {bothTaken ? "both seats taken" : "a seat is still open"}
               </p>
             </div>
-            <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#6e6e6e]">
+            <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
               Spectating
             </span>
           </div>
 
-          <div className="mt-6 flex items-center justify-between border-b border-[rgba(26,26,26,0.08)] pb-4">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <div className="mt-6 flex items-center justify-between border-b border-[rgba(24,45,74,0.08)] pb-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               On the table
             </p>
             <p className="text-[15px] font-medium">{(stake * 2).toFixed(2)} {unit}</p>
           </div>
 
-          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
             Projected swing
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-[#e8f3ec] px-3 py-3">
+            <div className="rounded-xl bg-[#e8f0ff] px-3 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#2c7a55]">
                 If {landLabel}
               </p>
-              <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
+              <p className="mt-2 truncate font-mono text-[10px] text-[#536780]">
                 {land.wallet}
               </p>
               <p className="text-[12px] text-[#2c7a55]">+{landSwing} {unit}</p>
-              <p className="mt-1 truncate font-mono text-[10px] text-[#5a5a5a]">
+              <p className="mt-1 truncate font-mono text-[10px] text-[#536780]">
                 {miss?.wallet}
               </p>
-              <p className="text-[12px] text-[#b4454a]">-{landSwing} {unit}</p>
+              <p className="text-[12px] text-[#ad4c62]">-{landSwing} {unit}</p>
             </div>
-            <div className="rounded-xl bg-[#f6e9ea] px-3 py-3">
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#b4454a]">
+            <div className="rounded-xl bg-[#ffeff0] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#ad4c62]">
                 If {missLabel}
               </p>
-              <p className="mt-2 truncate font-mono text-[10px] text-[#5a5a5a]">
+              <p className="mt-2 truncate font-mono text-[10px] text-[#536780]">
                 {land.wallet}
               </p>
-              <p className="text-[12px] text-[#b4454a]">-{missSwing} {unit}</p>
-              <p className="mt-1 truncate font-mono text-[10px] text-[#5a5a5a]">
+              <p className="text-[12px] text-[#ad4c62]">-{missSwing} {unit}</p>
+              <p className="mt-1 truncate font-mono text-[10px] text-[#536780]">
                 {miss?.wallet}
               </p>
               <p className="text-[12px] text-[#2c7a55]">+{missSwing} {unit}</p>
@@ -377,11 +377,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
 
           <Link
             href={`/contract/${market.id}`}
-            className="mt-5 block w-full rounded-full bg-[#171614] px-4 py-3 text-center text-[14px] font-medium text-[#f4f1ea] no-underline transition hover:bg-black"
+            className="mt-5 block w-full rounded-full bg-[#265bff] px-4 py-3 text-center text-[14px] font-medium text-[#f8fbff] no-underline transition hover:bg-[#1847d8]"
           >
             Watch this wager →
           </Link>
-          <p className="mt-3 text-[12px] leading-5 text-[#8a8a8a]">
+          <p className="mt-3 text-[12px] leading-5 text-[#65758b]">
             Pick another table above, or follow this one to the finish.
           </p>
             </>
@@ -389,20 +389,20 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             <>
           <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="font-serif text-[22px] tracking-[-0.02em] text-[#1a1a1a]">
+              <p className="font-serif text-[22px] tracking-[-0.02em] text-[#182d4a]">
                 Market odds
               </p>
-              <p className="mt-1 text-[13px] text-[#6e6e6e]">
+              <p className="mt-1 text-[13px] text-[#65758b]">
                 {landLabel} {land.chance}¢ · {missLabel} {miss?.chance ?? 0}¢
               </p>
             </div>
-            <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#6e6e6e]">
+            <span className="rounded-full bg-white px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
               Spectating
             </span>
           </div>
 
-          <div className="mt-6 flex items-center justify-between border-b border-[rgba(26,26,26,0.08)] pb-4">
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <div className="mt-6 flex items-center justify-between border-b border-[rgba(24,45,74,0.08)] pb-4">
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
               Volume
             </p>
             <p className="text-[15px] font-medium">
@@ -410,11 +410,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             </p>
           </div>
 
-          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+          <p className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
             Market depth
           </p>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            <div className="rounded-xl bg-[#e8f3ec] px-3 py-3">
+            <div className="rounded-xl bg-[#e8f0ff] px-3 py-3">
               <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#2c7a55]">
                 24h volume
               </p>
@@ -422,11 +422,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                 {market.volume24hrUsd ? formatUsdCompact(market.volume24hrUsd) : "—"}
               </p>
             </div>
-            <div className="rounded-xl bg-[#f6e9ea] px-3 py-3">
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#b4454a]">
+            <div className="rounded-xl bg-[#ffeff0] px-3 py-3">
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#ad4c62]">
                 Liquidity
               </p>
-              <p className="mt-2 text-[12px] text-[#b4454a]">
+              <p className="mt-2 text-[12px] text-[#ad4c62]">
                 {market.liquidityUsd ? formatUsdCompact(market.liquidityUsd) : "—"}
               </p>
             </div>
@@ -434,11 +434,11 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
 
           <Link
             href={`/contract/${market.id}`}
-            className="mt-5 block w-full rounded-full bg-[#171614] px-4 py-3 text-center text-[14px] font-medium text-[#f4f1ea] no-underline transition hover:bg-black"
+            className="mt-5 block w-full rounded-full bg-[#265bff] px-4 py-3 text-center text-[14px] font-medium text-[#f8fbff] no-underline transition hover:bg-[#1847d8]"
           >
             Open contract →
           </Link>
-          <p className="mt-3 text-[12px] leading-5 text-[#8a8a8a]">
+          <p className="mt-3 text-[12px] leading-5 text-[#65758b]">
             Prices from Polymarket. Stakes on Veyra are in USD.
           </p>
             </>
@@ -449,12 +449,12 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
       </div>
 
       {slides.length > 1 ? (
-        <div className="flex items-center justify-end gap-3 border-t border-[rgba(26,26,26,0.06)] px-5 py-3">
+        <div className="flex items-center justify-end gap-3 border-t border-[rgba(24,45,74,0.06)] px-5 py-3">
           <button
             type="button"
             aria-label="Previous market"
             onClick={() => go(-1)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(26,26,26,0.12)] text-sm text-[#5a5a5a]"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(24,45,74,0.12)] text-sm text-[#536780]"
           >
             ‹
           </button>
@@ -470,7 +470,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
                   setTableId(slides[i].tableOptions[0]?.id ?? "");
                 }}
                 className={`h-1.5 rounded-full transition-all duration-500 ${
-                  i === index ? "w-5 bg-[#1a1a1a]" : "w-1.5 bg-[#c8c4bc]"
+                  i === index ? "w-5 bg-[#265bff]" : "w-1.5 bg-[#dce5f1]"
                 }`}
               />
             ))}
@@ -479,7 +479,7 @@ export function FeaturedMarket({ markets }: FeaturedMarketProps) {
             type="button"
             aria-label="Next market"
             onClick={() => go(1)}
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(26,26,26,0.12)] text-sm text-[#5a5a5a]"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[rgba(24,45,74,0.12)] text-sm text-[#536780]"
           >
             ›
           </button>

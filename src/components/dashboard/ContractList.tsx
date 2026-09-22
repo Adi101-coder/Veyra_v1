@@ -21,7 +21,7 @@ type ContractListProps = {
 function Thumb({ market }: { market: Market }) {
   if (market.image) {
     return (
-      <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-[rgba(23,22,20,0.08)] bg-white">
+      <span className="relative h-11 w-11 shrink-0 overflow-hidden rounded-2xl border border-[rgba(24,45,74,0.08)] bg-white">
         <Image src={market.image} alt="" fill sizes="44px" className="object-cover" />
       </span>
     );
@@ -34,10 +34,10 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
     <section className="pt-10 pb-16 sm:pt-14">
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-serif text-[26px] tracking-[-0.03em] text-[#171614] sm:text-[30px]">
+          <h2 className="font-serif text-[26px] tracking-[-0.03em] text-[#182d4a] sm:text-[30px]">
             More Contracts
           </h2>
-          <p className="mt-1 text-[13px] text-[#7a746a]">
+          <p className="mt-1 text-[13px] text-[#65758b]">
             {live ? "Live odds and volume from Polymarket." : "Demo catalog, paper only. Live feed unavailable."}
           </p>
         </div>
@@ -47,7 +47,7 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Search markets..."
-            className="w-full rounded-full border border-[rgba(23,22,20,0.1)] bg-[#fffcf7] px-4 py-2.5 text-sm text-[#171614] outline-none placeholder:text-[#b0a99c] focus:border-[#171614]"
+            className="w-full rounded-full border border-[rgba(24,45,74,0.1)] bg-[#ffffff] px-4 py-2.5 text-sm text-[#182d4a] outline-none placeholder:text-[#83a6e9] focus:border-[#265bff]"
           />
         </label>
       </div>
@@ -62,14 +62,14 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
             <li key={market.id}>
               <Link
                 href={`/contract/${market.id}`}
-                className="group flex flex-col gap-4 rounded-[20px] border border-[rgba(23,22,20,0.08)] bg-[#fffcf7] px-4 py-4 no-underline shadow-[0_10px_30px_-24px_rgba(23,22,20,0.45)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(23,22,20,0.16)] hover:bg-white sm:flex-row sm:items-center sm:gap-5 sm:px-5"
+                className="group flex flex-col gap-4 rounded-[20px] border border-[rgba(24,45,74,0.08)] bg-[#ffffff] px-4 py-4 no-underline shadow-[0_10px_30px_-24px_rgba(24,45,74,0.45)] transition duration-200 hover:-translate-y-0.5 hover:border-[rgba(24,45,74,0.16)] hover:bg-white sm:flex-row sm:items-center sm:gap-5 sm:px-5"
               >
                 <Thumb market={market} />
                 <div className="min-w-0 flex-1">
-                  <h3 className="font-serif text-[17px] leading-snug tracking-[-0.03em] text-[#171614] sm:text-[18px]">
+                  <h3 className="font-serif text-[17px] leading-snug tracking-[-0.03em] text-[#182d4a] sm:text-[18px]">
                     {market.title}
                   </h3>
-                  <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a847a]">
+                  <p className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
                     <span className="inline-flex items-center gap-1.5">
                       <span className="h-1.5 w-1.5 rounded-full" style={{ background: color }} />
                       {categoryLabel(market.category)}
@@ -91,22 +91,22 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
                         {lead?.label ?? "Yes"} {lead?.chance ?? 0}¢
                       </span>
                       {outcomes.length > 2 ? (
-                        <span className="shrink-0 text-[#8a847a]">+{outcomes.length - 1}</span>
+                        <span className="shrink-0 text-[#65758b]">+{outcomes.length - 1}</span>
                       ) : (
-                        <span className="truncate text-right text-[#b4454a]">
+                        <span className="truncate text-right text-[#ad4c62]">
                           {trail?.label ?? "No"} {trail?.chance ?? 0}¢
                         </span>
                       )}
                     </div>
-                    <div className="flex h-1.5 overflow-hidden rounded-full bg-[#efe8dc]">
+                    <div className="flex h-1.5 overflow-hidden rounded-full bg-[#e8f0ff]">
                       <span className="h-full bg-[#2c7a55]" style={{ width: `${lead?.chance ?? 50}%` }} />
                       <span
-                        className="h-full bg-[#b4454a]"
+                        className="h-full bg-[#ad4c62]"
                         style={{ width: `${Math.max(0, 100 - (lead?.chance ?? 50))}%` }}
                       />
                     </div>
                   </div>
-                  <p className="w-[4.5rem] text-right font-mono text-[11px] text-[#7a746a]">
+                  <p className="w-[4.5rem] text-right font-mono text-[11px] text-[#65758b]">
                     {market.resolvesIn} left
                   </p>
                 </div>
@@ -117,7 +117,7 @@ export function ContractList({ markets, query, onQuery, live }: ContractListProp
       </ul>
 
       {markets.length === 0 ? (
-        <p className="rounded-[20px] border border-dashed border-[rgba(23,22,20,0.14)] bg-[#fffcf7] px-6 py-12 text-center text-sm text-[#7a746a]">
+        <p className="rounded-[20px] border border-dashed border-[rgba(24,45,74,0.14)] bg-[#ffffff] px-6 py-12 text-center text-sm text-[#65758b]">
           No contracts match that filter.
         </p>
       ) : null}

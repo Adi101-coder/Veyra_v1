@@ -23,7 +23,7 @@ export function Identicon({ seed, className = "h-8 w-8" }: IdenticonProps) {
   if (seed === "open") {
     return (
       <span
-        className={`inline-flex items-center justify-center rounded-full border border-dashed border-[rgba(26,26,26,0.2)] bg-white text-[10px] text-[#9a9a9a] ${className}`}
+        className={`inline-flex items-center justify-center rounded-full border border-dashed border-[rgba(24,45,74,0.2)] bg-white text-[10px] text-[#657da0] ${className}`}
       >
         +
       </span>

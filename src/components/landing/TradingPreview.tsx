@@ -50,16 +50,16 @@ export function TradingPreview() {
 
   return (
     <section className="px-4 py-8 sm:px-6 lg:px-10">
-      <Reveal className="landing-card mx-auto grid max-w-[1280px] overflow-hidden rounded-[28px] border border-[#121417] bg-[#0b0c0e] lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]">
-        <div className="border-b border-[#121417] p-6 sm:p-8 lg:border-r lg:border-b-0">
+      <Reveal className="landing-card mx-auto grid max-w-[1280px] overflow-hidden rounded-[28px] border border-[#dce5f1] bg-[#ffffff] lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.7fr)]">
+        <div className="border-b border-[#dce5f1] p-6 sm:p-8 lg:border-r lg:border-b-0">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-[22px] font-medium tracking-[-0.03em] text-white sm:text-[26px]">
+              <h2 className="text-[22px] font-medium tracking-[-0.03em] text-[#182d4a] sm:text-[26px]">
                 {market.title}
               </h2>
-              <p className="mt-1 text-[12px] tracking-[0.16em] text-[#7d818a] uppercase">Trading</p>
+              <p className="mt-1 text-[12px] tracking-[0.16em] text-[#657da0] uppercase">Trading</p>
             </div>
-            <p className="text-[40px] font-light tracking-[-0.04em] text-white">{yes}%</p>
+            <p className="text-[40px] font-light tracking-[-0.04em] text-[#182d4a]">{yes}%</p>
           </div>
           <div className="mt-6 flex gap-2">
             {RANGES.map((item) => (
@@ -68,7 +68,7 @@ export function TradingPreview() {
                 type="button"
                 onClick={() => setRange(item)}
                 className={`relative rounded-full px-3 py-1 text-[12px] transition ${
-                  range === item ? "text-white" : "text-[#7d818a] hover:text-white"
+                  range === item ? "text-[#182d4a]" : "text-[#657da0] hover:text-[#265bff]"
                 }`}
               >
                 {range === item ? (
@@ -85,8 +85,8 @@ export function TradingPreview() {
           <svg viewBox="0 0 640 240" className="mt-4 h-[220px] w-full" aria-hidden>
             <defs>
               <linearGradient id="trade-fill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#d5d7db" stopOpacity="0.18" />
-                <stop offset="100%" stopColor="#d5d7db" stopOpacity="0" />
+                <stop offset="0%" stopColor="#dce5f1" stopOpacity="0.18" />
+                <stop offset="100%" stopColor="#dce5f1" stopOpacity="0" />
               </linearGradient>
             </defs>
             {Array.from({ length: 5 }, (_, i) => (
@@ -96,7 +96,7 @@ export function TradingPreview() {
                 x2="640"
                 y1={40 + i * 40}
                 y2={40 + i * 40}
-                stroke="#1a1c20"
+                stroke="#182d4a"
                 strokeWidth="1"
               />
             ))}
@@ -112,7 +112,7 @@ export function TradingPreview() {
               key={range}
               d={d}
               fill="none"
-              stroke="#d5d7db"
+              stroke="#dce5f1"
               strokeWidth="1.6"
               initial={reduce ? false : { pathLength: 0, opacity: 0.4 }}
               animate={{ pathLength: 1, opacity: 1 }}
@@ -122,25 +122,25 @@ export function TradingPreview() {
         </div>
         <div className="flex flex-col justify-center gap-4 p-6 sm:p-8">
           <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl border border-[#121417] bg-white/5 p-4">
-              <p className="text-[11px] tracking-[0.16em] text-[#8a8e96] uppercase">Yes</p>
-              <p className="mt-2 text-[28px] font-light text-white">{yes}¢</p>
+            <div className="rounded-2xl border border-[#dce5f1] bg-[#e8f0ff] p-4">
+              <p className="text-[11px] tracking-[0.16em] text-[#65758b] uppercase">Yes</p>
+              <p className="mt-2 text-[28px] font-light text-[#182d4a]">{yes}¢</p>
             </div>
-            <div className="rounded-2xl border border-[#121417] bg-white/5 p-4">
-              <p className="text-[11px] tracking-[0.16em] text-[#8a8e96] uppercase">No</p>
-              <p className="mt-2 text-[28px] font-light text-[#b0b4bc]">{no}¢</p>
+            <div className="rounded-2xl border border-[#dce5f1] bg-[#e8f0ff] p-4">
+              <p className="text-[11px] tracking-[0.16em] text-[#65758b] uppercase">No</p>
+              <p className="mt-2 text-[28px] font-light text-[#83a6e9]">{no}¢</p>
             </div>
           </div>
           <label className="block">
-            <span className="text-[11px] tracking-[0.16em] text-[#8a8e96] uppercase">Amount</span>
+            <span className="text-[11px] tracking-[0.16em] text-[#65758b] uppercase">Amount</span>
             <span className="relative mt-2 block">
-              <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-[#8a8e96]">
+              <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-[#65758b]">
                 $
               </span>
               <input
                 value={amount}
                 onChange={(event) => setAmount(event.target.value.replace(/[^\d.]/g, ""))}
-                className="w-full rounded-2xl border border-[#121417] bg-[#08090b] py-3 pr-4 pl-8 text-[18px] text-white outline-none transition focus:border-white/25"
+                className="w-full rounded-2xl border border-[#dce5f1] bg-[#f8fbff] py-3 pr-4 pl-8 text-[18px] text-[#182d4a] outline-none transition focus:border-white/25"
               />
             </span>
           </label>

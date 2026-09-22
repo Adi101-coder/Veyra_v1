@@ -13,7 +13,7 @@ import {
 } from "@/lib/betting-api";
 import { shortenAddress } from "@/lib/solana-wallet";
 
-const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]";
+const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]";
 
 /** Base units are integers in the asset's own scale; format for display only. */
 function formatBase(balanceBase: string, decimals: number) {
@@ -69,13 +69,13 @@ export function TreasuryView() {
 
   if (!address || !hasSession) {
     return (
-      <div className="bg-[#f4f2ed]">
+      <div className="bg-[#f1f6ff]">
         <Shell className="max-w-3xl pt-10 pb-20">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Custody</p>
-          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Custody</p>
+          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
             Balances.
           </h1>
-          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
             Connect a wallet to see what it has deposited and what it holds on Polymarket.
           </p>
         </Shell>
@@ -84,20 +84,20 @@ export function TreasuryView() {
   }
 
   return (
-    <div className="bg-[#f4f2ed]">
+    <div className="bg-[#f1f6ff]">
       <Shell className="max-w-3xl pt-8 pb-20">
-        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#c45c5c]">Custody</p>
-        <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#1a1a1a] sm:text-[42px]">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Custody</p>
+        <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
           Balances.
         </h1>
-        <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#6e6e6e] italic">
+        <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
           Deposits sit in a watch-only wallet Veyra cannot spend from. Venue exposure is
           tracked separately, and the two are never mixed.
         </p>
-        <p className="mt-2 font-mono text-[11px] text-[#9a9a9a]">{shortenAddress(address, 6)}</p>
+        <p className="mt-2 font-mono text-[11px] text-[#657da0]">{shortenAddress(address, 6)}</p>
 
         {error ? (
-          <p className="mt-8 rounded-[18px] border border-[#e0cccc] bg-[#fbf5f5] px-5 py-4 font-mono text-[12px] text-[#a34a4a]">
+          <p className="mt-8 rounded-[18px] border border-[#e0cccc] bg-[#ffeff0] px-5 py-4 font-mono text-[12px] text-[#ad4c62]">
             {error}
           </p>
         ) : null}
@@ -109,19 +109,19 @@ export function TreasuryView() {
               {balances.map((balance) => (
                 <li
                   key={balance.asset}
-                  className="flex items-center justify-between rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-4"
+                  className="flex items-center justify-between rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4"
                 >
-                  <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#1a1a1a]">
+                  <span className="font-mono text-[12px] uppercase tracking-[0.12em] text-[#182d4a]">
                     {balance.asset}
                   </span>
-                  <span className="font-serif text-[20px] tracking-[-0.02em] text-[#1a1a1a] tabular-nums">
+                  <span className="font-serif text-[20px] tracking-[-0.02em] text-[#182d4a] tabular-nums">
                     {formatBase(balance.balanceBase, balance.decimals)}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(26,26,26,0.16)] px-5 py-6 text-[14px] text-[#8a8a8a]">
+            <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(24,45,74,0.16)] px-5 py-6 text-[14px] text-[#65758b]">
               No deposits yet. Deposits are credited once the transfer confirms on-chain.
             </p>
           )}
@@ -129,7 +129,7 @@ export function TreasuryView() {
 
         <section className="mt-10">
           <p className={labelClass}>Withdraw USDC</p>
-          <p className="mt-2 max-w-[34rem] text-[13px] leading-5 text-[#8a8a8a]">
+          <p className="mt-2 max-w-[34rem] text-[13px] leading-5 text-[#65758b]">
             Funds are held immediately. An operator sends USDC from a wallet this
             server does not control.
           </p>
@@ -162,30 +162,30 @@ export function TreasuryView() {
               value={dest}
               onChange={(event) => setDest(event.target.value)}
               placeholder="Destination 0x…"
-              className="h-11 flex-1 rounded-[14px] border border-[rgba(26,26,26,0.08)] bg-white px-4 text-[13px] outline-none"
+              className="h-11 flex-1 rounded-[14px] border border-[rgba(24,45,74,0.08)] bg-white px-4 text-[13px] outline-none"
             />
             <input
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               placeholder="Amount"
-              className="h-11 w-full rounded-[14px] border border-[rgba(26,26,26,0.08)] bg-white px-4 text-[13px] outline-none sm:w-28"
+              className="h-11 w-full rounded-[14px] border border-[rgba(24,45,74,0.08)] bg-white px-4 text-[13px] outline-none sm:w-28"
             />
             <button
               type="submit"
               disabled={withdrawing}
-              className="h-11 rounded-[14px] bg-[#171717] px-4 text-[13px] font-medium text-white disabled:opacity-50"
+              className="h-11 rounded-[14px] bg-[#265bff] px-4 text-[13px] font-medium text-white disabled:opacity-50"
             >
               {withdrawing ? "Sending…" : "Request"}
             </button>
           </form>
-          {withdrawNote ? <p className="mt-2 font-mono text-[12px] text-[#6e6e6e]">{withdrawNote}</p> : null}
+          {withdrawNote ? <p className="mt-2 font-mono text-[12px] text-[#65758b]">{withdrawNote}</p> : null}
         </section>
 
         <section className="mt-10">
           <div className="flex items-end justify-between gap-4">
             <p className={labelClass}>Polymarket exposure</p>
             {exposure ? (
-              <p className="font-serif text-[20px] tracking-[-0.02em] text-[#1a1a1a] tabular-nums">
+              <p className="font-serif text-[20px] tracking-[-0.02em] text-[#182d4a] tabular-nums">
                 {usdFromMicros(exposure.totalNotionalMicros)}
               </p>
             ) : null}
@@ -195,22 +195,22 @@ export function TreasuryView() {
               {exposure.positions.map((position) => (
                 <li
                   key={position.predictionId}
-                  className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(26,26,26,0.08)] bg-white px-5 py-4"
+                  className="flex items-center justify-between gap-4 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-serif text-[16px] text-[#1a1a1a]">{position.marketId}</p>
-                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#9a9a9a]">
+                    <p className="truncate font-serif text-[16px] text-[#182d4a]">{position.marketId}</p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#657da0]">
                       {position.outcome} · {position.status}
                     </p>
                   </div>
-                  <span className="shrink-0 font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a] tabular-nums">
+                  <span className="shrink-0 font-serif text-[18px] tracking-[-0.02em] text-[#182d4a] tabular-nums">
                     {usdFromMicros(position.notionalMicros)}
                   </span>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(26,26,26,0.16)] px-5 py-6 text-[14px] text-[#8a8a8a]">
+            <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(24,45,74,0.16)] px-5 py-6 text-[14px] text-[#65758b]">
               Nothing held. Only filled positions count — an order that never filled is
               not exposure.
             </p>

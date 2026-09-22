@@ -48,14 +48,14 @@ function Clause({
 }) {
   return (
     <div>
-      <p className="flex items-baseline font-serif text-[22px] leading-none tracking-[-0.03em] text-[#1a1a1a]">
+      <p className="flex items-baseline font-serif text-[22px] leading-none tracking-[-0.03em] text-[#182d4a]">
         <SectionMark />
         {n}
       </p>
-      <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+      <p className="mt-1.5 font-mono text-[9px] uppercase tracking-[0.16em] text-[#65758b]">
         {label}
       </p>
-      <p className="mt-2 max-w-[7.5rem] text-[12px] leading-4 italic text-[#9a9a9a]">{prompt}</p>
+      <p className="mt-2 max-w-[7.5rem] text-[12px] leading-4 italic text-[#657da0]">{prompt}</p>
     </div>
   );
 }
@@ -185,19 +185,19 @@ export function ContractView({ market }: { market: Market }) {
   };
 
   return (
-    <div className="bg-[#eceae4]">
+    <div className="bg-[#f8fbff]">
       <Shell className="pt-4 pb-16 sm:pt-6">
         <div className="mb-5 flex items-center justify-between gap-4">
-          <p className="flex items-center gap-2 font-serif text-[13px] tracking-[0.01em] text-[#8a8a8a]">
-            <Link href="/dashboard" className="text-[#5a5a5a] no-underline hover:text-[#1a1a1a]">
+          <p className="flex items-center gap-2 font-serif text-[13px] tracking-[0.01em] text-[#65758b]">
+            <Link href="/dashboard" className="text-[#536780] no-underline hover:text-[#182d4a]">
               ← Dashboard
             </Link>
             <span>/</span>
-            <span className="text-[#1a1a1a]">Contract</span>
+            <span className="text-[#182d4a]">Contract</span>
           </p>
           <Link
             href="/dashboard"
-            className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#8a8a8a] no-underline hover:text-[#1a1a1a]"
+            className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#65758b] no-underline hover:text-[#182d4a]"
           >
             Close ×
           </Link>
@@ -205,30 +205,30 @@ export function ContractView({ market }: { market: Market }) {
 
         <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
           <div className="flex min-w-0 flex-col gap-4">
-            <section className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-6 sm:px-8 sm:py-7">
+            <section className="rounded-[22px] border border-[rgba(24,45,74,0.06)] bg-[#ffffff] px-5 py-6 sm:px-8 sm:py-7">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <p className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[#8a8a8a]">
-                  <span className="inline-flex items-center gap-1.5 text-[#c4a46a]">
-                    <span className="h-1.5 w-1.5 rounded-full bg-[#c4a46a]" />
+                <p className="flex flex-wrap items-center gap-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[#65758b]">
+                  <span className="inline-flex items-center gap-1.5 text-[#265bff]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#265bff]" />
                     Contract
                   </span>
                   <span>Finalized</span>
                 </p>
                 <div className="flex items-center gap-2">
-                  <span className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e]">
+                  <span className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
                     Public
                   </span>
                   <button
                     type="button"
                     onClick={share}
-                    className="rounded-full border border-[rgba(26,26,26,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#6e6e6e] hover:text-[#1a1a1a]"
+                    className="rounded-full border border-[rgba(24,45,74,0.12)] bg-white px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b] hover:text-[#182d4a]"
                   >
                     {copied ? "Copied" : "‹ Share"}
                   </button>
                 </div>
               </div>
 
-              <h1 className="mt-5 max-w-[36rem] font-serif text-[30px] leading-[1.15] tracking-[-0.03em] text-[#1a1a1a] sm:text-[36px]">
+              <h1 className="mt-5 max-w-[36rem] font-serif text-[30px] leading-[1.15] tracking-[-0.03em] text-[#182d4a] sm:text-[36px]">
                 {market.title}
               </h1>
 
@@ -238,27 +238,27 @@ export function ContractView({ market }: { market: Market }) {
                 <div className="flex items-center gap-2.5">
                   <Identicon seed={market.id} className="h-8 w-8" />
                   <div>
-                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                       Source
                     </p>
-                    <p className="min-w-0 break-words font-mono text-[12px] text-[#1a1a1a]">
+                    <p className="min-w-0 break-words font-mono text-[12px] text-[#182d4a]">
                       {sourceLabel}
                     </p>
                   </div>
                 </div>
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Condition
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="mt-1 font-mono text-[12px] text-[#182d4a]">
                     {conditionLabel}
                   </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Liquidity
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">{liquidityLabel}</p>
+                  <p className="mt-1 font-mono text-[12px] text-[#182d4a]">{liquidityLabel}</p>
                 </div>
               </div>
 
@@ -267,26 +267,26 @@ export function ContractView({ market }: { market: Market }) {
                 title={convictionStale ? "Live updates paused — showing last value" : undefined}
               >
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Conviction
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="mt-1 font-mono text-[12px] text-[#182d4a]">
                     {formatConvictionPct(conviction?.conviction ?? null)}
                   </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     {conviction?.polymarketSource === "resolved" ? "Polymarket (resolved)" : "Polymarket"}
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="mt-1 font-mono text-[12px] text-[#182d4a]">
                     {formatConvictionPct(conviction?.polymarketProbability ?? null)}
                   </p>
                 </div>
                 <div>
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Divergence
                   </p>
-                  <p className="mt-1 font-mono text-[12px] text-[#1a1a1a]">
+                  <p className="mt-1 font-mono text-[12px] text-[#182d4a]">
                     {formatDivergence(conviction?.divergence ?? null)}
                   </p>
                 </div>
@@ -295,25 +295,25 @@ export function ContractView({ market }: { market: Market }) {
                 <ConvictionBreakdown conviction={conviction} stale={convictionStale} />
               ) : null}
               {convictionTrailLabel(conviction?.trail ?? []) ? (
-                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+                <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
                   {convictionTrailLabel(conviction?.trail ?? [])}
                 </p>
               ) : null}
 
-              <div className="mt-8 grid gap-6 border-t border-[rgba(26,26,26,0.06)] pt-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
+              <div className="mt-8 grid gap-6 border-t border-[rgba(24,45,74,0.06)] pt-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
                 <Clause n="01" label="Terms" prompt="How does this resolve?" />
-                <p className="self-center text-[14px] italic text-[#8a8a8a]">No terms attached.</p>
+                <p className="self-center text-[14px] italic text-[#65758b]">No terms attached.</p>
               </div>
 
               <div className="mt-6 grid gap-6 sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-x-6">
                 <Clause n="02" label="Resolution" prompt="When is it judged?" />
                 <div className="self-center">
-                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                  <p className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                     Resolves by
                   </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-2 font-serif text-[18px] tracking-[-0.02em] text-[#1a1a1a] sm:text-[20px]">
+                  <p className="mt-1 flex flex-wrap items-center gap-2 font-serif text-[18px] tracking-[-0.02em] text-[#182d4a] sm:text-[20px]">
                     {formatResolvesBy(market.resolvesAt)}
-                    <span className="rounded-full border border-[rgba(196,164,106,0.45)] bg-[#f3ead8] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a6a32]">
+                    <span className="rounded-full border border-[rgba(38,91,255,0.45)] bg-[#e8f0ff] px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-[#1847d8]">
                       T-{market.resolvesIn.replace(/left/i, "").trim()}
                     </span>
                   </p>
@@ -323,11 +323,11 @@ export function ContractView({ market }: { market: Market }) {
 
             {market.source === "polymarket" ? <VenueActivity marketId={market.id} /> : null}
 
-            <section className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-5 sm:px-7 sm:py-6">
+            <section className="rounded-[22px] border border-[rgba(24,45,74,0.06)] bg-[#ffffff] px-5 py-5 sm:px-7 sm:py-6">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#1a1a1a]">
+                <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#182d4a]">
                   Wagers{" "}
-                  <span className="text-[#8a8a8a]">{visible.length}</span>
+                  <span className="text-[#65758b]">{visible.length}</span>
                 </p>
                 <div className="flex items-center gap-2">
                   <button
@@ -335,8 +335,8 @@ export function ContractView({ market }: { market: Market }) {
                     onClick={() => setHideExpired((value) => !value)}
                     className={`rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] ${
                       hideExpired
-                        ? "border-[#1a1a1a] bg-[#1a1a1a] text-white"
-                        : "border-[rgba(26,26,26,0.12)] bg-white text-[#6e6e6e]"
+                        ? "border-[#265bff] bg-[#265bff] text-white"
+                        : "border-[rgba(24,45,74,0.12)] bg-white text-[#65758b]"
                     }`}
                   >
                     Hide expired
@@ -346,8 +346,8 @@ export function ContractView({ market }: { market: Market }) {
                     onClick={() => setHideResolved((value) => !value)}
                     className={`rounded-full border px-3 py-1 font-mono text-[10px] uppercase tracking-[0.14em] ${
                       hideResolved
-                        ? "border-[#1a1a1a] bg-[#1a1a1a] text-white"
-                        : "border-[rgba(26,26,26,0.12)] bg-white text-[#6e6e6e]"
+                        ? "border-[#265bff] bg-[#265bff] text-white"
+                        : "border-[rgba(24,45,74,0.12)] bg-white text-[#65758b]"
                     }`}
                   >
                     Hide resolved
@@ -358,7 +358,7 @@ export function ContractView({ market }: { market: Market }) {
               <div className="scroll-x-pane">
                 <table className="w-full min-w-[720px] border-collapse text-left">
                   <thead>
-                    <tr className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#9a9a9a]">
+                    <tr className="font-mono text-[9px] uppercase tracking-[0.16em] text-[#657da0]">
                       <th className="pb-3 font-normal">Seat</th>
                       <th className="pb-3 font-normal">Belief</th>
                       <th className="pb-3 font-normal">Stake ↓</th>
@@ -377,7 +377,7 @@ export function ContractView({ market }: { market: Market }) {
                   </tbody>
                 </table>
                 {visible.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-[#8a8a8a]">
+                  <p className="py-8 text-center text-sm text-[#65758b]">
                     {loadingRows
                       ? "Loading positions…"
                       : rowsError
@@ -448,17 +448,17 @@ function ConvictionBreakdown({ conviction, stale }: { conviction: MarketConvicti
   const hasCapital = sides.some((side) => side.capitalCommitted > 0);
   return (
     <div className={`mt-4 ${stale ? "opacity-50" : ""}`}>
-      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#8a8a8a]">
+      <p className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#65758b]">
         {conviction.participants} {conviction.participants === 1 ? "participant" : "participants"} · $
         {conviction.totalCapitalUsd} filled
       </p>
       {hasCapital ? (
         <div
-          className="mt-2 flex h-1 w-full overflow-hidden rounded-full bg-[rgba(26,26,26,0.06)]"
+          className="mt-2 flex h-1 w-full overflow-hidden rounded-full bg-[rgba(24,45,74,0.06)]"
           aria-hidden="true"
         >
           <span className="h-full bg-[#2f9e6e]" style={{ flexGrow: Math.max(0, conviction.outcomes.YES.capitalCommitted), flexBasis: 0 }} />
-          <span className="h-full bg-[#c45c6a]" style={{ flexGrow: Math.max(0, conviction.outcomes.NO.capitalCommitted), flexBasis: 0 }} />
+          <span className="h-full bg-[#ad4c62]" style={{ flexGrow: Math.max(0, conviction.outcomes.NO.capitalCommitted), flexBasis: 0 }} />
         </div>
       ) : null}
       <div className="mt-3 grid grid-cols-2 gap-4">
@@ -466,15 +466,15 @@ function ConvictionBreakdown({ conviction, stale }: { conviction: MarketConvicti
           <div key={side.outcome} className="min-w-0">
             <p
               className={`font-mono text-[9px] uppercase tracking-[0.16em] ${
-                side.outcome === "YES" ? "text-[#2f9e6e]" : "text-[#c45c6a]"
+                side.outcome === "YES" ? "text-[#2f9e6e]" : "text-[#ad4c62]"
               }`}
             >
               {side.outcome}
             </p>
-            <p className="mt-1 font-mono text-[11px] leading-5 text-[#1a1a1a]">
+            <p className="mt-1 font-mono text-[11px] leading-5 text-[#182d4a]">
               {side.participants} · {formatUsd2(side.capitalCommitted)} filled
             </p>
-            <p className="font-mono text-[10px] leading-4 text-[#8a8a8a]">
+            <p className="font-mono text-[10px] leading-4 text-[#65758b]">
               avg {formatConvictionPct(side.averageConfidence)} · weighted{" "}
               {formatConvictionPct(side.capitalWeightedConfidence)}
             </p>
@@ -493,7 +493,7 @@ function WagerTableRow({ marketId, row }: { marketId: string; row: WagerRow }) {
 
   return (
     <tr
-      className={`border-t border-[rgba(26,26,26,0.06)] ${
+      className={`border-t border-[rgba(24,45,74,0.06)] ${
         href ? "cursor-pointer hover:bg-white/70" : ""
       }`}
       onClick={() => {
@@ -506,27 +506,27 @@ function WagerTableRow({ marketId, row }: { marketId: string; row: WagerRow }) {
           className="h-8 w-8"
         />
       </td>
-      <td className="py-3 pr-3 font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">
+      <td className="py-3 pr-3 font-serif text-[22px] tracking-[-0.03em] text-[#182d4a]">
         {row.left.belief}%
       </td>
-      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.stake}</td>
-      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.gold}</td>
-      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">
+      <td className="py-3 pr-3 font-mono text-[12px] text-[#536780]">{row.stake}</td>
+      <td className="py-3 pr-3 font-mono text-[12px] text-[#536780]">{row.gold}</td>
+      <td className="py-3 pr-3 font-mono text-[12px] text-[#536780]">
         {isKnownStatus("order", row.lockBy) ? <StatusChip kind="order" status={row.lockBy} /> : row.lockBy}
       </td>
-      <td className="py-3 pr-3 font-mono text-[12px] text-[#5a5a5a]">{row.mechanism}</td>
+      <td className="py-3 pr-3 font-mono text-[12px] text-[#536780]">{row.mechanism}</td>
       <td className="py-3 pr-3">
         <span
           className={`rounded-full px-2 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] ${
             row.resolution === "PENDING"
-              ? "bg-[#f3ead8] text-[#8a6a32]"
-              : "bg-[#e7f4ec] text-[#2f9e6e]"
+              ? "bg-[#e8f0ff] text-[#1847d8]"
+              : "bg-[#e8f0ff] text-[#2f9e6e]"
           }`}
         >
           {row.resolution}
         </span>
       </td>
-      <td className="py-3 pr-3 text-right font-serif text-[22px] tracking-[-0.03em] text-[#1a1a1a]">
+      <td className="py-3 pr-3 text-right font-serif text-[22px] tracking-[-0.03em] text-[#182d4a]">
         {row.right.belief}%
       </td>
       <td className="py-3">
@@ -661,14 +661,14 @@ function CreateWagerCard({
     quote !== null && (quote.book.source === "synthetic" || quote.market.source !== "polymarket");
 
   return (
-    <aside className="rounded-[22px] border border-[rgba(26,26,26,0.06)] bg-[#f7f5f0] px-5 py-6 lg:sticky lg:top-6">
-      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#1a1a1a]">
+    <aside className="rounded-[22px] border border-[rgba(24,45,74,0.06)] bg-[#ffffff] px-5 py-6 lg:sticky lg:top-6">
+      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-[#182d4a]">
         Create a wager
       </p>
 
       <div className="mt-6">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Outcome</p>
-        <div className="mt-3 flex rounded-full border border-[rgba(26,26,26,0.1)] bg-white p-1">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">Outcome</p>
+        <div className="mt-3 flex rounded-full border border-[rgba(24,45,74,0.1)] bg-white p-1">
           {(["YES", "NO"] as const).map((value) => (
             <button
               key={value}
@@ -678,7 +678,7 @@ function CreateWagerCard({
                 setMessage(null);
               }}
               className={`flex-1 rounded-full px-4 py-2 font-mono text-[11px] uppercase tracking-[0.14em] ${
-                outcome === value ? "bg-[#1a1a1a] text-white" : "text-[#5a5a5a]"
+                outcome === value ? "bg-[#265bff] text-white" : "text-[#536780]"
               }`}
             >
               {value}
@@ -688,16 +688,16 @@ function CreateWagerCard({
       </div>
 
       <div className="mt-8">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
           Confidence
         </p>
-        <p className="mt-2 text-[13px] leading-5 text-[#6e6e6e]">
+        <p className="mt-2 text-[13px] leading-5 text-[#65758b]">
           Your probability that {outcome} is the correct resolution. The engine only sizes a
           position when you have edge versus the live book.
         </p>
-        <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
+        <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#182d4a]">
           {confidence}
-          <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
+          <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#65758b]">
             %
           </span>
         </p>
@@ -711,7 +711,7 @@ function CreateWagerCard({
             setConfidence(Number(event.target.value));
             setMessage(null);
           }}
-          className="mt-5 w-full accent-[#1a1a1a]"
+          className="mt-5 w-full accent-[#182d4a]"
         />
         <div className="mt-4 flex flex-wrap gap-2">
           {CONFIDENCE_PRESETS.map((value) => {
@@ -726,8 +726,8 @@ function CreateWagerCard({
                 }}
                 className={`rounded-full border px-3 py-1.5 font-mono text-[11px] ${
                   active
-                    ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
-                    : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
+                    ? "border-[#265bff] bg-[#e8f0ff] text-[#182d4a]"
+                    : "border-[rgba(24,45,74,0.1)] bg-white text-[#536780]"
                 }`}
               >
                 {value}%
@@ -738,13 +738,13 @@ function CreateWagerCard({
       </div>
 
       <div className="mt-8">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">Stake</p>
-        <p className="mt-2 text-[13px] leading-5 text-[#6e6e6e]">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">Stake</p>
+        <p className="mt-2 text-[13px] leading-5 text-[#65758b]">
           Maximum USDC you are willing to deploy. Kelly sizing may use less than this.
         </p>
-        <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#1a1a1a]">
+        <p className="mt-5 font-serif text-[44px] leading-none tracking-[-0.04em] text-[#182d4a]">
           {stake.toFixed(2)}{" "}
-          <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#8a8a8a]">
+          <span className="align-middle font-mono text-[12px] tracking-[0.12em] text-[#65758b]">
             USDC
           </span>
         </p>
@@ -758,7 +758,7 @@ function CreateWagerCard({
             setStake(Number(event.target.value));
             setMessage(null);
           }}
-          className="mt-5 w-full accent-[#1a1a1a]"
+          className="mt-5 w-full accent-[#182d4a]"
         />
         <div className="mt-4 flex flex-wrap gap-2">
           {STAKE_PRESETS.map((value) => {
@@ -773,8 +773,8 @@ function CreateWagerCard({
                 }}
                 className={`rounded-full border px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.08em] ${
                   active
-                    ? "border-[#c4a46a] bg-[#f3ead8] text-[#1a1a1a]"
-                    : "border-[rgba(26,26,26,0.1)] bg-white text-[#5a5a5a]"
+                    ? "border-[#265bff] bg-[#e8f0ff] text-[#182d4a]"
+                    : "border-[rgba(24,45,74,0.1)] bg-white text-[#536780]"
                 }`}
               >
                 ${value}
@@ -784,19 +784,19 @@ function CreateWagerCard({
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-[rgba(26,26,26,0.08)] bg-white px-4 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]">
+      <div className="mt-6 rounded-2xl border border-[rgba(24,45,74,0.08)] bg-white px-4 py-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
           {quoting ? "Pricing…" : "Engine quote"}
-          {paperOnly ? <span className="text-[#b0b0b0]"> · Demo market · paper only</span> : null}
+          {paperOnly ? <span className="text-[#83a6e9]"> · Demo market · paper only</span> : null}
         </p>
         {quoteError && !quote ? (
-          <p role="status" aria-live="polite" className="mt-2 text-[13px] leading-5 text-[#8a6a32]">
+          <p role="status" aria-live="polite" className="mt-2 text-[13px] leading-5 text-[#1847d8]">
             {quoteError}
           </p>
         ) : rejected ? (
-          <p className="mt-2 text-[13px] leading-5 text-[#8a6a32]">{describeQuoteRejection(rejected)}</p>
+          <p className="mt-2 text-[13px] leading-5 text-[#1847d8]">{describeQuoteRejection(rejected)}</p>
         ) : position ? (
-          <div className="mt-2 space-y-1 font-mono text-[11px] text-[#5a5a5a]">
+          <div className="mt-2 space-y-1 font-mono text-[11px] text-[#536780]">
             <p>
               Buy {position.shares} {position.outcome} @ {position.limitPrice}
             </p>
@@ -804,7 +804,7 @@ function CreateWagerCard({
             <p>If right, payout ${position.payoutUsd}</p>
           </div>
         ) : (
-          <p className="mt-2 text-[13px] text-[#8a8a8a]">Waiting for a valid quote.</p>
+          <p className="mt-2 text-[13px] text-[#65758b]">Waiting for a valid quote.</p>
         )}
       </div>
 
@@ -812,24 +812,24 @@ function CreateWagerCard({
         type="button"
         onClick={() => void place()}
         disabled={submitting || !quote?.accepted}
-        className="mt-8 w-full rounded-2xl bg-[#111111] py-3.5 text-[13px] font-semibold tracking-[0.16em] text-white uppercase hover:bg-black disabled:cursor-not-allowed disabled:bg-[#c8c4bc]"
+        className="mt-8 w-full rounded-2xl bg-[#265bff] py-3.5 text-[13px] font-semibold tracking-[0.16em] text-white uppercase hover:bg-[#1847d8] disabled:cursor-not-allowed disabled:bg-[#dce5f1] disabled:text-[#65758b]"
       >
         {submitting ? "Placing…" : "Make wager"}
       </button>
       <WalletSignatureNote className="mt-2" />
       <div aria-live="polite">
-        {message ? <p className="mt-3 text-[12px] leading-5 text-[#6e6e6e]">{message}</p> : null}
+        {message ? <p className="mt-3 text-[12px] leading-5 text-[#65758b]">{message}</p> : null}
       </div>
 
       <button
         type="button"
         onClick={() => setDetails((value) => !value)}
-        className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#8a8a8a]"
+        className="mt-5 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]"
       >
         Details {details ? "▴" : "▾"}
       </button>
       {details ? (
-        <p className="mt-2 text-[12px] leading-5 text-[#6e6e6e]">
+        <p className="mt-2 text-[12px] leading-5 text-[#65758b]">
           ConfidenceEngine {quote?.engineVersion ?? "v1"} converts your view into a Polymarket
           {address ? ` order for ${shortenAddress(address)}` : " order"}. Credentials stay on the
           server. {market.title} resolves in {market.resolvesIn}.

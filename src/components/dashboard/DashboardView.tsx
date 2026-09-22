@@ -78,7 +78,7 @@ export function DashboardView() {
   }, [visible]);
 
   return (
-    <div className="bg-[#f3f0e8]">
+    <div className="bg-[#f8fbff]">
       <Shell className="pt-5 pb-8 sm:pt-6">
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
           <div className="scroll-x -mx-4 gap-x-5 px-4 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0">
@@ -91,8 +91,8 @@ export function DashboardView() {
                   onClick={() => setTab(item.id)}
                   className={`shrink-0 text-[12px] uppercase tracking-[0.14em] transition sm:text-[13px] ${
                     active
-                      ? "rounded-full bg-[#171614] px-4 py-1.5 text-[#f4f1ea]"
-                      : "px-1 py-1.5 text-[#7a746a] hover:text-[#171614]"
+                      ? "rounded-full bg-[#265bff] px-4 py-1.5 text-[#f8fbff]"
+                      : "px-1 py-1.5 text-[#65758b] hover:text-[#182d4a]"
                   }`}
                 >
                   {item.label}
@@ -100,10 +100,10 @@ export function DashboardView() {
               );
             })}
           </div>
-          <p className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#7a746a]">
+          <p className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
             <span
               className={`h-1.5 w-1.5 rounded-full ${
-                source === "polymarket" ? "bg-[#2c7a55]" : "bg-[#b58a2a]"
+                source === "polymarket" ? "bg-[#2c7a55]" : "bg-[#265bff]"
               }`}
             />
             {loading ? "Syncing markets" : source === "polymarket" ? "Live · Polymarket" : "Demo catalog · paper only"}
@@ -111,7 +111,7 @@ export function DashboardView() {
         </div>
 
         {!loading && feedError ? (
-          <p className="-mt-2 mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[#b58a2a]">
+          <p className="-mt-2 mb-3 font-mono text-[10px] uppercase tracking-[0.16em] text-[#265bff]">
             {feedError} · showing demo catalog
           </p>
         ) : null}
@@ -126,14 +126,14 @@ export function DashboardView() {
                 onClick={() => setCategory(item.id)}
                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-[13px] whitespace-nowrap transition ${
                   active
-                    ? "border-[#171614] bg-[#171614] text-[#f4f1ea]"
-                    : "border-[rgba(23,22,20,0.1)] bg-[#fbfaf6] text-[#4f4a43] hover:border-[rgba(23,22,20,0.22)]"
+                    ? "border-[#265bff] bg-[#265bff] text-[#f8fbff]"
+                    : "border-[rgba(24,45,74,0.1)] bg-[#ffffff] text-[#536780] hover:border-[rgba(24,45,74,0.22)]"
                 }`}
               >
                 {item.id !== "all" ? (
                   <span
                     className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: active ? "#f4f1ea" : item.color }}
+                    style={{ background: active ? "#f8fbff" : item.color }}
                   />
                 ) : null}
                 {item.label}
@@ -144,7 +144,7 @@ export function DashboardView() {
 
         <div className="mt-6">
           {loading && !markets.length ? (
-            <div className="h-[28rem] animate-pulse rounded-[22px] border border-[rgba(23,22,20,0.08)] bg-[#fbfaf6]" />
+            <div className="h-[28rem] animate-pulse rounded-[22px] border border-[rgba(24,45,74,0.08)] bg-[#ffffff]" />
           ) : (
             <FeaturedMarket key={featured.map((item) => item.id).join("-")} markets={featured} />
           )}
