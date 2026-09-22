@@ -1,4 +1,5 @@
 import type { Chain } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { ChainConfigError, resolveNetwork, ROBINHOOD_CHAINS, type RobinhoodNetwork } from "@/lib/robinhood-chain";
 
 /**
@@ -75,6 +76,28 @@ export function loadRobinhoodChainConfig(env: Record<string, string | undefined>
   }
   if (settlementEnabled && !settlementPrivateKey) {
     throw new ChainConfigError("RH_SETTLEMENT_ENABLED=true requires RH_SETTLEMENT_PRIVATE_KEY.");
+  }
+
+  // The settlement signer only writes receipts: zero-value self-transactions. It is
+  // kept worthless on purpose, because a key that lives on the server is a key that
+  // can be taken from the server. The treasury holds user deposits and its key must
+  // never be here — refuse rather than run with the one wallet doing both.
+  if (settlementPrivateKey) {
+    const treasury = (env.VEYRA_TREASURY_ADDRESS ?? "").trim().toLowerCase();
+    if (treasury) {
+      let signer: string;
+      try {
+        signer = privateKeyToAccount(settlementPrivateKey).address.toLowerCase();
+      } catch {
+        throw new ChainConfigError("RH_SETTLEMENT_PRIVATE_KEY is not a usable private key.");
+      }
+      if (signer === treasury) {
+        // Never echo the key; the address is public and identifies the mistake.
+        throw new ChainConfigError(
+          `RH_SETTLEMENT_PRIVATE_KEY controls the treasury wallet (${signer}). The treasury holds user deposits and its key must not be on the server. Use a separate gas-only signer.`,
+        );
+      }
+    }
   }
 
   const maxFeeGwei = positiveInt(env.RH_MAX_FEE_GWEI, 5, "RH_MAX_FEE_GWEI");
