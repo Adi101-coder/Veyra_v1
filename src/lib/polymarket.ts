@@ -59,6 +59,18 @@ type GammaEvent = {
   markets?: GammaMarket[];
 };
 
+/** Next uses this digest to switch a route to dynamic rendering. Catching it turns the page into a 500. */
+export function rethrowIfDynamicServer(error: unknown): void {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "digest" in error &&
+    (error as { digest?: unknown }).digest === "DYNAMIC_SERVER_USAGE"
+  ) {
+    throw error;
+  }
+}
+
 function parseList(value: unknown): string[] {
   if (Array.isArray(value)) return value.map(String);
   if (typeof value === "string") {
@@ -430,6 +442,7 @@ export async function fetchPolymarketMarkets(limit = 36): Promise<Market[]> {
       limit,
     );
   } catch (error) {
+    rethrowIfDynamicServer(error);
     const stale = peekPolymarketCache<GammaMarket[]>(`${GAMMA}${path}`);
     if (stale?.length) {
       return mapEvents(coalesceEvents(stale), limit);
@@ -447,7 +460,8 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
       const event = raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] };
       return toMarket(event, raw);
     }
-  } catch {
+  } catch (error) {
+    rethrowIfDynamicServer(error);
     // try the direct slug endpoint next
   }
   try {
@@ -457,7 +471,8 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
       const event = raw.events?.[0] ?? { slug: raw.slug, title: raw.question, markets: [raw] };
       return toMarket(event, raw);
     }
-  } catch {
+  } catch (error) {
+    rethrowIfDynamicServer(error);
     // try events next
   }
   try {
@@ -466,7 +481,8 @@ export async function fetchPolymarketMarket(id: string): Promise<Market | null> 
     if (!event) return null;
     const raw = pickMarket(event);
     return raw ? toMarket(event, raw, fieldFromEvent(event).length >= 3) : null;
-  } catch {
+  } catch (error) {
+    rethrowIfDynamicServer(error);
     return null;
   }
 }
