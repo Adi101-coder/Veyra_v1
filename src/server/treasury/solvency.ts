@@ -4,9 +4,9 @@ import type { PrismaClient } from "@prisma/client";
 import { getPrisma } from "@/server/db";
 import { CASH_ASSET } from "@/server/treasury/funds";
 import { auditBalances } from "@/server/treasury/ledger";
-import { lastOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
+import { lastOmnibusOnchain, readOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
 import { staleHolds } from "@/server/treasury/holds";
-import { treasuryLiquidity, type TreasuryLiquidity } from "@/server/treasury/liquidity";
+import { readTreasuryUsdc, treasuryLiquidity, type TreasuryLiquidity } from "@/server/treasury/liquidity";
 
 export type SolvencyFinding = {
   code: string;
@@ -83,8 +83,14 @@ export async function reconcileSolvency(
   // `controlled` is the TOTAL USDC Veyra holds, house capital included — so house
   // is never added here. Adding it inflated the fallback path and made the two
   // config routes test different things.
-  const onchain = lastOmnibusOnchain().snapshot;
-  const treasuryUsdc = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS") ?? 0n;
+  // The cached snapshot is per module instance: a route handler never sees the
+  // worker's. Without a fresh read here the omnibus counted as zero there.
+  const onchain = lastOmnibusOnchain().snapshot ?? (await readOmnibusOnchain(env).catch(() => null));
+  // The treasury holds user deposits; leaving it out reported every deployment as
+  // insolvent. Read it on-chain unless an operator pinned a figure.
+  const treasuryOverride = bigintEnv(env, "VEYRA_TREASURY_USDC_MICROS");
+  const treasuryOnchain = treasuryOverride == null ? await readTreasuryUsdc(env).catch(() => null) : null;
+  const treasuryUsdc = treasuryOverride ?? treasuryOnchain ?? 0n;
   const override = bigintEnv(env, "VEYRA_CONTROLLED_USDC_MICROS");
   let controlledSource: "onchain" | "override" | "baseline" | "none" = "none";
   let controlled: bigint | null = null;
@@ -93,7 +99,7 @@ export async function reconcileSolvency(
     controlledSource = "override";
   } else if (onchain) {
     // Live balance of the omnibus wallet, read from chain this worker tick.
-    controlled = BigInt(onchain.usdcEMicros) + BigInt(onchain.usdcMicros) + treasuryUsdc;
+    controlled = BigInt(onchain.pusdMicros) + BigInt(onchain.usdcEMicros) + BigInt(onchain.usdcMicros) + treasuryUsdc;
     controlledSource = "onchain";
   } else {
     const omnibus = bigintEnv(env, "VEYRA_OMNIBUS_USDC_BASELINE_MICROS");
@@ -142,7 +148,7 @@ export async function reconcileSolvency(
 
   // Can the treasury wallet actually pay what the ledger says it owes? Total
   // solvency can be fine while X is empty and Y holds everything.
-  const liquidity = await treasuryLiquidity(prisma, env);
+  const liquidity = await treasuryLiquidity(prisma, env, treasuryOverride == null ? treasuryOnchain : undefined);
   if (liquidity.status === "short") {
     findings.push({
       code: "TREASURY_CANNOT_COVER",

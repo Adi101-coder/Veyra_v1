@@ -15,17 +15,19 @@ export async function GET(request: Request) {
   try {
     requireOperator(request);
     const prisma = getPrisma();
-    const [separation, audit, solvency, omnibusOnchain] = await Promise.all([
+    // First, so solvency reuses this snapshot instead of racing a second read of the
+    // same wallet (a throttled RPC then fails one of them and the omnibus counts as 0).
+    // Spread the cached snapshot first: this call's failure is the useful one, so
+    // it must win. The other order let a stale (often null) error overwrite it,
+    // leaving an operator looking at `error: null` on a read that just failed.
+    const omnibusOnchain = await readOmnibusOnchain().catch((error) => ({
+      ...lastOmnibusOnchain(),
+      error: error instanceof Error ? error.message : String(error),
+    }));
+    const [separation, audit, solvency] = await Promise.all([
       accountingSeparationReport(prisma),
       auditBalances(prisma),
       reconcileSolvency(prisma),
-      // Spread the cached snapshot first: this call's failure is the useful one, so
-      // it must win. The other order let a stale (often null) error overwrite it,
-      // leaving an operator looking at `error: null` on a read that just failed.
-      readOmnibusOnchain().catch((error) => ({
-        ...lastOmnibusOnchain(),
-        error: error instanceof Error ? error.message : String(error),
-      })),
     ]);
     return NextResponse.json({ ...separation, audit, solvency, omnibusOnchain });
   } catch (error) {
