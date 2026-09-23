@@ -11,6 +11,7 @@ import { siteConfig } from "@/lib/site";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/markets", label: "Markets" },
+  { href: "/positions", label: "Positions" },
   { href: "/vote", label: "Vote" },
   { href: "/activity", label: "Activity" },
   { href: "/balances", label: "Balances" },

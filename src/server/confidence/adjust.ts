@@ -44,6 +44,31 @@ function payoutFromShares(sharesMicros: bigint) {
   return (sharesMicros * 1_000_000n) / SHARE_SCALE;
 }
 
+/** A user-chosen size to keep; planning against it sells the difference. */
+export function exitTarget(
+  confidenceBps: number,
+  marketPriceBps: number,
+  remainingSharesMicros: bigint,
+): TargetPosition {
+  const sharesMicros = remainingSharesMicros > 0n ? remainingSharesMicros : 0n;
+  return {
+    confidenceBps,
+    marketPriceBps,
+    edgeBps: edgeBps(confidenceBps, marketPriceBps),
+    kellyBps: 0,
+    sizedKellyBps: 0,
+    sharesMicros,
+    notionalMicros: sharesCostMicros(sharesMicros, marketPriceBps),
+    payoutMicros: payoutFromShares(sharesMicros),
+    flatten: sharesMicros === 0n,
+  };
+}
+
+/** Zero shares: planning against it sells the whole held position. */
+export function flattenTarget(confidenceBps: number, marketPriceBps: number): TargetPosition {
+  return exitTarget(confidenceBps, marketPriceBps, 0n);
+}
+
 export function targetPositionFromConfidence(
   confidenceBps: number,
   stakeMicros: bigint,
@@ -52,17 +77,7 @@ export function targetPositionFromConfidence(
 ): TargetPosition {
   const edge = edgeBps(confidenceBps, marketPriceBps);
   if (edge < config.minEdgeBps || marketPriceBps <= 0) {
-    return {
-      confidenceBps,
-      marketPriceBps,
-      edgeBps: edge,
-      kellyBps: 0,
-      sizedKellyBps: 0,
-      sharesMicros: 0n,
-      notionalMicros: 0n,
-      payoutMicros: 0n,
-      flatten: true,
-    };
+    return flattenTarget(confidenceBps, marketPriceBps);
   }
 
   const kelly = rawKellyBps(confidenceBps, marketPriceBps);

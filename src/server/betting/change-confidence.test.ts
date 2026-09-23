@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { coreMarkets } from "@/lib/markets";
 import {
   changeConfidence,
+  closePosition,
   listConfidenceHistory,
   placePrediction,
   type BettingDeps,
@@ -259,5 +260,77 @@ describe("changeConfidence", () => {
     const again = await changeConfidence(opened.id, { confidencePct: 80, walletAddress: WALLET }, context);
     expect(again.history.side).toBe("BUY");
     expect(Number(again.prediction.position?.shares)).toBeGreaterThan(0);
+  });
+
+  it("close sells everything and keeps confidence, even when the 1% floor would leave a residual", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "close-open-0001" },
+      context,
+    );
+    const held = opened.position!.shares;
+    expect(Number(held)).toBeGreaterThan(0);
+    const closed = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "close-0001" }, context);
+    expect(closed.history.side).toBe("SELL");
+    expect(closed.history.deltaShares).toBe(`-${held}`);
+    expect(closed.prediction.position?.shares).toBe("0.00");
+    expect(closed.prediction.position?.status).toBe("closed");
+    expect(closed.prediction.confidencePct).toBe(90);
+  });
+
+  it("close replays on the same idempotency key and refuses an already-closed position", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "close-open-0002" },
+      context,
+    );
+    const first = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "close-0002" }, context);
+    const replay = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "close-0002" }, context);
+    expect(replay.history.id).toBe(first.history.id);
+    await expect(
+      closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "close-0003" }, context),
+    ).rejects.toMatchObject({ code: "NO_POSITION" });
+  });
+
+  it("sells part of a position by percent or by shares, keeping the rest open", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "partial-open-01" },
+      context,
+    );
+    const held = Number(opened.position!.shares);
+    const half = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "partial-50", percent: 50 }, context);
+    expect(half.history.side).toBe("SELL");
+    const afterHalf = Number(half.prediction.position?.shares);
+    expect(afterHalf).toBeCloseTo(held / 2, 1);
+    expect(half.prediction.position?.status).not.toBe("closed");
+
+    const two = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "partial-2sh", sharesMicros: 2_000_000n }, context);
+    expect(two.history.deltaShares).toBe("-2.00");
+    expect(Number(two.prediction.position?.shares)).toBeCloseTo(afterHalf - 2, 2);
+  });
+
+  it("refuses a partial sell below the venue minimum, and treats oversized sells as close-all", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "partial-open-02" },
+      context,
+    );
+    await expect(
+      closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "partial-tiny", sharesMicros: 500_000n }, context),
+    ).rejects.toMatchObject({ code: "BELOW_MIN_ORDER" });
+    const all = await closePosition(opened.id, { walletAddress: WALLET, idempotencyKey: "partial-huge", sharesMicros: 10n ** 15n }, context);
+    expect(all.prediction.position?.shares).toBe("0.00");
+  });
+
+  it("close is owner-only", async () => {
+    const context = deps();
+    const opened = await placePrediction(
+      { marketId: coreMarkets[0].id, outcome: "YES", confidencePct: 90, stakeUsd: "100.00", walletAddress: WALLET, idempotencyKey: "close-open-0004" },
+      context,
+    );
+    await expect(
+      closePosition(opened.id, { walletAddress: "0x9999999999999999999999999999999999999999", idempotencyKey: "close-0004" }, context),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

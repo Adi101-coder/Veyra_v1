@@ -2,6 +2,7 @@ import type {
   ChangeConfidenceRequest,
   ConfidenceHistoryDTO,
   EngineQuote,
+  Outcome,
   PlacePredictionRequest,
   PredictionDTO,
   QuoteRequest,
@@ -114,6 +115,22 @@ export async function changeConfidence(id: string, input: ChangeConfidenceReques
   );
 }
 
+/** Sells all of the position, or part of it by percent or share count. Confidence is unchanged. */
+export async function closePosition(
+  id: string,
+  idempotencyKey: string,
+  amount: { percent?: number; shares?: string } = {},
+) {
+  return authedWrite<{ prediction: PredictionDTO; history: ConfidenceHistoryDTO }>(
+    `/api/predictions/${encodeURIComponent(id)}/close`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+      body: JSON.stringify({ ...amount, idempotencyKey }),
+    },
+  );
+}
+
 /** Asks the server to reconcile an execution against Polymarket (owner only). */
 export async function syncExecution(executionId: string) {
   const json = await authedWrite<{ prediction: PredictionDTO }>(
@@ -141,6 +158,17 @@ export async function listUserPredictions(walletAddress: string) {
     cache: "no-store",
   });
   return readJson<{ predictions: PredictionDTO[] }>(response);
+}
+
+/** Best bid for an outcome: what one share sells for right now, or null with no bids. */
+export async function getBestBid(marketId: string, outcome: Outcome) {
+  const response = await fetch(
+    `/api/markets/${encodeURIComponent(marketId)}/book?outcome=${outcome}`,
+    { cache: "no-store" },
+  );
+  const json = await readJson<{ book: { bids: { price: string }[] } }>(response);
+  const prices = json.book.bids.map((level) => Number(level.price)).filter(Number.isFinite);
+  return prices.length ? Math.max(...prices) : null;
 }
 
 export async function getMarketConviction(marketId: string) {

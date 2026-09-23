@@ -18,6 +18,7 @@ import {
 } from "@/lib/betting";
 import {
   changeConfidence,
+  closePosition,
   getPrediction,
   listConfidenceHistory,
   quotePrediction,
@@ -491,8 +492,12 @@ function ChangeMindPanel({
   const inFlight = useRef(false);
   // One idempotency key per intent (prediction + target confidence); reused on retries.
   const intentKey = useRef<{ intent: string; key: string } | null>(null);
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  const closeKey = useRef<{ shares: string; key: string } | null>(null);
   const positionStatus = prediction.position?.status ?? null;
   const changeable = positionStatus !== null && CHANGEABLE_POSITION_STATUSES.has(positionStatus);
+  const heldShares = prediction.position?.shares ?? "0";
+  const closable = changeable && Number(heldShares) > 0;
 
   // Re-sync the slider when the stored confidence changes (adjusting state during render).
   const [syncedPct, setSyncedPct] = useState(prediction.confidencePct);
@@ -609,6 +614,42 @@ function ChangeMindPanel({
     }
   };
 
+  const close = async () => {
+    if (inFlight.current || !address || !closable) return;
+    if (!confirmingClose) {
+      setConfirmingClose(true);
+      setMessage(null);
+      return;
+    }
+    // Same position size means the same intent, so a retry reuses its key.
+    if (!closeKey.current || closeKey.current.shares !== heldShares) {
+      closeKey.current = { shares: heldShares, key: crypto.randomUUID() };
+    }
+    inFlight.current = true;
+    setSubmitting(true);
+    setMessage(null);
+    try {
+      const result = await closePosition(prediction.id, closeKey.current.key);
+      closeKey.current = null;
+      onUpdated(result.prediction);
+      setHistory((rows) => [result.history, ...rows.filter((row) => row.id !== result.history.id)]);
+      const left = result.prediction.position?.shares ?? "0";
+      setMessage(
+        result.history.status === "failed"
+          ? `Close failed: ${result.history.errorMessage ?? "the order was not filled"}. Position unchanged.`
+          : Number(left) > 0
+            ? `Sold ${result.history.deltaShares.replace("-", "")} sh. ${left} sh could not be filled yet.`
+            : `Position closed. Sold ${result.history.deltaShares.replace("-", "")} sh.`,
+      );
+    } catch (error) {
+      setMessage(describeBettingError(error, "Could not close the position."));
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
+      setConfirmingClose(false);
+    }
+  };
+
   const currentShares = prediction.position?.shares ?? "—";
   const desiredShares = quote?.position?.shares;
   const unchanged = confidence === Math.round(prediction.confidencePct);
@@ -694,6 +735,21 @@ function ChangeMindPanel({
           >
             {submitting ? "Adjusting…" : owner ? "Update confidence" : "Owner wallet required"}
           </button>
+          {owner && closable ? (
+            <button
+              type="button"
+              disabled={submitting}
+              onClick={() => void close()}
+              onBlur={() => setConfirmingClose(false)}
+              className={`mt-6 ml-3 rounded-full border px-5 py-2.5 font-mono text-[11px] uppercase tracking-[0.14em] disabled:opacity-40 ${
+                confirmingClose
+                  ? "border-[#ad4c62] bg-[#ad4c62] text-white"
+                  : "border-[#ad4c62] bg-white text-[#ad4c62]"
+              }`}
+            >
+              {confirmingClose ? `Confirm: sell all ${heldShares} sh` : "Close position"}
+            </button>
+          ) : null}
           {owner && changeable ? (
             <WalletSignatureNote
               className="mt-2"

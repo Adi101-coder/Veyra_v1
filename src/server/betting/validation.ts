@@ -1,6 +1,6 @@
 import type { ChangeConfidenceRequest, Outcome, PlacePredictionRequest, QuoteRequest } from "@/lib/betting";
 import { BettingError } from "@/server/errors";
-import { parseUsdMicros } from "@/server/money";
+import { parseSharesMicros, parseUsdMicros } from "@/server/money";
 
 const EVM = /^0x[a-fA-F0-9]{40}$/;
 const SOLANA = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
@@ -88,6 +88,43 @@ export function parseQuoteRequest(body: unknown): QuoteRequest {
     outcome: parseOutcome(raw.outcome),
     confidencePct: parseConfidencePct(raw.confidencePct),
     stakeUsd: stake.stakeUsd,
+  };
+}
+
+export function parseClosePositionRequest(
+  body: unknown,
+  headerKey: string | null | undefined,
+  sessionWallet: string,
+) {
+  const raw = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  let percent: number | undefined;
+  let sharesMicros: bigint | undefined;
+  if (raw.percent != null && raw.shares != null) {
+    throw new BettingError("INVALID_EXIT", "Send either percent or shares, not both.");
+  }
+  if (raw.percent != null) {
+    const value = Number(raw.percent);
+    if (!Number.isFinite(value) || value <= 0 || value > 100) {
+      throw new BettingError("INVALID_EXIT", "percent must be between 0 and 100.");
+    }
+    percent = value;
+  }
+  if (raw.shares != null) {
+    if (typeof raw.shares !== "string" && typeof raw.shares !== "number") {
+      throw new BettingError("INVALID_EXIT", "shares must be a decimal string.");
+    }
+    try {
+      sharesMicros = parseSharesMicros(String(raw.shares).trim(), "floor");
+    } catch {
+      throw new BettingError("INVALID_EXIT", "shares must be a decimal string.");
+    }
+    if (sharesMicros <= 0n) throw new BettingError("INVALID_EXIT", "shares must be positive.");
+  }
+  return {
+    walletAddress: actingWallet(raw.walletAddress, sessionWallet),
+    idempotencyKey: requireIdempotencyKey(headerKey || raw.idempotencyKey),
+    percent,
+    sharesMicros,
   };
 }
 

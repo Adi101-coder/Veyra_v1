@@ -11,6 +11,7 @@ import { loadConfidenceEngineConfig } from "@/server/confidence/config";
 import { snapshotToEngineBook, syntheticBookForToken, syntheticBookFromMarket, tokenIdFor } from "@/server/confidence/book";
 import {
   applyFilledDelta,
+  exitTarget,
   isStalePrice,
   planAdjustment,
   targetPositionFromConfidence,
@@ -777,6 +778,52 @@ export async function changeConfidence(
   input: ChangeConfidenceRequest,
   deps: BettingDeps = createDefaultDeps(),
 ) {
+  return adjustPosition(predictionId, input, null, deps);
+}
+
+/** How much of a position to sell. Neither field set means all of it. */
+export type ExitRequest = { percent?: number; sharesMicros?: bigint };
+
+/**
+ * Sells all or part of the position regardless of edge. Lowering confidence cannot
+ * always do this: at the 1% floor a longshot priced under 1% still shows edge, so the
+ * engine keeps a residual. Confidence itself is left where it was.
+ */
+export async function closePosition(
+  predictionId: string,
+  input: { walletAddress: string; idempotencyKey?: string } & ExitRequest,
+  deps: BettingDeps = createDefaultDeps(),
+) {
+  const bundle = await deps.store.getPrediction(predictionId);
+  if (!bundle) throw new BettingError("NOT_FOUND", "Prediction not found.", 404);
+  const { percent, sharesMicros, ...request } = input;
+  return adjustPosition(
+    predictionId,
+    { ...request, confidencePct: bpsToPct(bundle.confidenceBps) },
+    { percent, sharesMicros },
+    deps,
+  );
+}
+
+/** Shares to keep after an exit, resolved against the size held under the lock. */
+function remainingAfterExit(heldMicros: bigint, exit: ExitRequest, lotMicros: bigint) {
+  let sell = heldMicros;
+  if (exit.sharesMicros != null) sell = exit.sharesMicros;
+  else if (exit.percent != null && exit.percent < 100) {
+    sell = (heldMicros * BigInt(Math.round(exit.percent * 100))) / 10_000n;
+    sell = lotMicros > 0n ? (sell / lotMicros) * lotMicros : sell;
+  }
+  if (sell <= 0n) throw new BettingError("INVALID_EXIT", "Choose a positive amount to sell.", 422);
+  return sell >= heldMicros ? 0n : heldMicros - sell;
+}
+
+async function adjustPosition(
+  predictionId: string,
+  input: ChangeConfidenceRequest,
+  exit: ExitRequest | null,
+  deps: BettingDeps,
+) {
+  const close = exit !== null;
   const bundle = await deps.store.getPrediction(predictionId);
   if (!bundle) throw new BettingError("NOT_FOUND", "Prediction not found.", 404);
   if (!walletsMatch(bundle.walletAddress, input.walletAddress)) {
@@ -803,14 +850,14 @@ export async function changeConfidence(
 
   const config = loadConfidenceEngineConfig();
   // Same range the ConfidenceEngine enforces at placement.
-  if (newConfidenceBps < config.minConfidenceBps || newConfidenceBps > config.maxConfidenceBps) {
+  if (!close && (newConfidenceBps < config.minConfidenceBps || newConfidenceBps > config.maxConfidenceBps)) {
     throw new BettingError(
       "CONFIDENCE_RANGE",
       `Confidence must be between ${config.minConfidenceBps / 100}% and ${config.maxConfidenceBps / 100}%.`,
       422,
     );
   }
-  if (newConfidenceBps === bundle.confidenceBps) {
+  if (!close && newConfidenceBps === bundle.confidenceBps) {
     throw new BettingError("UNCHANGED", "Confidence is already at that value.", 422);
   }
   if (input.expectedConfidencePct != null && confidencePctToBps(input.expectedConfidencePct) !== bundle.confidenceBps) {
@@ -825,12 +872,16 @@ export async function changeConfidence(
   if (!ADJUSTABLE_POSITION_STATUSES.includes(position.status)) {
     throw new BettingError("POSITION_NOT_READY", "Wait until the current position has fills before changing confidence.", 409);
   }
+  if (close && position.sharesMicros <= 0n) {
+    throw new BettingError("NO_POSITION", "This position is already closed.", 409);
+  }
 
+  // Read before claiming: a store may hand back the same object the claim mutates.
+  const previousStatus = position.status;
   // Atomic: only one adjustment can move a position from an adjustable status to "adjusting".
   if (!(await deps.store.claimAdjustmentLock(position.id))) {
     throw new BettingError("CONCURRENT_UPDATE", "Another confidence change is still being executed.", 409);
   }
-  const previousStatus = position.status;
   let historyCreated = false;
 
   try {
@@ -858,10 +909,27 @@ export async function changeConfidence(
       throw new BettingError("STALE_PRICE", "The market moved since this quote. Refresh the book and try again.", 409);
     }
 
-    const target = targetPositionFromConfidence(newConfidenceBps, bundle.stakeMicros, livePrice, config);
+    const target = exit
+      ? exitTarget(newConfidenceBps, livePrice, remainingAfterExit(held.sharesMicros, exit, config.shareLotMicros))
+      : targetPositionFromConfidence(newConfidenceBps, bundle.stakeMicros, livePrice, config);
     const plan = planAdjustment(held, target, book, config);
+    // A partial sell under the venue minimum is refused there anyway; say why here.
+    if (exit && target.sharesMicros > 0n && plan.deltaSharesMicros < book.minSharesMicros) {
+      throw new BettingError(
+        "BELOW_MIN_ORDER",
+        `Polymarket's minimum order on this market is ${formatShares(book.minSharesMicros)} shares. Sell more, or close the whole position.`,
+        422,
+      );
+    }
     if (plan.side !== "NONE" && plan.fills.length === 0) {
       throw new BettingError("INSUFFICIENT_LIQUIDITY", "The order book cannot fill the required adjustment at the engine limit.", 422);
+    }
+    if (plan.side === "BUY" && book.source === "polymarket" && plan.notionalMicros < config.minVenueNotionalMicros) {
+      throw new BettingError(
+        "BELOW_MIN_ORDER",
+        `That change buys only $${formatUsd(plan.notionalMicros)}; Polymarket's minimum is $${formatUsd(config.minVenueNotionalMicros)}. Move confidence further.`,
+        422,
+      );
     }
 
     let created: { history: ConfidenceHistoryRow; executionId: string | null };
