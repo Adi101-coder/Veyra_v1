@@ -14,7 +14,10 @@ export type WalletTransaction = {
 export type WalletActivity = {
   address: string;
   chain: WalletChain;
+  /** Chain the rows were read from, e.g. "Polygon". */
+  networkLabel: string;
   balanceLabel: string;
+  explorerAddressUrl: string;
   transactions: WalletTransaction[];
 };
 
@@ -49,10 +52,10 @@ export function formatTxTime(timestamp: number | null) {
   });
 }
 
-export async function fetchWalletActivity(address: string, chain: WalletChain) {
-  const response = await fetch(
-    `/api/wallet/transactions?address=${encodeURIComponent(address)}&chain=${chain}`,
-  );
+export async function fetchWalletActivity(address: string, chain: WalletChain, chainId?: number | null) {
+  const params = new URLSearchParams({ address, chain });
+  if (chainId != null) params.set("chainId", String(chainId));
+  const response = await fetch(`/api/wallet/transactions?${params}`);
   const text = await response.text();
   let payload: WalletActivity & { error?: string };
   try {

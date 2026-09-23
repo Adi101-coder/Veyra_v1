@@ -86,14 +86,42 @@ function formatSol(lamports: number) {
   return `${sol > 0 ? "+" : "−"}${abs.toFixed(digits)} SOL`;
 }
 
-function formatEth(wei: string, inbound: boolean) {
+function formatNative(wei: string, inbound: boolean, symbol: string) {
   const value = Number(wei) / 1e18;
   if (!Number.isFinite(value) || value === 0) return "—";
   const abs = Math.abs(value);
-  if (abs < 0.0001) return `${inbound ? "+" : "−"}<0.0001 ETH`;
+  if (abs < 0.0001) return `${inbound ? "+" : "−"}<0.0001 ${symbol}`;
   const digits = abs >= 1 ? 4 : 5;
-  return `${inbound ? "+" : "−"}${abs.toFixed(digits)} ETH`;
+  return `${inbound ? "+" : "−"}${abs.toFixed(digits)} ${symbol}`;
 }
+
+/** Public Blockscout indexers. Ethereum is not a stand-in for every EVM chain. */
+const EVM_INDEXERS: Record<number, { name: string; api: string; explorer: string; symbol: string }> = {
+  1: {
+    name: "Ethereum",
+    api: "https://eth.blockscout.com/api",
+    explorer: "https://etherscan.io",
+    symbol: "ETH",
+  },
+  137: {
+    name: "Polygon",
+    api: "https://polygon.blockscout.com/api",
+    explorer: "https://polygonscan.com",
+    symbol: "POL",
+  },
+  4663: {
+    name: "Robinhood Chain",
+    api: "https://robinhoodchain.blockscout.com/api",
+    explorer: "https://robinhoodchain.blockscout.com",
+    symbol: "ETH",
+  },
+  46630: {
+    name: "Robinhood Chain Testnet",
+    api: "https://explorer.testnet.chain.robinhood.com/api",
+    explorer: "https://explorer.testnet.chain.robinhood.com",
+    symbol: "ETH",
+  },
+};
 
 function solanaCounterparty(tx: SolanaTx, address: string) {
   const outer = tx.transaction.message.instructions ?? [];
@@ -208,7 +236,9 @@ async function fetchSolana(address: string): Promise<WalletActivity> {
   return {
     address,
     chain: "solana",
+    networkLabel: "Solana",
     balanceLabel: `${sol.toFixed(sol >= 1 ? 3 : 4)} SOL`,
+    explorerAddressUrl: `https://solscan.io/account/${address}`,
     transactions,
   };
 }
@@ -224,7 +254,11 @@ type ExplorerTx = {
   methodId?: string;
 };
 
-async function fetchEvm(address: string): Promise<WalletActivity> {
+async function fetchEvm(address: string, chainId: number): Promise<WalletActivity> {
+  const indexer = EVM_INDEXERS[chainId];
+  if (!indexer) {
+    throw new Error(`This app does not index chain ${chainId}.`);
+  }
   const query = new URLSearchParams({
     module: "account",
     action: "txlist",
@@ -240,16 +274,16 @@ async function fetchEvm(address: string): Promise<WalletActivity> {
   });
 
   const [balanceRes, txRes] = await Promise.all([
-    fetch(`https://eth.blockscout.com/api?${balanceQuery}`, {
+    fetch(`${indexer.api}?${balanceQuery}`, {
       signal: AbortSignal.timeout(15_000),
     }),
-    fetch(`https://eth.blockscout.com/api?${query}`, {
+    fetch(`${indexer.api}?${query}`, {
       signal: AbortSignal.timeout(15_000),
     }),
   ]);
 
   if (!txRes.ok) {
-    throw new Error("Could not read Ethereum transactions");
+    throw new Error(`Could not read ${indexer.name} transactions`);
   }
 
   const txJson = (await txRes.json()) as {
@@ -259,7 +293,7 @@ async function fetchEvm(address: string): Promise<WalletActivity> {
   };
   if (!Array.isArray(txJson.result)) {
     throw new Error(
-      typeof txJson.result === "string" ? txJson.result : "Could not read Ethereum transactions",
+      typeof txJson.result === "string" ? txJson.result : `Could not read ${indexer.name} transactions`,
     );
   }
 
@@ -280,17 +314,19 @@ async function fetchEvm(address: string): Promise<WalletActivity> {
       status: item.isError === "1" ? "failed" : "success",
       direction: inbound && outbound ? "self" : inbound ? "in" : "out",
       counterparty: inbound ? from || null : to,
-      amountLabel: formatEth(item.value ?? "0", inbound && !outbound),
+      amountLabel: formatNative(item.value ?? "0", inbound && !outbound, indexer.symbol),
       method: fn || (inbound && !outbound ? "Receive" : outbound ? "Send" : "Transaction"),
-      explorerUrl: `https://etherscan.io/tx/${item.hash}`,
+      explorerUrl: `${indexer.explorer}/tx/${item.hash}`,
     };
   });
 
-  const eth = Number(balanceJson.result ?? "0") / 1e18;
+  const native = Number(balanceJson.result ?? "0") / 1e18;
   return {
     address,
     chain: "evm",
-    balanceLabel: `${Number.isFinite(eth) ? eth.toFixed(eth >= 1 ? 4 : 5) : "0"} ETH`,
+    networkLabel: indexer.name,
+    balanceLabel: `${Number.isFinite(native) ? native.toFixed(native >= 1 ? 4 : 5) : "0"} ${indexer.symbol}`,
+    explorerAddressUrl: `${indexer.explorer}/address/${address}`,
     transactions,
   };
 }
@@ -309,9 +345,13 @@ export async function GET(request: Request) {
   if (chain === "evm" && !isEvmAddress(address)) {
     return NextResponse.json({ error: "Invalid Ethereum address" }, { status: 400 });
   }
+  const chainId = Number(url.searchParams.get("chainId"));
+  if (chain === "evm" && !Number.isInteger(chainId)) {
+    return NextResponse.json({ error: "chainId is required for an EVM wallet." }, { status: 400 });
+  }
 
   try {
-    const activity = chain === "solana" ? await fetchSolana(address) : await fetchEvm(address);
+    const activity = chain === "solana" ? await fetchSolana(address) : await fetchEvm(address, chainId);
     return NextResponse.json(activity, {
       headers: { "Cache-Control": "private, max-age=20" },
     });

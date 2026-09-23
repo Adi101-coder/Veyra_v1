@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Shell } from "@/components/Shell";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { describeBettingError } from "@/lib/betting";
 import {
   getDepositInfo,
   getTreasuryBalances,
   getTreasuryExposure,
+  listWithdrawals,
   requestWithdrawal,
   type DepositInfo,
   type TreasuryBalance,
   type TreasuryExposure,
+  type TreasuryWithdrawal,
 } from "@/lib/betting-api";
 import { shortenAddress } from "@/lib/solana-wallet";
 
@@ -34,6 +37,30 @@ const usdFromMicros = (micros: string) =>
     currency: "USD",
   });
 
+/** USDC micros from a decimal string. Rejects more than 6 fractional digits. */
+function cashMicros(input: string): bigint | null {
+  const trimmed = input.trim();
+  if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) return null;
+  const [whole, fraction = ""] = trimmed.split(".");
+  const micros = BigInt(`${whole}${fraction.padEnd(6, "0")}`);
+  return micros > 0n ? micros : null;
+}
+
+function withdrawalStatusLabel(row: TreasuryWithdrawal) {
+  switch (row.status) {
+    case "PENDING":
+      return row.manualOnly ? "Waiting for review" : "Queued to send";
+    case "SENDING":
+      return "Sending";
+    case "COMPLETED":
+      return "Sent";
+    case "FAILED":
+      return "Returned to your balance";
+    default:
+      return row.status;
+  }
+}
+
 /**
  * Deposits and venue exposure, deliberately shown as two separate ledgers.
  *
@@ -41,10 +68,25 @@ const usdFromMicros = (micros: string) =>
  * is their share of the omnibus Polymarket wallet, derived from filled positions.
  * The two are never netted, so the page never shows a single combined "balance".
  */
+function BalancesIntro({ children }: { children: ReactNode }) {
+  return (
+    <div className="bg-[#f1f6ff]">
+      <Shell className="max-w-3xl pt-10 pb-20">
+        <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Custody</p>
+        <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
+          Balances.
+        </h1>
+        {children}
+      </Shell>
+    </div>
+  );
+}
+
 export function TreasuryView() {
-  const { address, hasSession, depositToTreasury } = useWallet();
+  const { address, hasSession, sessionChecked, signingIn, signIn, signInError, depositToTreasury } = useWallet();
   const [balances, setBalances] = useState<TreasuryBalance[] | null>(null);
   const [exposure, setExposure] = useState<TreasuryExposure | null>(null);
+  const [withdrawals, setWithdrawals] = useState<TreasuryWithdrawal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [dest, setDest] = useState("");
   const [amount, setAmount] = useState("");
@@ -70,40 +112,99 @@ export function TreasuryView() {
     };
   }, []);
 
+  const reloadGeneration = useRef(0);
+  const reload = useCallback(async () => {
+    const generation = ++reloadGeneration.current;
+    // Settled separately: a failed withdrawal list must not hide a balance that loaded.
+    const [balanceResult, exposureResult, withdrawalResult] = await Promise.allSettled([
+      getTreasuryBalances(),
+      getTreasuryExposure(),
+      listWithdrawals(),
+    ]);
+    if (generation !== reloadGeneration.current) return;
+
+    const problems: string[] = [];
+    if (balanceResult.status === "fulfilled") {
+      setBalances(balanceResult.value.balances);
+    } else {
+      problems.push(describeBettingError(balanceResult.reason, "Could not load your balances."));
+    }
+    if (exposureResult.status === "fulfilled") {
+      setExposure(exposureResult.value);
+    } else {
+      problems.push(describeBettingError(exposureResult.reason, "Could not load Polymarket exposure."));
+    }
+    if (withdrawalResult.status === "fulfilled") {
+      setWithdrawals(withdrawalResult.value.withdrawals);
+    } else {
+      setWithdrawals((current) => current ?? []);
+      problems.push(describeBettingError(withdrawalResult.reason, "Could not load withdrawals."));
+    }
+    setError(problems.length > 0 ? problems.join(" ") : null);
+  }, []);
+
   useEffect(() => {
     if (!address || !hasSession) return;
     let cancelled = false;
-    Promise.all([getTreasuryBalances(), getTreasuryExposure()])
-      .then(([balanceResult, exposureResult]) => {
-        if (cancelled) return;
-        setBalances(balanceResult.balances);
-        setExposure(exposureResult);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(describeBettingError(err, "Could not load your balances."));
-      });
+    const load = () => {
+      if (!cancelled) void reload();
+    };
+    load();
+    // Withdrawals move from queued to sent without another click, and a failed
+    // send returns the debit. Poll so the list stays the source of truth.
+    const timer = setInterval(load, 15_000);
     return () => {
       cancelled = true;
+      clearInterval(timer);
     };
-  }, [address, hasSession]);
+  }, [address, hasSession, reload]);
 
   const cashDepositAsset =
     depositInfo?.assets.find((asset) => asset.isCashAsset) ?? null;
 
-  if (!address || !hasSession) {
+  if (!address) {
     return (
-      <div className="bg-[#f1f6ff]">
-        <Shell className="max-w-3xl pt-10 pb-20">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[#ad4c62]">Custody</p>
-          <h1 className="mt-3 font-serif text-[32px] leading-tight tracking-[-0.03em] text-[#182d4a] sm:text-[42px]">
-            Balances.
-          </h1>
-          <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
-            Connect a wallet to see what it has deposited and what it holds on Polymarket.
-          </p>
-        </Shell>
-      </div>
+      <BalancesIntro>
+        <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
+          Connect a wallet, then sign in, to see deposits and Polymarket exposure.
+        </p>
+        <div className="mt-6">
+          <ConnectWalletButton />
+        </div>
+      </BalancesIntro>
+    );
+  }
+
+  if (!sessionChecked) {
+    return (
+      <BalancesIntro>
+        <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
+          Checking whether this wallet is signed in…
+        </p>
+      </BalancesIntro>
+    );
+  }
+
+  if (!hasSession) {
+    return (
+      <BalancesIntro>
+        <p className="mt-4 max-w-[32rem] text-[15px] leading-6 text-[#65758b] italic">
+          Sign in with {shortenAddress(address, 6)} to see balances. One signature, no gas.
+        </p>
+        <button
+          type="button"
+          disabled={signingIn}
+          onClick={() => {
+            void signIn().catch(() => undefined);
+          }}
+          className="mt-6 rounded-full bg-[#265bff] px-5 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-white disabled:opacity-60"
+        >
+          {signingIn ? "Confirm in wallet…" : "Sign in"}
+        </button>
+        {signInError ? (
+          <p className="mt-3 font-mono text-[12px] text-[#ad4c62]">{signInError}</p>
+        ) : null}
+      </BalancesIntro>
     );
   }
 
@@ -248,7 +349,11 @@ export function TreasuryView() {
 
         <section className="mt-10">
           <p className={labelClass}>Deposits</p>
-          {balances && balances.length > 0 ? (
+          {balances === null && !error ? (
+            <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(24,45,74,0.16)] px-5 py-6 text-[14px] text-[#65758b]">
+              Loading deposits…
+            </p>
+          ) : balances && balances.length > 0 ? (
             <ul className="mt-3 space-y-2">
               {balances.map((balance) => (
                 <li
@@ -266,7 +371,9 @@ export function TreasuryView() {
             </ul>
           ) : (
             <p className="mt-3 rounded-[18px] border border-dashed border-[rgba(24,45,74,0.16)] px-5 py-6 text-[14px] text-[#65758b]">
-              No deposits yet. Deposits are credited once the transfer confirms on-chain.
+              {balances === null
+                ? "Balance could not be loaded."
+                : "No deposits yet. Deposits are credited once the transfer confirms on-chain."}
             </p>
           )}
         </section>
@@ -281,22 +388,40 @@ export function TreasuryView() {
             className="mt-3 flex flex-col gap-2 sm:flex-row"
             onSubmit={async (event) => {
               event.preventDefault();
-              const dollars = Number.parseFloat(amount);
-              if (!Number.isFinite(dollars) || dollars <= 0) {
-                setWithdrawNote(`Enter a positive ${depositInfo?.cashAsset ?? "cash"} amount.`);
+              const amountMicros = cashMicros(amount);
+              if (amountMicros === null) {
+                setWithdrawNote(`Enter a positive ${depositInfo?.cashAsset ?? "cash"} amount with at most 6 decimal places.`);
                 return;
               }
               setWithdrawing(true);
               setWithdrawNote(null);
               try {
-                await requestWithdrawal({
+                const created = await requestWithdrawal({
                   destAddress: dest,
-                  amountMicros: BigInt(Math.round(dollars * 1_000_000)).toString(),
+                  amountMicros: amountMicros.toString(),
                 });
+                setWithdrawals((current) => [
+                  {
+                    id: created.id,
+                    status: created.status,
+                    amountMicros: created.amountMicros,
+                    destAddress: created.destAddress,
+                    txHash: null,
+                    errorMessage: null,
+                    manualOnly: false,
+                    createdAt: new Date().toISOString(),
+                  },
+                  ...(current ?? []).filter((row) => row.id !== created.id),
+                ]);
                 setWithdrawNote(
-                  "Withdrawal requested. Small withdrawals are sent automatically within about a minute; larger ones are reviewed and sent by an operator.",
+                  "Withdrawal requested. It is listed below and already deducted from your balance. Small withdrawals are sent automatically within about a minute; larger ones are reviewed and sent by an operator.",
                 );
                 setAmount("");
+                try {
+                  await reload();
+                } catch (err: unknown) {
+                  setError(describeBettingError(err, "Could not refresh your balances."));
+                }
               } catch (err: unknown) {
                 setWithdrawNote(describeBettingError(err, "Could not request a withdrawal."));
               } finally {
@@ -325,6 +450,45 @@ export function TreasuryView() {
             </button>
           </form>
           {withdrawNote ? <p className="mt-2 font-mono text-[12px] text-[#65758b]">{withdrawNote}</p> : null}
+          {withdrawals === null ? (
+            <p className="mt-3 text-[13px] leading-5 text-[#65758b]">Loading withdrawals…</p>
+          ) : withdrawals.length > 0 ? (
+            <ul className="mt-4 space-y-2">
+              {withdrawals.map((row) => (
+                <li
+                  key={row.id}
+                  className="rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4"
+                >
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="font-serif text-[18px] tracking-[-0.02em] text-[#182d4a] tabular-nums">
+                      {usdFromMicros(row.amountMicros)}
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-[#265bff]">
+                      {withdrawalStatusLabel(row)}
+                    </span>
+                  </div>
+                  <p className="mt-2 font-mono text-[11px] text-[#65758b]">
+                    To {shortenAddress(row.destAddress, 6)}
+                    {" · "}
+                    {new Date(row.createdAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })}
+                    {row.txHash ? ` · ${shortenAddress(row.txHash, 6)}` : ""}
+                  </p>
+                  {row.status === "FAILED" && row.errorMessage ? (
+                    <p className="mt-1 font-mono text-[11px] text-[#ad4c62]">{row.errorMessage}</p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-[13px] leading-5 text-[#65758b]">
+              Withdrawals you request show up here right away, including while they are still being sent.
+            </p>
+          )}
         </section>
 
         <section className="mt-10">

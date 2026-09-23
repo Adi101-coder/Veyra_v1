@@ -6,22 +6,18 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import {
-  connectWallet,
-  disconnectWallet,
-  isEthereumProvider,
-  walletChain,
-  restoreWalletSession,
-  type ConnectedProvider,
-  type WalletId,
-  signSessionMessage,
-} from "@/lib/solana-wallet";
 import { encodeFunctionData, erc20Abi } from "viem";
-import { registerSessionEnsurer } from "@/lib/betting-api";
+import { useAccount, useDisconnect, useSwitchChain } from "wagmi";
+import { registerSessionEnsurer, requestWalletSignIn } from "@/lib/betting-api";
 import { isRobinhoodChainId, publicRobinhoodChain } from "@/lib/robinhood-chain";
-import { parseChainId, readWalletChainId, switchWalletToChain } from "@/lib/wallet-network";
+import {
+  isEthereumProvider,
+  signSessionMessage,
+  type InjectedEthereumProvider,
+} from "@/lib/solana-wallet";
 import {
   fetchWalletActivity,
   type WalletActivity,
@@ -36,16 +32,16 @@ type ActivityState = {
 
 type WalletContextValue = {
   address: string | null;
-  walletId: WalletId | null;
+  /** RainbowKit connector name, e.g. "MetaMask". */
+  walletName: string | null;
   chain: WalletChain | null;
   connecting: boolean;
   error: string | null;
   activity: ActivityState;
-  connect: (id: WalletId) => Promise<void>;
   disconnect: () => Promise<void>;
   refreshActivity: () => Promise<void>;
   clearError: () => void;
-  /** EVM wallets only: the wallet's current chain id (null for Solana / unknown). */
+  /** The wallet's current chain id, or null when disconnected. */
   networkChainId: number | null;
   robinhoodChain: { id: number; name: string };
   onRobinhoodChain: boolean;
@@ -68,44 +64,88 @@ type WalletContextValue = {
   signInError: string | null;
   /** Whether the server holds a verified session for the connected wallet. */
   hasSession: boolean;
+  /** False until the session cookie has been checked for the connected wallet. */
+  sessionChecked: boolean;
+  /** Prompts the one-time wallet signature that creates a server session. */
+  signIn: () => Promise<void>;
 };
 
 const WalletContext = createContext<WalletContextValue | null>(null);
 
-const STORAGE_KEY = "vantage.wallet";
 type SessionState = {
   address: string | null;
   signingIn: boolean;
   signInError: string | null;
   hasSession: boolean;
+  checked: boolean;
 };
 
 const idleActivity: ActivityState = { status: "idle", data: null, error: null };
 
 export function WalletProvider({ children }: { children: React.ReactNode }) {
-  const [address, setAddress] = useState<string | null>(null);
-  const [walletId, setWalletId] = useState<WalletId | null>(null);
-  const [provider, setProvider] = useState<ConnectedProvider | null>(null);
-  const [connecting, setConnecting] = useState(false);
+  const account = useAccount();
+  const { disconnectAsync } = useDisconnect();
+  const { switchChainAsync, isPending: switchingNetwork } = useSwitchChain();
+  const address = account.address ?? null;
+  const walletName = account.connector?.name ?? null;
+  const chain: WalletChain | null = address ? "evm" : null;
+  const connecting = account.isConnecting;
+  const networkChainId = address ? (account.chainId ?? null) : null;
+
+  const [evmProvider, setEvmProvider] = useState<InjectedEthereumProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activity, setActivity] = useState<ActivityState>(idleActivity);
-  // Sign-in state is keyed by wallet address so an account switch reads as "no session".
   const [sessionState, setSessionState] = useState<SessionState>({
     address: null,
     signingIn: false,
     signInError: null,
     hasSession: false,
+    checked: false,
   });
   const sessionCurrent = sessionState.address !== null && sessionState.address === address;
   const signingIn = sessionCurrent && sessionState.signingIn;
   const signInError = sessionCurrent ? sessionState.signInError : null;
   const hasSession = sessionCurrent && sessionState.hasSession;
+  const sessionChecked = sessionCurrent && sessionState.checked;
+  const seenConnected = useRef(false);
 
-  const chain = walletId ? walletChain(walletId) : null;
+  useEffect(() => {
+    const connector = account.connector;
+    if (!connector || !address) {
+      setEvmProvider(null);
+      return;
+    }
+    let active = true;
+    connector
+      .getProvider()
+      .then((provider) => {
+        if (!active) return;
+        if (provider && isEthereumProvider(provider as InjectedEthereumProvider)) {
+          setEvmProvider(provider as InjectedEthereumProvider);
+        } else {
+          setEvmProvider(null);
+        }
+      })
+      .catch(() => {
+        if (active) setEvmProvider(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [account.connector, address]);
+
+  useEffect(() => {
+    if (account.status === "connected") seenConnected.current = true;
+    if (account.status === "disconnected" && seenConnected.current) {
+      seenConnected.current = false;
+      setActivity(idleActivity);
+      void fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+    }
+  }, [account.status]);
 
   // Server session: writes sign in lazily (first 401) with a one-time nonce signature.
   useEffect(() => {
-    if (!provider || !address) {
+    if (!evmProvider || !address) {
       registerSessionEnsurer(null);
       return;
     }
@@ -115,7 +155,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       setSessionState((prev) =>
         prev.address === address
           ? { ...prev, ...patch }
-          : { address, signingIn: false, signInError: null, hasSession: false, ...patch },
+          : { address, signingIn: false, signInError: null, hasSession: false, checked: false, ...patch },
       );
     };
     let pending: Promise<void> | null = null;
@@ -127,11 +167,15 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ walletAddress: address }),
         });
-        const nonce = (await nonceResponse.json().catch(() => ({}))) as { nonce?: string; message?: string; error?: { message?: string } };
+        const nonce = (await nonceResponse.json().catch(() => ({}))) as {
+          nonce?: string;
+          message?: string;
+          error?: { message?: string };
+        };
         if (!nonceResponse.ok || !nonce.nonce || !nonce.message) {
           throw new Error(nonce.error?.message ?? "Could not start wallet sign-in");
         }
-        const signature = await signSessionMessage(provider, address, nonce.message);
+        const signature = await signSessionMessage(evmProvider, address, nonce.message);
         const verify = await fetch("/api/auth/verify", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -156,56 +200,33 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     // A session for a different wallet (account switch) must not be reused.
     void fetch("/api/auth/session", { cache: "no-store" })
       .then((response) => response.json() as Promise<{ walletAddress: string | null }>)
-      .then((session) => {
+      .then(async (session) => {
         const normalized = address.startsWith("0x") ? address.toLowerCase() : address;
         if (session.walletAddress && session.walletAddress !== normalized) {
-          return fetch("/api/auth/logout", { method: "POST" });
+          await fetch("/api/auth/logout", { method: "POST" });
+          update({ hasSession: false, checked: true });
+          return;
         }
-        update({ hasSession: session.walletAddress === normalized });
+        update({ hasSession: session.walletAddress === normalized, checked: true });
       })
-      .catch(() => undefined);
+      .catch(() => {
+        update({ checked: true });
+      });
     return () => {
       active = false;
       registerSessionEnsurer(null);
       setSessionState((prev) => (prev.signingIn ? { ...prev, signingIn: false } : prev));
     };
-  }, [provider, address]);
+  }, [evmProvider, address]);
 
-  const attach = useCallback((id: WalletId, next: ConnectedProvider, key: string) => {
-    setWalletId(id);
-    setProvider(next);
-    setAddress(key);
-    window.localStorage.setItem(STORAGE_KEY, id);
-  }, []);
-
-  const connect = useCallback(
-    async (id: WalletId) => {
-      setConnecting(true);
-      setError(null);
-      try {
-        const result = await connectWallet(id);
-        attach(id, result.provider, result.address);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Could not connect wallet";
-        setError(message);
-        throw err;
-      } finally {
-        setConnecting(false);
-      }
-    },
-    [attach],
-  );
+  const signIn = useCallback(() => requestWalletSignIn(), []);
 
   const disconnect = useCallback(async () => {
-    await disconnectWallet(provider);
+    await disconnectAsync();
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-    setAddress(null);
-    setWalletId(null);
-    setProvider(null);
     setActivity(idleActivity);
-    window.localStorage.removeItem(STORAGE_KEY);
-  }, [provider]);
+    setError(null);
+  }, [disconnectAsync]);
 
   const refreshActivity = useCallback(async () => {
     if (!address || !chain) {
@@ -217,8 +238,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       data: prev.data,
       error: null,
     }));
+    if (chain === "evm" && networkChainId == null) {
+      setActivity((prev) => ({ status: "loading", data: prev.data, error: null }));
+      return;
+    }
     try {
-      const data = await fetchWalletActivity(address, chain);
+      const data = await fetchWalletActivity(address, chain, networkChainId);
       setActivity({ status: "ready", data, error: null });
     } catch (err) {
       setActivity({
@@ -227,68 +252,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         error: err instanceof Error ? err.message : "Could not load transactions",
       });
     }
-  }, [address, chain]);
-
-  useEffect(() => {
-    // Restore is async by nature (provider handshake). The saved id is only known after mount.
-    const saved = window.localStorage.getItem(STORAGE_KEY) as WalletId | null;
-    if (!saved) return;
-    restoreWalletSession(saved)
-      .then((session) => {
-        if (!session) {
-          window.localStorage.removeItem(STORAGE_KEY);
-          return;
-        }
-        attach(saved, session.provider, session.address);
-      })
-      .catch(() => {
-        window.localStorage.removeItem(STORAGE_KEY);
-      });
-  }, [attach]);
-
-  useEffect(() => {
-    if (!provider || !walletId) return;
-
-    const clear = () => {
-      setAddress(null);
-      setWalletId(null);
-      setProvider(null);
-      setActivity(idleActivity);
-      window.localStorage.removeItem(STORAGE_KEY);
-    };
-
-    if (isEthereumProvider(provider)) {
-      const onAccounts = (...args: unknown[]) => {
-        const accounts = args[0] as string[] | undefined;
-        if (!accounts?.[0]) {
-          clear();
-          return;
-        }
-        setAddress(accounts[0]);
-      };
-      provider.on?.("accountsChanged", onAccounts);
-      provider.on?.("disconnect", clear);
-      return () => {
-        provider.removeListener?.("accountsChanged", onAccounts);
-        provider.removeListener?.("disconnect", clear);
-      };
-    }
-
-    const onAccount = (...args: unknown[]) => {
-      const key = args[0] as { toBase58?: () => string; toString?: () => string } | null;
-      if (!key) {
-        clear();
-        return;
-      }
-      setAddress(key.toBase58?.() ?? key.toString?.() ?? null);
-    };
-    provider.on?.("accountChanged", onAccount);
-    provider.on?.("disconnect", clear);
-    return () => {
-      provider.off?.("accountChanged", onAccount);
-      provider.off?.("disconnect", clear);
-    };
-  }, [provider, walletId]);
+  }, [address, chain, networkChainId]);
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -297,48 +261,20 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     return () => cancelAnimationFrame(frame);
   }, [refreshActivity]);
 
-  // Network detection for EVM wallets. Betting does not depend on the wallet's
-  // network (sign-in is chain-agnostic personal_sign); this only powers the
-  // Robinhood Chain indicator and switch action.
   const robinhoodChain = useMemo(() => publicRobinhoodChain(), []);
-  const [networkChainId, setNetworkChainId] = useState<number | null>(null);
-  const [switchingNetwork, setSwitchingNetwork] = useState(false);
-  const evmProvider = provider && isEthereumProvider(provider) ? provider : null;
-
-  useEffect(() => {
-    if (!evmProvider) return;
-    let active = true;
-    readWalletChainId(evmProvider)
-      .then((id) => {
-        if (active) setNetworkChainId(id);
-      })
-      .catch(() => {
-        if (active) setNetworkChainId(null);
-      });
-    const onChainChanged = (...args: unknown[]) => setNetworkChainId(parseChainId(args[0]));
-    evmProvider.on?.("chainChanged", onChainChanged);
-    return () => {
-      active = false;
-      evmProvider.removeListener?.("chainChanged", onChainChanged);
-    };
-  }, [evmProvider]);
 
   const switchToRobinhoodChain = useCallback(async () => {
-    if (!evmProvider) {
-      setError("Connect an EVM wallet (MetaMask or Binance) to use Robinhood Chain.");
+    if (!address) {
+      setError("Connect a wallet to use Robinhood Chain.");
       return;
     }
-    setSwitchingNetwork(true);
     setError(null);
     try {
-      setNetworkChainId(await switchWalletToChain(evmProvider, robinhoodChain));
+      await switchChainAsync({ chainId: robinhoodChain.id });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not switch network");
-      setNetworkChainId(await readWalletChainId(evmProvider).catch(() => null));
-    } finally {
-      setSwitchingNetwork(false);
     }
-  }, [evmProvider, robinhoodChain]);
+  }, [address, robinhoodChain.id, switchChainAsync]);
 
   /**
    * Sends a deposit straight from the user's wallet: switch to the asset's chain,
@@ -355,13 +291,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       if (!address) throw new Error("Connect a wallet first.");
       if (input.amountBase <= 0n) throw new Error("Enter an amount greater than zero.");
 
-      const current = await readWalletChainId(evmProvider).catch(() => null);
-      if (current !== input.chainId) {
-        // Only chains this app knows can be added to a wallet that lacks them.
+      if (networkChainId !== input.chainId) {
         if (input.chainId !== robinhoodChain.id) {
           throw new Error(`Switch your wallet to chain ${input.chainId} and try again.`);
         }
-        await switchWalletToChain(evmProvider, robinhoodChain);
+        await switchChainAsync({ chainId: robinhoodChain.id });
       }
 
       const data = encodeFunctionData({
@@ -375,51 +309,51 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       })) as string;
       return hash;
     },
-    [address, evmProvider, robinhoodChain],
+    [address, evmProvider, networkChainId, robinhoodChain.id, switchChainAsync],
   );
-
-  const detectedChainId = evmProvider ? networkChainId : null;
 
   const value = useMemo(
     () => ({
       address,
-      walletId,
+      walletName,
       chain,
       connecting,
       error,
       activity,
-      connect,
       disconnect,
       refreshActivity,
       clearError: () => setError(null),
-      networkChainId: detectedChainId,
+      networkChainId,
       robinhoodChain: { id: robinhoodChain.id, name: robinhoodChain.name },
-      onRobinhoodChain: isRobinhoodChainId(detectedChainId, robinhoodChain),
+      onRobinhoodChain: isRobinhoodChainId(networkChainId, robinhoodChain),
       switchingNetwork,
       switchToRobinhoodChain,
       depositToTreasury,
       signingIn,
       signInError,
       hasSession,
+      sessionChecked,
+      signIn,
     }),
     [
-      signingIn,
-      signInError,
-      hasSession,
-      detectedChainId,
+      address,
+      walletName,
+      chain,
+      connecting,
+      error,
+      activity,
+      disconnect,
+      refreshActivity,
+      networkChainId,
       robinhoodChain,
       switchingNetwork,
       switchToRobinhoodChain,
       depositToTreasury,
-      address,
-      walletId,
-      chain,
-      connecting,
-      error,
-      activity,
-      connect,
-      disconnect,
-      refreshActivity,
+      signingIn,
+      signInError,
+      hasSession,
+      sessionChecked,
+      signIn,
     ],
   );
 

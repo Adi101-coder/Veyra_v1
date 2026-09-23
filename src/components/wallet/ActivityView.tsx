@@ -8,12 +8,11 @@ import { Shell } from "@/components/Shell";
 import { TransactionRows } from "@/components/wallet/TransactionRows";
 import { getVenuePositions } from "@/lib/betting-api";
 import type { VenueTraderPosition } from "@/lib/polymarket";
-import { shortenAddress, WALLET_OPTIONS } from "@/lib/solana-wallet";
+import { shortenAddress } from "@/lib/solana-wallet";
 import { explorerAddressUrl } from "@/lib/wallet-activity";
 
 export function ActivityView() {
-  const { address, walletId, chain, activity, refreshActivity } = useWallet();
-  const walletName = WALLET_OPTIONS.find((item) => item.id === walletId)?.name;
+  const { address, walletName, chain, activity, refreshActivity } = useWallet();
 
   if (!address || !chain) {
     return (
@@ -54,7 +53,9 @@ export function ActivityView() {
             </h1>
             <p className="mt-3 max-w-[34rem] text-[15px] leading-6 text-[#65758b] italic">
               Recent confirmed transactions for the address you connected — pulled from
-              {chain === "evm" ? " Ethereum" : " Solana"}, not from Split’s own books.
+              {" "}
+              {activity.data?.networkLabel ?? (chain === "evm" ? "the connected chain" : "Solana")},
+              not from Split’s own books.
             </p>
           </div>
           <button
@@ -71,7 +72,7 @@ export function ActivityView() {
           <Identicon seed={address} className="h-12 w-12 shrink-0" />
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
-              {walletName ?? "Wallet"} · {chain === "evm" ? "Ethereum" : "Solana"}
+              {walletName ?? "Wallet"} · {activity.data?.networkLabel ?? (chain === "evm" ? "EVM" : "Solana")}
             </p>
             <p className="mt-1 truncate font-serif text-[18px] tracking-[-0.03em] text-[#182d4a] sm:text-[20px]">
               {shortenAddress(address, 6)}
@@ -89,7 +90,7 @@ export function ActivityView() {
 
         <p className="mt-3">
           <a
-            href={explorerAddressUrl(chain, address)}
+            href={activity.data?.explorerAddressUrl ?? explorerAddressUrl(chain, address)}
             target="_blank"
             rel="noreferrer"
             className="font-mono text-[11px] uppercase tracking-[0.14em] text-[#65758b] hover:text-[#182d4a]"

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Shell } from "@/components/Shell";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { describeBettingError } from "@/lib/betting";
 import { castVote, getVotingRound, proposeQuestion, type VotingRound } from "@/lib/betting-api";
@@ -21,7 +22,7 @@ const labelClass = "font-mono text-[10px] uppercase tracking-[0.16em] text-[#657
  * are frozen per round — a round in flight keeps the rules it opened under.
  */
 export function VotingView() {
-  const { address, hasSession } = useWallet();
+  const { address, hasSession, sessionChecked, signingIn, signIn, signInError } = useWallet();
   const [data, setData] = useState<VotingRound | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -133,10 +134,34 @@ export function VotingView() {
 
             {canAct ? (
               <ProposalForm onSubmit={onPropose} />
+            ) : !address ? (
+              <div className="mt-6 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4">
+                <p className="text-[14px] leading-6 text-[#65758b]">
+                  Connect a wallet to propose a question or vote. One signature, no gas.
+                </p>
+                <div className="mt-4">
+                  <ConnectWalletButton />
+                </div>
+              </div>
+            ) : !sessionChecked ? (
+              <p className="mt-6 text-[14px] leading-6 text-[#65758b]">Checking whether this wallet is signed in…</p>
             ) : (
-              <p className="mt-6 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4 text-[14px] leading-6 text-[#65758b]">
-                Connect a wallet to propose a question or vote. One signature, no gas.
-              </p>
+              <div className="mt-6 rounded-[18px] border border-[rgba(24,45,74,0.08)] bg-white px-5 py-4">
+                <p className="text-[14px] leading-6 text-[#65758b]">
+                  Sign in with this wallet to propose or vote. One signature, no gas.
+                </p>
+                <button
+                  type="button"
+                  disabled={signingIn}
+                  onClick={() => {
+                    void signIn().catch(() => undefined);
+                  }}
+                  className="mt-4 rounded-full bg-[#265bff] px-5 py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-white disabled:opacity-60"
+                >
+                  {signingIn ? "Confirm in wallet…" : "Sign in"}
+                </button>
+                {signInError ? <p className="mt-3 font-mono text-[12px] text-[#ad4c62]">{signInError}</p> : null}
+              </div>
             )}
 
             <ProposalList

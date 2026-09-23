@@ -1,6 +1,6 @@
 import { DashboardHeader } from "@/components/dashboard/DashboardHeader";
 import { Ticker } from "@/components/Ticker";
-import { WalletProvider } from "@/components/wallet/WalletProvider";
+import { AppWalletProvider } from "@/components/wallet/AppWalletProvider";
 
 export default function AppLayout({
   children,
@@ -8,10 +8,10 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <WalletProvider>
+    <AppWalletProvider>
       <Ticker />
       <DashboardHeader />
       <main className="min-w-0 flex-1">{children}</main>
-    </WalletProvider>
+    </AppWalletProvider>
   );
 }

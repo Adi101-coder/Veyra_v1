@@ -2,24 +2,20 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import { useWallet } from "@/components/wallet/WalletProvider";
-import { WalletIcon } from "@/components/wallet/WalletIcons";
 import { TransactionRows } from "@/components/wallet/TransactionRows";
-import {
-  WALLET_OPTIONS,
-  shortenAddress,
-  type WalletId,
-} from "@/lib/solana-wallet";
+import { shortenAddress } from "@/lib/solana-wallet";
 
-export function ConnectWalletButton() {
+export function ConnectWalletButton({ className = "" }: { className?: string }) {
+  const { openConnectModal } = useConnectModal();
   const {
     address,
+    walletName,
     activity,
     connecting,
     error,
-    connect,
     disconnect,
-    clearError,
     chain,
     networkChainId,
     robinhoodChain,
@@ -27,19 +23,8 @@ export function ConnectWalletButton() {
     switchingNetwork,
     switchToRobinhoodChain,
   } = useWallet();
-  const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(false);
-  const [pending, setPending] = useState<WalletId | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
 
   useEffect(() => {
     if (!menu) return;
@@ -57,22 +42,10 @@ export function ConnectWalletButton() {
     };
   }, [menu]);
 
-  const pick = async (id: WalletId) => {
-    setPending(id);
-    try {
-      await connect(id);
-      setOpen(false);
-    } catch {
-      // error is stored on context
-    } finally {
-      setPending(null);
-    }
-  };
-
   if (address) {
     const preview = activity.data?.transactions.slice(0, 4) ?? [];
     return (
-      <div className="relative shrink-0 justify-self-end" ref={menuRef}>
+      <div className={`relative shrink-0 justify-self-end ${className}`} ref={menuRef}>
         <button
           type="button"
           onClick={() => setMenu((value) => !value)}
@@ -85,7 +58,7 @@ export function ConnectWalletButton() {
           <div className="absolute right-0 z-50 mt-2 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-[rgba(24,45,74,0.12)] bg-white shadow-[0_12px_40px_-20px_rgba(24,45,74,0.45)]">
             <div className="border-b border-[rgba(24,45,74,0.08)] px-4 py-3">
               <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#65758b]">
-                Connected
+                {walletName ?? "Connected"}
               </p>
               <p className="mt-1 font-serif text-[16px] text-[#182d4a]">
                 {shortenAddress(address, 5)}
@@ -165,59 +138,15 @@ export function ConnectWalletButton() {
   }
 
   return (
-    <div className="shrink-0 justify-self-end">
+    <div className={`shrink-0 justify-self-end ${className}`}>
       <button
         type="button"
-        onClick={() => {
-          clearError();
-          setOpen(true);
-        }}
-        className="whitespace-nowrap rounded-full border border-[#265bff] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white sm:px-6 sm:text-[14px]"
+        onClick={() => openConnectModal?.()}
+        disabled={!openConnectModal}
+        className="whitespace-nowrap rounded-full border border-[#265bff] bg-transparent px-3 py-1.5 font-serif text-[13px] text-[#182d4a] transition hover:bg-[#1847d8] hover:text-white disabled:opacity-60 sm:px-6 sm:text-[14px]"
       >
         {connecting ? "Connecting…" : <>Connect<span className="hidden sm:inline"> Wallet</span></>}
       </button>
-
-      {open ? (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#265bff]/35 p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-labelledby="wallet-modal-title"
-            className="w-full max-w-[360px] rounded-[28px] bg-white p-6 shadow-[0_24px_70px_-18px_rgba(0,0,0,0.35)]"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2
-              id="wallet-modal-title"
-              className="mb-5 text-[22px] font-semibold tracking-[-0.03em] text-[#182d4a]"
-            >
-              Select Wallet
-            </h2>
-            <ul className="flex flex-col gap-2.5">
-              {WALLET_OPTIONS.map((option) => {
-                const busy = pending === option.id;
-                return (
-                  <li key={option.id}>
-                    <button
-                      type="button"
-                      disabled={connecting}
-                      onClick={() => pick(option.id)}
-                      className="flex w-full items-center justify-between rounded-[18px] border border-[#dce5f1] bg-white px-5 py-[13px] text-left transition hover:border-[#dce5f1] hover:bg-[#fafafa] disabled:opacity-60"
-                    >
-                      <span className="text-[15px] text-[#182d4a]">
-                        {busy ? "Connecting…" : option.name}
-                      </span>
-                      <WalletIcon id={option.id} className="h-8 w-8 shrink-0" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {error ? <p className="mt-4 text-[13px] text-[#ad4c62]">{error}</p> : null}
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -61,6 +61,14 @@ export function registerSessionEnsurer(fn: SessionEnsurer | null) {
   ensureSession = fn;
 }
 
+/** Asks the connected wallet for the one-time sign-in signature. No gas. */
+export async function requestWalletSignIn() {
+  if (!ensureSession) {
+    throw new Error("Connect a wallet first.");
+  }
+  await ensureSession();
+}
+
 async function authedWrite<T>(url: string, init: RequestInit): Promise<T> {
   const send = () => fetch(url, { ...init, credentials: "same-origin" });
   let response = await send();
@@ -303,6 +311,18 @@ export type PoolSummary = {
   proposerWallet: string | null;
 };
 
+export type TreasuryWithdrawal = {
+  id: string;
+  status: string;
+  amountMicros: string;
+  destAddress: string;
+  txHash: string | null;
+  errorMessage: string | null;
+  /** True once automatic payout refused the row and an operator has to send it. */
+  manualOnly: boolean;
+  createdAt: string;
+};
+
 export async function requestWithdrawal(input: { destAddress: string; amountMicros: string }) {
   return authedWrite<{ id: string; status: string; amountMicros: string; destAddress: string }>(
     "/api/treasury/withdrawals",
@@ -312,6 +332,11 @@ export async function requestWithdrawal(input: { destAddress: string; amountMicr
       body: JSON.stringify(input),
     },
   );
+}
+
+export async function listWithdrawals() {
+  const response = await fetch("/api/treasury/withdrawals", { cache: "no-store", credentials: "same-origin" });
+  return readJson<{ withdrawals: TreasuryWithdrawal[] }>(response);
 }
 
 export async function listPools() {

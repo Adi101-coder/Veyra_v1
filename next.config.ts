@@ -4,6 +4,11 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   turbopack: {
     root: path.resolve(process.cwd()),
+    // Base Account's SDK pulls optional Coinbase packages. We don't offer that
+    // wallet, so the import resolves to a stub and the rest of RainbowKit can build.
+    resolveAlias: {
+      "@base-org/account": "./src/lib/optional-module-stub.ts",
+    },
   },
   serverExternalPackages: [
     "@prisma/client",

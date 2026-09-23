@@ -48,8 +48,10 @@ export async function GET(request: Request) {
         status: row.status,
         amountMicros: row.amountMicros.toString(),
         destAddress: row.destAddress,
-        txHash: row.txHash,
-        createdAt: row.createdAt.toISOString(),
+      txHash: row.txHash,
+      errorMessage: row.errorMessage,
+      manualOnly: row.manualOnly,
+      createdAt: row.createdAt.toISOString(),
       })),
     });
   } catch (error) {

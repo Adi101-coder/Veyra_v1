@@ -25,13 +25,16 @@
   "dependencies": {
     "@polymarket/clob-client-v2": "^1.1.0",
     "@prisma/client": "^6.16.3",
+    "@rainbow-me/rainbowkit": "^2.2.11",
+    "@tanstack/react-query": "^5.103.2",
     "framer-motion": "^13.3.0",
     "lucide-react": "^1.46.0",
     "next": "16.3.5",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1",
-    "viem": "^2.56.6"
+    "viem": "^2.56.6",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
