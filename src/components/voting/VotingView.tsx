@@ -6,7 +6,14 @@ import { Shell } from "@/components/Shell";
 import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { describeBettingError } from "@/lib/betting";
-import { castVote, getVotingRound, proposeQuestion, type VotingRound } from "@/lib/betting-api";
+import {
+  castVote,
+  getVotingRound,
+  proposeQuestion,
+  retractVote,
+  withdrawProposal,
+  type VotingRound,
+} from "@/lib/betting-api";
 import { ProposalForm } from "@/components/voting/ProposalForm";
 import { ProposalList } from "@/components/voting/ProposalList";
 import { Countdown } from "@/components/voting/Countdown";
@@ -46,7 +53,7 @@ export function VotingView() {
   }, [load, address]);
 
   const onVote = async (proposalId: string) => {
-    setBusy(proposalId);
+    setBusy(`vote:${proposalId}`);
     setNotice(null);
     try {
       const result = await castVote(proposalId);
@@ -58,6 +65,42 @@ export function VotingView() {
       await load();
     } catch (err) {
       setNotice(describeBettingError(err, "Could not record that vote."));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onUnvote = async (proposalId: string) => {
+    setBusy(`vote:${proposalId}`);
+    setNotice(null);
+    try {
+      const result = await retractVote(proposalId);
+      setNotice(
+        result.removed
+          ? `Vote removed. ${result.votesRemaining} left this round.`
+          : "That vote was already gone.",
+      );
+      await load();
+    } catch (err) {
+      setNotice(describeBettingError(err, "Could not remove that vote."));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onRemove = async (proposalId: string) => {
+    setBusy(`remove:${proposalId}`);
+    setNotice(null);
+    try {
+      const result = await withdrawProposal(proposalId);
+      setNotice(
+        result.votesReleased > 0
+          ? "Question removed. Votes on it were released."
+          : "Question removed.",
+      );
+      await load();
+    } catch (err) {
+      setNotice(describeBettingError(err, "Could not remove that question."));
     } finally {
       setBusy(null);
     }
@@ -167,16 +210,20 @@ export function VotingView() {
             <ProposalList
               proposals={proposals}
               myVotes={data?.myVotes ?? []}
+              viewerWallet={address}
               selectionCount={round.selectionCount}
               canVote={canAct && (votesRemaining ?? 0) > 0}
               busyId={busy}
               onVote={onVote}
+              onUnvote={onUnvote}
+              onRemove={onRemove}
             />
           </>
         ) : null}
 
         <p className="mt-10 font-mono text-[11px] leading-relaxed text-[#65758b]">
-          When a round closes the result is frozen — later votes cannot change it. Ties
+          While the round is open you can remove a question you proposed, or take a vote
+          back. When it closes the result is frozen — later votes cannot change it. Ties
           go to whichever question was proposed first.{" "}
           <Link href="/markets" className="underline">
             See the pools already open

@@ -237,6 +237,22 @@ export async function castVote(proposalId: string) {
   });
 }
 
+/** Taking a vote back is a no-op when this wallet had not voted. */
+export async function retractVote(proposalId: string) {
+  return authedWrite<{ removed: boolean; votesUsed: number; votesRemaining: number }>(
+    `/api/voting/votes/${encodeURIComponent(proposalId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Only the proposer can call this, and only while the round is still open. */
+export async function withdrawProposal(proposalId: string) {
+  return authedWrite<{ removed: boolean; votesReleased: number }>(
+    `/api/voting/proposals/${encodeURIComponent(proposalId)}`,
+    { method: "DELETE" },
+  );
+}
+
 export type RoundHistory = {
   round: { id: string; status: string; closesAt: string; finalizedAt: string | null; selectionCount: number };
   results: { rank: number; proposalId: string; title: string; voteCount: number; selected: boolean; marketId: string | null }[];

@@ -5,7 +5,15 @@ import { getPrisma } from "@/server/db";
 import { BettingError } from "@/server/errors";
 import { parseWalletAddress } from "@/server/betting/validation";
 import { loadVotingConfig, normalizeCategory } from "@/server/voting/config";
-import { castVote, getOpenRound, liveTally, openRound, submitProposal } from "@/server/voting/store";
+import {
+  castVote,
+  getOpenRound,
+  liveTally,
+  openRound,
+  retractVote,
+  submitProposal,
+  withdrawProposal,
+} from "@/server/voting/store";
 
 /** Request-facing wrappers over the voting store. */
 
@@ -115,6 +123,16 @@ export async function voteForProposal(request: Request, body: unknown) {
   const proposal = await prisma.voteProposal.findUnique({ where: { id: proposalId } });
   if (!proposal) throw new BettingError("UNKNOWN_PROPOSAL", "That proposal does not exist.", 404);
   return castVote(prisma, { roundId: proposal.roundId, proposalId, walletAddress: wallet });
+}
+
+export async function retractVoteForProposal(request: Request, proposalId: string) {
+  const wallet = parseWalletAddress(requireWallet(request));
+  return retractVote(getPrisma(), { proposalId, walletAddress: wallet });
+}
+
+export async function removeProposal(request: Request, proposalId: string) {
+  const wallet = parseWalletAddress(requireWallet(request));
+  return withdrawProposal(getPrisma(), { proposalId, walletAddress: wallet });
 }
 
 /** Frozen history for a finished round: the audit trail for its selection. */

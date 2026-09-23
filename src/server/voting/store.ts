@@ -191,6 +191,81 @@ export async function castVote(
   );
 }
 
+/**
+ * Takes back one of this wallet's votes. Idempotent: retracting a vote that is
+ * already gone reports `removed: false` and does not change the budget.
+ */
+export async function retractVote(
+  prisma: PrismaClient,
+  input: { proposalId: string; walletAddress: string },
+  now = new Date(),
+): Promise<{ removed: boolean; votesUsed: number; votesRemaining: number }> {
+  return withUniqueRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const proposal = await tx.voteProposal.findUnique({ where: { id: input.proposalId } });
+      if (!proposal) throw new BettingError("UNKNOWN_PROPOSAL", "That proposal does not exist.", 404);
+
+      await tx.$queryRaw`SELECT "id" FROM "voting_rounds" WHERE "id" = ${proposal.roundId} FOR UPDATE`;
+      const round = await tx.votingRound.findUniqueOrThrow({ where: { id: proposal.roundId } });
+      assertAcceptingWrites(round, now);
+
+      const existing = await tx.vote.findUnique({
+        where: {
+          roundId_walletAddress_proposalId: {
+            roundId: proposal.roundId,
+            walletAddress: input.walletAddress,
+            proposalId: input.proposalId,
+          },
+        },
+      });
+      if (existing) await tx.vote.delete({ where: { id: existing.id } });
+
+      const votesUsed = await tx.vote.count({
+        where: { roundId: proposal.roundId, walletAddress: input.walletAddress },
+      });
+      return {
+        removed: Boolean(existing),
+        votesUsed,
+        votesRemaining: Math.max(0, round.votesPerWallet - votesUsed),
+      };
+    }),
+  );
+}
+
+/**
+ * The proposer pulls their question out of an open round.
+ *
+ * Votes on it are deleted in the same transaction, so those wallets get the
+ * budget back. A closed round is refused: the frozen tally must keep every
+ * question that was in the race.
+ */
+export async function withdrawProposal(
+  prisma: PrismaClient,
+  input: { proposalId: string; walletAddress: string },
+  now = new Date(),
+) {
+  return withUniqueRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const proposal = await tx.voteProposal.findUnique({ where: { id: input.proposalId } });
+      if (!proposal) throw new BettingError("UNKNOWN_PROPOSAL", "That proposal does not exist.", 404);
+      if (proposal.proposerWallet !== input.walletAddress) {
+        throw new BettingError("NOT_PROPOSER", "Only the person who proposed this question can remove it.", 403);
+      }
+
+      await tx.$queryRaw`SELECT "id" FROM "voting_rounds" WHERE "id" = ${proposal.roundId} FOR UPDATE`;
+      const round = await tx.votingRound.findUniqueOrThrow({ where: { id: proposal.roundId } });
+      assertAcceptingWrites(round, now);
+
+      const current = await tx.voteProposal.findUnique({ where: { id: input.proposalId } });
+      if (!current) throw new BettingError("UNKNOWN_PROPOSAL", "That proposal does not exist.", 404);
+
+      const votes = await tx.vote.deleteMany({ where: { proposalId: input.proposalId } });
+      await tx.voteProposal.delete({ where: { id: input.proposalId } });
+      return { removed: true, votesReleased: votes.count };
+    }),
+  );
+}
+
 /** Live tally for an OPEN round. Once a round closes, read `voting_round_results`. */
 export async function liveTally(prisma: PrismaClient, roundId: string) {
   const proposals = await prisma.voteProposal.findMany({

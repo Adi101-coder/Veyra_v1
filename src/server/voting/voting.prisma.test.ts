@@ -9,7 +9,7 @@ import {
   freezeResults,
   runVotingTick,
 } from "@/server/voting/lifecycle";
-import { castVote, openRound, submitProposal } from "@/server/voting/store";
+import { castVote, openRound, retractVote, submitProposal, withdrawProposal } from "@/server/voting/store";
 import { getPoolMarket, listPoolMarkets, poolSyntheticBook } from "@/server/voting/pool";
 import { openPoolLiquidity, seedFund } from "@/server/pools/fund";
 import { resolveMarket } from "@/server/betting/service";
@@ -362,6 +362,59 @@ describe("Daily voting rounds (Prisma)", () => {
     expect(results).toHaveLength(3);
     expect(results.every((r) => r.selected === false)).toBe(true);
     expect(await prisma.market.count({ where: { source: "veyra" } })).toBe(0);
+  });
+
+  it("lets the proposer remove a question and releases the votes on it", async () => {
+    const { round, proposals } = await roundWithProposals(1);
+    const proposer = wallet(900);
+    const voter = wallet(4);
+    await castVote(prisma, { roundId: round.id, proposalId: proposals[0]!.id, walletAddress: voter });
+    await castVote(prisma, { roundId: round.id, proposalId: proposals[0]!.id, walletAddress: proposer });
+
+    await expect(
+      withdrawProposal(prisma, { proposalId: proposals[0]!.id, walletAddress: voter }),
+    ).rejects.toMatchObject({ code: "NOT_PROPOSER" });
+
+    const removed = await withdrawProposal(prisma, { proposalId: proposals[0]!.id, walletAddress: proposer });
+    expect(removed).toEqual({ removed: true, votesReleased: 2 });
+    expect(await prisma.voteProposal.count({ where: { id: proposals[0]!.id } })).toBe(0);
+    expect(await prisma.vote.count({ where: { roundId: round.id } })).toBe(0);
+
+    // The title is free again, and the voter has their budget back.
+    const again = await submitProposal(
+      prisma,
+      { roundId: round.id, title: "Question 0", category: "crypto", tag: "community", proposerWallet: proposer },
+      CONFIG,
+    );
+    const revote = await castVote(prisma, { roundId: round.id, proposalId: again.id, walletAddress: voter });
+    expect(revote).toMatchObject({ recorded: true, votesUsed: 1, votesRemaining: 2 });
+  });
+
+  it("refuses to remove a question once the round has closed", async () => {
+    const opened = new Date("2026-09-18T00:00:00Z");
+    const { proposals } = await roundWithProposals(1, opened);
+    const afterClose = new Date(opened.getTime() + CONFIG.roundMs + 1000);
+    await closeDueRounds(prisma, afterClose);
+    await expect(
+      withdrawProposal(prisma, { proposalId: proposals[0]!.id, walletAddress: wallet(900) }, afterClose),
+    ).rejects.toMatchObject({ code: "ROUND_CLOSED" });
+    expect(await prisma.voteProposal.count({ where: { id: proposals[0]!.id } })).toBe(1);
+  });
+
+  it("returns a vote to the budget when the voter takes it back", async () => {
+    const { round, proposals } = await roundWithProposals(4);
+    const voter = wallet(8);
+    await castVote(prisma, { roundId: round.id, proposalId: proposals[0]!.id, walletAddress: voter });
+    await castVote(prisma, { roundId: round.id, proposalId: proposals[1]!.id, walletAddress: voter });
+    await castVote(prisma, { roundId: round.id, proposalId: proposals[2]!.id, walletAddress: voter });
+
+    const back = await retractVote(prisma, { proposalId: proposals[2]!.id, walletAddress: voter });
+    expect(back).toMatchObject({ removed: true, votesUsed: 2, votesRemaining: 1 });
+    const replay = await retractVote(prisma, { proposalId: proposals[2]!.id, walletAddress: voter });
+    expect(replay).toMatchObject({ removed: false, votesUsed: 2, votesRemaining: 1 });
+
+    const reused = await castVote(prisma, { roundId: round.id, proposalId: proposals[3]!.id, walletAddress: voter });
+    expect(reused).toMatchObject({ recorded: true, votesUsed: 3, votesRemaining: 0 });
   });
 
   it("keeps the full voting history after finalization", async () => {
