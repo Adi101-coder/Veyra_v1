@@ -15,6 +15,7 @@ import { runScheduledInventoryReconciliation } from "@/server/inventory/service"
 import { runVotingTick } from "@/server/voting/lifecycle";
 import { fundPendingPools, settleResolvedPools } from "@/server/pools/settlement";
 import { releaseTerminalHolds } from "@/server/treasury/holds";
+import { processHotPayouts } from "@/server/treasury/hot-payouts";
 import { payoutResolvedPositions } from "@/server/treasury/payouts";
 import { creditSellFills } from "@/server/treasury/sells";
 import { checkOmnibusOnchain } from "@/server/treasury/omnibus-onchain";
@@ -43,6 +44,12 @@ const STEPS = {
     const released = await releaseTerminalHolds();
     const sold = await creditSellFills();
     return released.released + sold.credited;
+  },
+  // Hot-wallet withdrawals within the caps; everything else stays in the operator queue.
+  withdrawals: async () => {
+    const result = await processHotPayouts();
+    if (result.waiting) console.info("[worker] payouts waiting", { reason: result.waiting });
+    return result.sent + result.settled + result.manual;
   },
   resolutions: async () => (await syncMarketResolutions(createDefaultDeps())).length,
   reputation: async () => (await processReputationJobs(createDefaultDeps())).length,

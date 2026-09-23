@@ -715,9 +715,17 @@ model TreasuryWithdrawal {
   destAddress   String
   asset         String    @default("USDC")
   amountMicros  BigInt
+  /// PENDING -> SENDING (hot wallet signed + persisted) -> COMPLETED, or PENDING -> COMPLETED/FAILED by an operator.
   status        String    @default("PENDING")
   txHash        String?
   errorMessage  String?
+  /// Signed before broadcast so a crash can only rebroadcast the same nonce, never pay twice.
+  payoutFrom    String?
+  payoutNonce   Int?
+  payoutRawTx   String?
+  sentAt        DateTime?
+  /// Set when automatic payout was refused or reverted; only an operator may settle it.
+  manualOnly    Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   completedAt   DateTime?

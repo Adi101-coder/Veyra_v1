@@ -3,6 +3,7 @@ import "server-only";
 import type { PrismaClient } from "@prisma/client";
 import { BettingError } from "@/server/errors";
 import { CASH_ASSET, debitCash, creditCash } from "@/server/treasury/funds";
+import { payoutAccount } from "@/server/treasury/config";
 
 const EVM = /^0x[0-9a-fA-F]{40}$/;
 const TX_HASH = /^0x[0-9a-fA-F]{64}$/;
@@ -56,16 +57,26 @@ export async function listPendingWithdrawals(prisma: PrismaClient) {
 export async function completeWithdrawal(
   prisma: PrismaClient,
   input: { id: string; txHash: string },
+  env: NodeJS.ProcessEnv = process.env,
 ) {
   if (!TX_HASH.test(input.txHash)) {
     throw new BettingError("INVALID_WITHDRAWAL", "txHash must be a 32-byte hex hash.", 400);
   }
+  // With hot payouts on, the worker may sign any non-manual row at any moment. An
+  // operator paying one by hand as well would pay the user twice.
+  const automatic = payoutAccount(env) !== null;
   const claim = await prisma.treasuryWithdrawal.updateMany({
-    where: { id: input.id, status: "PENDING" },
+    where: { id: input.id, status: "PENDING", ...(automatic ? { manualOnly: true } : {}) },
     data: { status: "COMPLETED", txHash: input.txHash.toLowerCase(), completedAt: new Date() },
   });
   if (claim.count !== 1) {
-    throw new BettingError("WITHDRAWAL_NOT_PENDING", "That withdrawal is not waiting for an operator.", 409);
+    throw new BettingError(
+      "WITHDRAWAL_NOT_PENDING",
+      automatic
+        ? "That withdrawal is not waiting for an operator. Automatic payouts are on: only rows marked manual can be completed by hand."
+        : "That withdrawal is not waiting for an operator.",
+      409,
+    );
   }
   return prisma.treasuryWithdrawal.findUniqueOrThrow({ where: { id: input.id } });
 }

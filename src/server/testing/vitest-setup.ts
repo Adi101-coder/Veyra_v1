@@ -18,3 +18,6 @@ process.env.POLYMARKET_EXECUTION_MODE = "paper";
 // would otherwise rename the asset the suite asserts on.
 process.env.VEYRA_CASH_ASSET = "USDC";
 delete process.env.POLYMARKET_PRIVATE_KEY;
+// Empty rather than deleted: Prisma loads `.env` when a client is created and only
+// fills variables that are unset, so a deleted key would come back mid-suite.
+process.env.VEYRA_PAYOUT_PRIVATE_KEY = "";

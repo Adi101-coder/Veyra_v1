@@ -1,5 +1,6 @@
 import "server-only";
 
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import { BettingError } from "@/server/errors";
 
 /**
@@ -18,6 +19,7 @@ import { BettingError } from "@/server/errors";
  */
 
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+const HEX_KEY = /^(0x)?[0-9a-fA-F]{64}$/;
 
 export type SupportedAsset = {
   /** Ticker as users see it, e.g. "NVDA". */
@@ -68,6 +70,17 @@ export function treasuryAddress(env: NodeJS.ProcessEnv = process.env) {
     throw new BettingError("TREASURY_CONFIG", "VEYRA_TREASURY_ADDRESS is not a valid EVM address.", 500);
   }
   return value;
+}
+
+/**
+ * 3. Hot payout wallet — pays withdrawals automatically, within caps. Normally a
+ *    separate float; it may be the treasury itself, which `validateEnvironment`
+ *    allows with a boot warning. It must never be the execution or receipt signer.
+ */
+export function payoutAccount(env: Record<string, string | undefined> = process.env): PrivateKeyAccount | null {
+  const key = (env.VEYRA_PAYOUT_PRIVATE_KEY ?? "").trim();
+  if (!HEX_KEY.test(key)) return null;
+  return privateKeyToAccount((key.startsWith("0x") ? key : `0x${key}`) as `0x${string}`);
 }
 
 /**

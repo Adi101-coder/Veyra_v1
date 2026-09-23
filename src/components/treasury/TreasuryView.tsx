@@ -289,11 +289,13 @@ export function TreasuryView() {
               setWithdrawing(true);
               setWithdrawNote(null);
               try {
-                const result = await requestWithdrawal({
+                await requestWithdrawal({
                   destAddress: dest,
                   amountMicros: BigInt(Math.round(dollars * 1_000_000)).toString(),
                 });
-                setWithdrawNote(`Queued ${result.id}. Status: ${result.status}.`);
+                setWithdrawNote(
+                  "Withdrawal requested. Small withdrawals are sent automatically within about a minute; larger ones are reviewed and sent by an operator.",
+                );
                 setAmount("");
               } catch (err: unknown) {
                 setWithdrawNote(describeBettingError(err, "Could not request a withdrawal."));

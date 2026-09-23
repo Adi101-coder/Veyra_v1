@@ -1,3 +1,4 @@
+import { privateKeyToAccount } from "viem/accounts";
 import { ChainConfigError } from "@/lib/robinhood-chain";
 import { loadRobinhoodChainConfig } from "@/server/chain/config";
 import { isLoopbackPostgresUrl } from "@/server/postgres-env";
@@ -151,6 +152,43 @@ export function validateEnvironment(env: Env): EnvReport {
     errors.push("VEYRA_TREASURY_ADDRESS is required when VEYRA_TREASURY_ASSETS lists deposit assets.");
   }
 
+  // Hot payout wallet: a capped float, so it must be none of the other roles.
+  if (set(env.VEYRA_PAYOUT_PRIVATE_KEY)) {
+    if (!HEX_KEY.test(env.VEYRA_PAYOUT_PRIVATE_KEY!.trim())) {
+      errors.push("VEYRA_PAYOUT_PRIVATE_KEY must be a 32-byte hex key.");
+    } else {
+      const addressOf = (key: string | undefined) =>
+        key && HEX_KEY.test(key.trim())
+          ? privateKeyToAccount((key.trim().startsWith("0x") ? key.trim() : `0x${key.trim()}`) as `0x${string}`).address.toLowerCase()
+          : null;
+      const payout = addressOf(env.VEYRA_PAYOUT_PRIVATE_KEY)!;
+      if (treasury && payout === treasury) {
+        // Operator's explicit choice: payouts straight from the treasury. The caps bind
+        // this worker only; anyone holding the key can move every deposit.
+        warnings.push(
+          "VEYRA_PAYOUT_PRIVATE_KEY is the TREASURY key: every user deposit is spendable by anyone who obtains this server's environment.",
+        );
+      }
+      const clashes = [
+        [funder, "POLYMARKET_FUNDER_ADDRESS"],
+        [addressOf(env.POLYMARKET_PRIVATE_KEY), "POLYMARKET_PRIVATE_KEY"],
+        [addressOf(env.RH_SETTLEMENT_PRIVATE_KEY), "RH_SETTLEMENT_PRIVATE_KEY"],
+      ].filter(([address]) => address && address === payout);
+      for (const [, name] of clashes) {
+        errors.push(`VEYRA_PAYOUT_PRIVATE_KEY controls the same wallet as ${name}. The payout float must be its own wallet.`);
+      }
+    }
+    if (env.VEYRA_CUSTODY_ENABLED !== "true") {
+      warnings.push("VEYRA_PAYOUT_PRIVATE_KEY is set but custody is off: no withdrawals will be paid automatically.");
+    }
+  }
+  const payoutMax = Number(env.VEYRA_PAYOUT_MAX_MICROS ?? 100_000_000);
+  const payoutDaily = Number(env.VEYRA_PAYOUT_DAILY_MAX_MICROS ?? 500_000_000);
+  if (!Number.isSafeInteger(payoutMax) || payoutMax <= 0) errors.push("VEYRA_PAYOUT_MAX_MICROS must be a positive integer.");
+  if (!Number.isSafeInteger(payoutDaily) || payoutDaily < payoutMax) {
+    errors.push("VEYRA_PAYOUT_DAILY_MAX_MICROS must be an integer at least VEYRA_PAYOUT_MAX_MICROS.");
+  }
+
   // Inventory reconciliation baseline must be complete or absent
   if (set(env.VEYRA_OMNIBUS_USDC_BASELINE_MICROS) !== set(env.VEYRA_OMNIBUS_USDC_BASELINE_AT)) {
     errors.push("Set both VEYRA_OMNIBUS_USDC_BASELINE_MICROS and VEYRA_OMNIBUS_USDC_BASELINE_AT, or neither.");
@@ -165,6 +203,7 @@ export function validateEnvironment(env: Env): EnvReport {
     configured: {
       database: set(env.DATABASE_URL),
       treasuryWallet: set(env.VEYRA_TREASURY_ADDRESS),
+      payoutWallet: set(env.VEYRA_PAYOUT_PRIVATE_KEY),
       treasuryAssets: set(env.VEYRA_TREASURY_ASSETS),
       directDatabase: set(env.DIRECT_URL),
       cronSecret: set(env.CRON_SECRET),

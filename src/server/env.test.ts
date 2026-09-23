@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { privateKeyToAccount } from "viem/accounts";
 import { validateEnvironment } from "@/server/env";
 
 const KEY = `0x${"ab".repeat(32)}`;
@@ -29,6 +30,32 @@ describe("production environment preflight", () => {
     expect(report.errors).toEqual([]);
     expect(report.mode).toBe("live");
     expect(report.configured).toMatchObject({ polymarketApiCredentials: true, polymarketFunder: true, worker: true });
+  });
+
+  it("accepts a separate payout wallet and refuses one that doubles as the execution signer", () => {
+    const payout = `0x${"12".repeat(32)}`;
+    expect(validateEnvironment({ ...PROD_LIVE, VEYRA_PAYOUT_PRIVATE_KEY: payout, VEYRA_CUSTODY_ENABLED: "true" }).errors).toEqual([]);
+    const shared = validateEnvironment({ ...PROD_LIVE, VEYRA_PAYOUT_PRIVATE_KEY: KEY, VEYRA_CUSTODY_ENABLED: "true" });
+    expect(shared.errors.join("\n")).toMatch(/same wallet as POLYMARKET_PRIVATE_KEY/);
+    expect(JSON.stringify(shared)).not.toContain(KEY);
+  });
+
+  it("allows paying out from the treasury itself, but warns on every boot", () => {
+    const treasuryKey = `0x${"34".repeat(32)}` as const;
+    const treasury = privateKeyToAccount(treasuryKey).address;
+    const report = validateEnvironment({
+      ...PROD_LIVE,
+      VEYRA_TREASURY_ADDRESS: treasury,
+      VEYRA_PAYOUT_PRIVATE_KEY: treasuryKey,
+      VEYRA_CUSTODY_ENABLED: "true",
+    });
+    expect(report.errors).toEqual([]);
+    expect(report.warnings.join("\n")).toMatch(/TREASURY key/);
+  });
+
+  it("rejects payout caps where the daily cap is below the per-withdrawal cap", () => {
+    const report = validateEnvironment({ ...PROD_LIVE, VEYRA_PAYOUT_MAX_MICROS: "100000000", VEYRA_PAYOUT_DAILY_MAX_MICROS: "50000000" });
+    expect(report.errors.join("\n")).toMatch(/VEYRA_PAYOUT_DAILY_MAX_MICROS/);
   });
 
   it("never exposes secret values", () => {
