@@ -4,9 +4,10 @@
  * ever printing, logging or transmitting the private key.
  *
  * The key is used for exactly one local operation — deriving its public address —
- * so the address can be checked against POLYMARKET_FUNDER_ADDRESS. A mismatch
- * there means orders would be signed by one wallet and funded from another, which
- * Polymarket rejects only after the order is already in flight.
+ * so the Polymarket deposit wallet it owns can be checked against
+ * POLYMARKET_FUNDER_ADDRESS. A mismatch there means orders would be signed by one
+ * wallet and funded from another, which Polymarket rejects only after the order is
+ * already in flight.
  *
  *   node scripts/check-wallets.mjs
  */
@@ -14,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { createPublicClient, erc20Abi, http, formatUnits } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { collateralConfig, deriveDepositWallet } from "./lib/polymarket.mjs";
 
 // Load .env without pulling it into the process env any longer than needed.
 const env = {};
@@ -66,12 +68,15 @@ if (!rawKey) {
     fail("POLYMARKET_PRIVATE_KEY could not be parsed as a key.");
   }
 }
+const signatureType = Number(env.POLYMARKET_SIGNATURE_TYPE || "0");
+const depositWallet = derived && (signatureType === 0 || signatureType === 3) ? deriveDepositWallet(derived) : null;
 if (!funder) fail("POLYMARKET_FUNDER_ADDRESS is empty.");
 else if (!ADDR.test(funder)) fail("POLYMARKET_FUNDER_ADDRESS is not a valid 0x address.");
-else if (derived && derived.toLowerCase() !== funder.toLowerCase()) {
-  fail(`FUNDER_ADDRESS ${funder} is NOT the wallet this key controls (${derived}).`);
+else if (depositWallet && depositWallet.toLowerCase() !== funder.toLowerCase()) {
+  fail(`FUNDER_ADDRESS ${funder} is NOT the deposit wallet this key owns (${depositWallet}).`);
   note("Orders would be signed by one wallet and funded from another.");
-} else if (derived) ok(`funder matches the signing key`);
+} else if (depositWallet) ok(`funder is the deposit wallet this key owns`);
+else if (derived) note(`signature type ${signatureType}: cannot verify the proxy/safe funder belongs to this key`);
 
 console.log("\nWallet 3 — Robinhood settlement signer (writes receipts only)");
 const rhKey = env.RH_SETTLEMENT_PRIVATE_KEY ?? "";
@@ -115,16 +120,18 @@ else {
   const client = createPublicClient({ chain: polygon, transport: http(rpc) });
   const USDC = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359";
   const USDCE = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
+  const { pusd: PUSD } = collateralConfig(polygon.id);
   for (const [label, addr] of [["wallet 1 (treasury)", treasury], ["wallet 2 (execution)", funder || derived]]) {
     if (!ADDR.test(addr ?? "")) continue;
     try {
-      const [native, usdc, usdce] = await Promise.all([
+      const [native, pusd, usdc, usdce] = await Promise.all([
         client.getBalance({ address: addr }),
+        client.readContract({ address: PUSD, abi: erc20Abi, functionName: "balanceOf", args: [addr] }),
         client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [addr] }),
         client.readContract({ address: USDCE, abi: erc20Abi, functionName: "balanceOf", args: [addr] }),
       ]);
-      console.log(`  ${label}: ${formatUnits(usdc, 6)} USDC, ${formatUnits(usdce, 6)} USDC.e, ${formatUnits(native, 18)} POL`);
-      if (label.includes("execution") && native === 0n) note("  no POL — this wallet cannot pay gas.");
+      console.log(`  ${label}: ${formatUnits(pusd, 6)} pUSD, ${formatUnits(usdc, 6)} USDC, ${formatUnits(usdce, 6)} USDC.e, ${formatUnits(native, 18)} POL`);
+      if (label.includes("execution") && usdce > 0n) note("  USDC.e is not CLOB collateral — run `npm run worker:wrap-pusd`.");
     } catch (error) {
       fail(`  could not read ${label}: ${error.shortMessage ?? error.message}`);
     }

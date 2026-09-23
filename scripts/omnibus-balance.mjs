@@ -7,13 +7,10 @@ import { resolve } from "node:path";
 import { createPublicClient, erc20Abi, formatUnits, http } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { polygon, polygonAmoy } from "viem/chains";
+import { collateralConfig } from "./lib/polymarket.mjs";
 
 const USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
 const USDC = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359";
-const SPENDERS = [
-  ["ctfExchange", "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"],
-  ["negRiskExchange", "0xC5d563A36AE78145C45a50134d48A1215220f80a"],
-];
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 const HEX_KEY = /^(0x)?[0-9a-fA-F]{64}$/;
 
@@ -67,26 +64,30 @@ if (!rpc) {
 
 const chain = env.POLYMARKET_CHAIN_ID === "80002" ? polygonAmoy : polygon;
 const client = createPublicClient({ chain, transport: http(rpc) });
+const { pusd: PUSD, spenders: SPENDERS } = collateralConfig(chain.id);
 
-const [nativeWei, usdcE, usdc, ...allowances] = await Promise.all([
+const [nativeWei, pusd, usdcE, usdc, ...allowances] = await Promise.all([
   client.getBalance({ address }),
+  client.readContract({ address: PUSD, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
   client.readContract({ address: USDC_E, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
   client.readContract({ address: USDC, abi: erc20Abi, functionName: "balanceOf", args: [address] }),
   ...SPENDERS.map(([, spender]) =>
-    client.readContract({ address: USDC_E, abi: erc20Abi, functionName: "allowance", args: [address, spender] }),
+    client.readContract({ address: PUSD, abi: erc20Abi, functionName: "allowance", args: [address, spender] }),
   ),
 ]);
 
-const approved = allowances.some((value) => value >= usdcE && usdcE > 0n);
+const approved = pusd > 0n && allowances.every((value) => value >= pusd);
 
 console.log("Veyra omnibus vault (on-chain)");
 console.log(`  address     ${address}`);
 console.log(`  chain       ${chain.name} (${chain.id})`);
 console.log(`  POL         ${formatUnits(nativeWei, 18)}`);
-console.log(`  USDC.e/pUSD ${formatUnits(usdcE, 6)}`);
+console.log(`  pUSD        ${formatUnits(pusd, 6)}`);
+console.log(`  USDC.e      ${formatUnits(usdcE, 6)}${usdcE > 0n ? " (unwrapped — run worker:wrap-pusd)" : ""}`);
 console.log(`  USDC        ${formatUnits(usdc, 6)}`);
-console.log(`  approved    ${approved ? "yes (USDC.e allowance covers balance)" : "no — send a little POL and approve on Polymarket"}`);
+console.log(`  approved    ${approved ? "yes (every exchange's pUSD allowance covers the balance)" : "no — run worker:wrap-pusd or make one trade on polymarket.com"}`);
 for (let i = 0; i < SPENDERS.length; i++) {
-  console.log(`  allowance   ${SPENDERS[i][0]} ${formatUnits(allowances[i], 6)} USDC.e`);
+  const value = allowances[i];
+  console.log(`  allowance   ${SPENDERS[i][0]} ${value > 10n ** 30n ? "unlimited" : formatUnits(value, 6)} pUSD`);
 }
 console.log(`  checked     ${new Date().toISOString()}`);

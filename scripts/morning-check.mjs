@@ -9,12 +9,10 @@ import { readFileSync } from "node:fs";
 import { createPublicClient, erc20Abi, http, formatUnits } from "viem";
 import { polygon } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { collateralConfig, deriveDepositWallet } from "./lib/polymarket.mjs";
 
 const USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174";
-const SPENDERS = [
-  ["ctfExchange", "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"],
-  ["negRiskExchange", "0xC5d563A36AE78145C45a50134d48A1215220f80a"],
-];
+const { pusd: PUSD, spenders: SPENDERS } = collateralConfig(polygon.id);
 
 const env = {};
 for (const line of readFileSync(".env", "utf8").split("\n")) {
@@ -57,29 +55,39 @@ const treasury = env.VEYRA_TREASURY_ADDRESS;
 if (treasury && signer && treasury.toLowerCase() === signer.toLowerCase()) {
   bad("treasury and signer are the SAME wallet", "user deposits would be traded");
 } else if (treasury && signer) ok("treasury and signer are different wallets");
+const funder = env.POLYMARKET_FUNDER_ADDRESS;
+const signatureType = Number(env.POLYMARKET_SIGNATURE_TYPE || "0");
+if (signer && funder && (signatureType === 0 || signatureType === 3)) {
+  const expected = deriveDepositWallet(signer);
+  if (expected.toLowerCase() === funder.toLowerCase()) ok(`funder ${funder} is the signer's deposit wallet`);
+  else bad(`funder ${funder} is not the signer's deposit wallet`, `set POLYMARKET_FUNDER_ADDRESS="${expected}"`);
+}
 
 console.log("\n3. Collateral and allowances (the thing that blocked us)");
-const funder = env.POLYMARKET_FUNDER_ADDRESS;
 if (!funder || !env.POLYGON_RPC_URL) {
   bad("cannot check without POLYMARKET_FUNDER_ADDRESS and POLYGON_RPC_URL");
 } else {
   const client = createPublicClient({ chain: polygon, transport: http(env.POLYGON_RPC_URL) });
   try {
-    const held = await client.readContract({ address: USDC_E, abi: erc20Abi, functionName: "balanceOf", args: [funder] });
-    if (held > 0n) ok(`funder holds ${formatUnits(held, 6)} USDC.e`);
-    else bad(`funder ${funder} holds no USDC.e`, `send USDC.e (${USDC_E}) to it — native USDC will not work`);
+    const [held, unwrapped] = await Promise.all([
+      client.readContract({ address: PUSD, abi: erc20Abi, functionName: "balanceOf", args: [funder] }),
+      client.readContract({ address: USDC_E, abi: erc20Abi, functionName: "balanceOf", args: [funder] }),
+    ]);
+    if (held > 0n) ok(`funder holds ${formatUnits(held, 6)} pUSD`);
+    else if (unwrapped > 0n) bad(`funder holds ${formatUnits(unwrapped, 6)} USDC.e but no pUSD`, "run `bun run worker:wrap-pusd` — the CLOB only accepts pUSD");
+    else bad(`funder ${funder} holds no pUSD`, "deposit through polymarket.com (it arrives as pUSD)");
     for (const [name, spender] of SPENDERS) {
-      const a = await client.readContract({ address: USDC_E, abi: erc20Abi, functionName: "allowance", args: [funder, spender] });
+      const a = await client.readContract({ address: PUSD, abi: erc20Abi, functionName: "allowance", args: [funder, spender] });
       if (a > 0n) ok(`${name} approved`);
-      else bad(`${name} allowance is 0`,
-        "connect the signer at polymarket.com and make one small trade; that sets it. Orders fail with 'not enough balance / allowance' until then");
+      else bad(`${name} pUSD allowance is 0`,
+        "run `bun run worker:wrap-pusd`, or connect the signer at polymarket.com and make one small trade. Orders fail with 'not enough balance / allowance' until then");
     }
   } catch (e) { bad(`could not read chain: ${e.shortMessage ?? e.message}`); }
 }
 
 console.log(
   blockers === 0
-    ? "\nReady. Start the server, then:\n  bun run e2e:live -- --market <id> --wallet <depositor> --outcome YES --confidence 80 --stake 5 --confirm\n"
+    ? "\nReady. Start the server, then dry-run (add --confirm to send once it looks right):\n  bun run e2e:live -- --market <id> --wallet <depositor> --outcome YES --confidence 80 --stake 1\n"
     : `\n${blockers} thing(s) to fix first.\n`,
 );
 process.exit(blockers === 0 ? 0 : 1);

@@ -73,13 +73,11 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
       // Reporting that in preflight is the difference between a config note and
       // a failed live order.
       try {
-        const { readOmnibusOnchain, POLYMARKET_USDC_SPENDERS } = await import(
-          "@/server/treasury/omnibus-onchain"
-        );
         const snapshot = await timed(() => readOmnibusOnchain(), 20_000);
-        const held = BigInt(snapshot?.usdcEMicros ?? "0");
+        const held = BigInt(snapshot?.pusdMicros ?? "0");
+        const unwrapped = BigInt(snapshot?.usdcEMicros ?? "0");
         const missing = (snapshot?.allowances ?? [])
-          .filter((row) => BigInt(row.usdcE) <= 0n)
+          .filter((row) => BigInt(row.pusd) <= 0n)
           .map((row) => row.name);
         const ok = collateral > 0n && missing.length === 0;
         checks.polymarketCollateral = {
@@ -88,15 +86,18 @@ export async function readinessReport(prisma: PrismaClient, env: Record<string, 
           detail: {
             funder: snapshot?.address ?? null,
             usableCollateralMicros: collateral.toString(),
-            heldUsdcEMicros: held.toString(),
+            heldPusdMicros: held.toString(),
+            unwrappedUsdcEMicros: unwrapped.toString(),
             missingAllowances: missing,
             hint:
               missing.length > 0
-                ? `The funder holds ${held} USDC.e but has not approved ${missing.join(" and ")}. Orders will be refused until it does. A funder that is a Polymarket deposit wallet cannot approve for itself: connect its signer at polymarket.com and make one trade, which sets these.`
+                ? `The funder holds ${held} pUSD micros but has not approved ${missing.join(", ")}. Orders will be refused until it does. Run \`npm run worker:wrap-pusd\`, or connect the signer at polymarket.com and make one trade.`
                 : collateral <= 0n
-                  ? "The venue reports no usable collateral. Fund the funder address with USDC.e (0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174), not native USDC."
+                  ? unwrapped > 0n
+                    ? "The funder holds USDC.e, which the CLOB no longer accepts. Run `npm run worker:wrap-pusd` to wrap it into pUSD."
+                    : "The venue reports no usable collateral. Deposit through polymarket.com (it converts to pUSD), or send USDC.e to the funder and run `npm run worker:wrap-pusd`."
                   : undefined,
-            spenders: POLYMARKET_USDC_SPENDERS.map((row) => row.name),
+            spenders: (snapshot?.allowances ?? []).map((row) => row.name),
           },
         };
       } catch (error) {
