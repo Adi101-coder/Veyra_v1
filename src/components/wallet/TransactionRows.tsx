@@ -19,8 +19,8 @@ export function TransactionRows({
 
   return (
     <ul className={compact ? "divide-y divide-[rgba(24,45,74,0.06)]" : "divide-y divide-[rgba(24,45,74,0.08)]"}>
-      {transactions.map((tx) => (
-        <li key={tx.hash}>
+      {transactions.map((tx, index) => (
+        <li key={`${tx.hash}-${index}`}>
           <a
             href={tx.explorerUrl}
             target="_blank"

@@ -111,7 +111,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const connector = account.connector;
-    if (!connector || !address) {
+    if (!connector || !address || typeof connector.getProvider !== "function") {
       setEvmProvider(null);
       return;
     }

@@ -25,29 +25,33 @@ function appChains(): [Chain, ...Chain[]] {
 }
 
 /**
- * WalletConnect cloud id. Injected wallets (MetaMask, Rainbow, Coinbase, Phantom)
- * still connect when this is unset; the QR code does not.
+ * WalletConnect / Reown project id. A missing or placeholder id must not be sent:
+ * Reown answers with "origin not on the allowlist" and Next paints that as a crash.
+ * Injected wallets still connect. The QR code appears only with a real id whose
+ * allowlist includes this site (http://localhost:3000 in development).
  */
-const projectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || "00000000000000000000000000000000";
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() ?? "";
+const walletConnectReady = /^[a-f0-9]{32}$/i.test(projectId) && !/^0+$/.test(projectId);
+
+const wallets = [
+  metaMaskWallet,
+  rainbowWallet,
+  coinbaseWallet,
+  phantomWallet,
+  binanceWallet,
+  ...(walletConnectReady ? [walletConnectWallet] : []),
+  injectedWallet,
+];
 
 export const wagmiConfig = getDefaultConfig({
   appName: siteConfig.name,
-  projectId,
+  projectId: walletConnectReady ? projectId : "00000000000000000000000000000000",
   chains: appChains(),
   ssr: true,
   wallets: [
     {
       groupName: "Popular",
-      wallets: [
-        metaMaskWallet,
-        rainbowWallet,
-        coinbaseWallet,
-        phantomWallet,
-        binanceWallet,
-        walletConnectWallet,
-        injectedWallet,
-      ],
+      wallets,
     },
   ],
 });

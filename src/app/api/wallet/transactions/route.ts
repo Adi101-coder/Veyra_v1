@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 import {
+  createPublicClient,
+  erc20Abi,
+  formatUnits,
+  getAddress,
+  http,
+  parseAbiItem,
+  type Address,
+} from "viem";
+import { ROBINHOOD_CHAINS } from "@/lib/robinhood-chain";
+import {
   isEvmAddress,
   isSolanaAddress,
   type WalletActivity,
@@ -254,11 +264,145 @@ type ExplorerTx = {
   methodId?: string;
 };
 
-async function fetchEvm(address: string, chainId: number): Promise<WalletActivity> {
-  const indexer = EVM_INDEXERS[chainId];
-  if (!indexer) {
-    throw new Error(`This app does not index chain ${chainId}.`);
+const transferEvent = parseAbiItem(
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+);
+
+/**
+ * Blockscout on Robinhood Chain sits behind a Cloudflare challenge, so a server
+ * fetch gets HTML instead of the account API. Read that chain from its RPC.
+ */
+function activityRpc(chainId: number) {
+  const fromEnv = process.env[`VEYRA_RPC_URL_${chainId}`]?.trim();
+  if (fromEnv) return fromEnv;
+  if (chainId === ROBINHOOD_CHAINS.mainnet.id) {
+    return process.env.RH_RPC_URL?.trim() || ROBINHOOD_CHAINS.mainnet.rpcUrls.default.http[0];
   }
+  if (chainId === ROBINHOOD_CHAINS.testnet.id) {
+    return process.env.RH_TESTNET_RPC_URL?.trim() || ROBINHOOD_CHAINS.testnet.rpcUrls.default.http[0];
+  }
+  return "";
+}
+
+function formatToken(value: bigint, decimals: number, inbound: boolean, symbol: string) {
+  const [whole, fraction = ""] = formatUnits(value, decimals).split(".");
+  const trimmed = fraction.replace(/0+$/, "").slice(0, 6);
+  const shown = trimmed ? `${whole}.${trimmed}` : whole;
+  if (shown === "0") return "—";
+  return `${inbound ? "+" : "−"}${shown} ${symbol}`;
+}
+
+async function recentTransferLogs(
+  client: ReturnType<typeof createPublicClient>,
+  account: Address,
+) {
+  const latest = await client.getBlockNumber();
+  let last: unknown;
+  for (const span of [250_000n, 50_000n, 10_000n]) {
+    const fromBlock = latest > span ? latest - span : 0n;
+    try {
+      const [inbound, outbound] = await Promise.all([
+        client.getLogs({ event: transferEvent, args: { to: account }, fromBlock, toBlock: latest }),
+        client.getLogs({ event: transferEvent, args: { from: account }, fromBlock, toBlock: latest }),
+      ]);
+      const seen = new Set<string>();
+      return [...inbound, ...outbound]
+        .filter((log) => {
+          if (log.removed || !log.transactionHash) return false;
+          const key = `${log.transactionHash}:${log.logIndex}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .sort((a, b) => {
+          if (a.blockNumber !== b.blockNumber) return a.blockNumber > b.blockNumber ? -1 : 1;
+          return (b.logIndex ?? 0) - (a.logIndex ?? 0);
+        })
+        .slice(0, LIMIT);
+    } catch (error) {
+      last = error;
+    }
+  }
+  throw last instanceof Error ? last : new Error("Could not read token transfers");
+}
+
+async function fetchEvmFromRpc(
+  address: string,
+  indexer: (typeof EVM_INDEXERS)[number],
+  chainId: number,
+  rpc: string,
+): Promise<WalletActivity> {
+  const chain =
+    chainId === ROBINHOOD_CHAINS.mainnet.id ? ROBINHOOD_CHAINS.mainnet : ROBINHOOD_CHAINS.testnet;
+  const client = createPublicClient({ chain, transport: http(rpc, { timeout: 12_000 }) });
+  const account = getAddress(address);
+  const [wei, logs] = await Promise.all([
+    client.getBalance({ address: account }),
+    recentTransferLogs(client, account).catch(() => []),
+  ]);
+
+  const tokens = [...new Set(logs.map((log) => log.address.toLowerCase()))];
+  const meta = new Map<string, { symbol: string; decimals: number }>();
+  await Promise.all(
+    tokens.map(async (token) => {
+      try {
+        const [symbol, decimals] = await Promise.all([
+          client.readContract({ address: getAddress(token), abi: erc20Abi, functionName: "symbol" }),
+          client.readContract({ address: getAddress(token), abi: erc20Abi, functionName: "decimals" }),
+        ]);
+        meta.set(token, { symbol, decimals: Number(decimals) });
+      } catch {
+        meta.set(token, { symbol: "Token", decimals: 18 });
+      }
+    }),
+  );
+
+  const times = new Map<string, number>();
+  await Promise.all(
+    [...new Set(logs.map((log) => log.blockNumber))].map(async (blockNumber) => {
+      try {
+        const block = await client.getBlock({ blockNumber });
+        times.set(blockNumber.toString(), Number(block.timestamp));
+      } catch {
+        times.set(blockNumber.toString(), 0);
+      }
+    }),
+  );
+
+  const lower = account.toLowerCase();
+  const transactions: WalletTransaction[] = logs.map((log) => {
+    const from = (log.args.from ?? "").toLowerCase();
+    const to = (log.args.to ?? "").toLowerCase();
+    const inbound = to === lower;
+    const outbound = from === lower;
+    const token = meta.get(log.address.toLowerCase()) ?? { symbol: "Token", decimals: 18 };
+    return {
+      hash: log.transactionHash!,
+      timestamp: times.get(log.blockNumber.toString()) || null,
+      status: "success",
+      direction: inbound && outbound ? "self" : inbound ? "in" : "out",
+      counterparty: inbound ? log.args.from ?? null : log.args.to ?? null,
+      amountLabel: formatToken(log.args.value ?? 0n, token.decimals, inbound && !outbound, token.symbol),
+      method: "transfer",
+      explorerUrl: `${indexer.explorer}/tx/${log.transactionHash}`,
+    };
+  });
+
+  const native = Number(wei) / 1e18;
+  return {
+    address,
+    chain: "evm",
+    networkLabel: indexer.name,
+    balanceLabel: `${Number.isFinite(native) ? native.toFixed(native >= 1 ? 4 : 5) : "0"} ${indexer.symbol}`,
+    explorerAddressUrl: `${indexer.explorer}/address/${address}`,
+    transactions,
+  };
+}
+
+async function fetchEvmFromIndexer(
+  address: string,
+  indexer: (typeof EVM_INDEXERS)[number],
+): Promise<WalletActivity> {
   const query = new URLSearchParams({
     module: "account",
     action: "txlist",
@@ -329,6 +473,20 @@ async function fetchEvm(address: string, chainId: number): Promise<WalletActivit
     explorerAddressUrl: `${indexer.explorer}/address/${address}`,
     transactions,
   };
+}
+
+async function fetchEvm(address: string, chainId: number): Promise<WalletActivity> {
+  const indexer = EVM_INDEXERS[chainId];
+  if (!indexer) {
+    throw new Error(`This app does not index chain ${chainId}.`);
+  }
+  try {
+    return await fetchEvmFromIndexer(address, indexer);
+  } catch (error) {
+    const rpc = activityRpc(chainId);
+    if (!rpc) throw error;
+    return fetchEvmFromRpc(address, indexer, chainId, rpc);
+  }
 }
 
 export async function GET(request: Request) {
