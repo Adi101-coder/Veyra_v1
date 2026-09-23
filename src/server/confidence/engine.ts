@@ -105,6 +105,19 @@ export class ConfidenceEngine {
     }
 
     const marketPriceBps = bestAsk.priceBps;
+    // Venue rules only: a Split pool quotes its own LMSR ladder with no $1 floor.
+    const venue = book.source === "polymarket";
+    const bestBid = book.bids.reduce((best, level) => Math.max(best, level.priceBps), 0);
+    if (venue && bestBid > 0) {
+      const spreadBps = Math.round(((marketPriceBps - bestBid) * 20_000) / (marketPriceBps + bestBid));
+      if (spreadBps > this.config.maxRelativeSpreadBps) {
+        return reject(
+          version,
+          "WIDE_SPREAD",
+          `The spread is ${(spreadBps / 100).toFixed(0)}% of the price (buy ${(marketPriceBps / 10_000).toFixed(3)}, sell ${(bestBid / 10_000).toFixed(3)}): selling right after buying would lose that much. Limit is ${this.config.maxRelativeSpreadBps / 100}%.`,
+        );
+      }
+    }
     const edge = edgeBps(confidenceBps, marketPriceBps);
     if (edge < this.config.minEdgeBps) {
       return reject(
@@ -124,10 +137,26 @@ export class ConfidenceEngine {
     if (budget <= 0n) {
       return reject(version, "NO_EDGE", "Sized notional is zero.");
     }
-    // Fractional Kelly on a $1–$5 live cap is often below the venue minimum (1 share).
-    // If the user stake can pay that minimum at the touch, lift the budget to it.
-    const minCost = sharesCostMicros(book.minSharesMicros, marketPriceBps);
-    if (minCost > 0n && minCost <= stakeMicros && budget < minCost) {
+    // Fractional Kelly on a small stake is often below the venue minimum, which is two
+    // rules: a minimum share count AND a $1 minimum notional for marketable orders.
+    // If the stake can pay the larger of the two at the touch, lift the budget to it.
+    let minShares = book.minSharesMicros;
+    const minNotional = venue ? this.config.minVenueNotionalMicros : 0n;
+    if (minNotional > 0n) {
+      const lot = this.config.shareLotMicros;
+      const forNotional = (minNotional * 10_000n + BigInt(marketPriceBps) - 1n) / BigInt(marketPriceBps);
+      const rounded = ((forNotional + lot - 1n) / lot) * lot;
+      if (rounded > minShares) minShares = rounded;
+    }
+    const minCost = sharesCostMicros(minShares, marketPriceBps);
+    if (minCost > stakeMicros) {
+      return reject(
+        version,
+        "STAKE_BELOW_MIN_ORDER",
+        `The smallest order this market accepts costs $${(Number(minCost) / 1_000_000).toFixed(2)} (${(Number(minShares) / 1_000_000).toFixed(2)} shares at ${(marketPriceBps / 10_000).toFixed(3)}). Raise your stake to at least that.`,
+      );
+    }
+    if (budget < minCost) {
       budget = minCost;
     }
 
@@ -149,7 +178,7 @@ export class ConfidenceEngine {
     const sharesMicros = fills.reduce((sum, fill) => sum + fill.sharesMicros, 0n);
     const notionalMicros = fills.reduce((sum, fill) => sum + fill.notionalMicros, 0n);
 
-    if (sharesMicros < book.minSharesMicros || sharesMicros <= 0n) {
+    if (sharesMicros < book.minSharesMicros || sharesMicros <= 0n || notionalMicros < minNotional) {
       return reject(
         version,
         "INSUFFICIENT_LIQUIDITY",

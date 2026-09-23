@@ -188,3 +188,53 @@ describe("ConfidenceEngine boundaries (50¢ ask)", () => {
     }
   });
 });
+
+describe("Polymarket venue minimums and spread", () => {
+  const venue = (askBps: number, bidBps: number) =>
+    book({
+      source: "polymarket",
+      minSharesMicros: 5_000_000n,
+      asks: [{ priceBps: askBps, sizeMicros: 25_000_000_000n }],
+      bids: [{ priceBps: bidBps, sizeMicros: 25_000_000_000n }],
+    });
+
+  it("sizes a cheap market up to the $1 marketable minimum, not just 5 shares", () => {
+    // 5 shares at 0.15 is $0.75, which Polymarket rejects.
+    const result = engine.evaluate({ outcome: "YES", confidenceBps: 7900, stakeMicros: 2_000_000n, book: venue(1500, 1400) });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) return;
+    expect(result.notionalMicros).toBeGreaterThanOrEqual(1_000_000n);
+    expect(result.sharesMicros).toBeGreaterThan(5_000_000n);
+  });
+
+  it("refuses up front when the stake cannot reach the venue minimum", () => {
+    const result = engine.evaluate({ outcome: "YES", confidenceBps: 7900, stakeMicros: 1_000_000n, book: venue(1500, 1400) });
+    expect(result).toMatchObject({ accepted: false, code: "STAKE_BELOW_MIN_ORDER" });
+  });
+
+  it("keeps the share minimum when it is the larger rule", () => {
+    const result = engine.evaluate({ outcome: "YES", confidenceBps: 6000, stakeMicros: 2_000_000n, book: venue(2400, 2300) });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) return;
+    expect(result.sharesMicros).toBe(5_000_000n);
+    expect(result.notionalMicros).toBe(1_200_000n);
+  });
+
+  it("refuses entry when the spread is a large share of the price", () => {
+    // Bought at 0.002, sells at 0.001: an instant 50% loss.
+    const result = engine.evaluate({ outcome: "YES", confidenceBps: 6500, stakeMicros: 9_000_000n, book: venue(20, 10) });
+    expect(result).toMatchObject({ accepted: false, code: "WIDE_SPREAD" });
+  });
+
+  it("does not apply venue rules to a Split pool book", () => {
+    const result = engine.evaluate({
+      outcome: "YES",
+      confidenceBps: 6000,
+      stakeMicros: 2_000_000n,
+      book: book({ source: "pool", asks: [{ priceBps: 500, sizeMicros: 25_000_000_000n }], bids: [{ priceBps: 400, sizeMicros: 25_000_000_000n }] }),
+    });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) return;
+    expect(result.notionalMicros).toBeLessThan(1_000_000n);
+  });
+});

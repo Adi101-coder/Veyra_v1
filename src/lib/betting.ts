@@ -268,7 +268,7 @@ export function describeBettingError(error: unknown, fallback: string) {
     case "STALE_BOOK":
       return "Market prices are out of date. Wait a moment and try again.";
     case "WIDE_SPREAD":
-      return "The market spread is too wide to trade fairly right now.";
+      return serverMessage ?? "The market spread is too wide to trade fairly right now.";
     case "CONFIDENCE_RANGE":
       return serverMessage ?? "Choose a confidence within the allowed range.";
     case "MARKET_RESOLVED":
@@ -284,7 +284,7 @@ export function describeBettingError(error: unknown, fallback: string) {
     case "RATE_LIMITED":
       return "Too many requests. Wait a moment and try again.";
     case "INSUFFICIENT_FUNDS":
-      return "Not enough deposited USDC for this order. Deposit from Balances, then try again.";
+      return "Not enough deposited balance for this order. Deposit from Balances, then try again.";
     case "PROPOSER_CANNOT_TRADE":
       return "You proposed this pool, so you cannot trade it while Split is the counterparty.";
     default:

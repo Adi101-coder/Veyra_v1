@@ -14,6 +14,10 @@ export type ConfidenceEngineConfig = {
   maxStaleBps: number;
   shareLotMicros: bigint;
   orderType: "FAK" | "FOK" | "GTC";
+  /** Polymarket refuses marketable orders below this notional (currently $1). */
+  minVenueNotionalMicros: bigint;
+  /** Entry refused when (ask - bid) / mid exceeds this; a round trip would lose it. */
+  maxRelativeSpreadBps: number;
 };
 
 const DEFAULTS: ConfidenceEngineConfig = {
@@ -30,6 +34,8 @@ const DEFAULTS: ConfidenceEngineConfig = {
   maxStaleBps: 500,
   shareLotMicros: 10_000n,
   orderType: "FAK",
+  minVenueNotionalMicros: 1_000_000n,
+  maxRelativeSpreadBps: 1_000,
 };
 
 function envInt(env: Record<string, string | undefined>, key: string, fallback: number) {
@@ -76,6 +82,8 @@ export function loadConfidenceEngineConfig(
     maxStaleBps: envInt(env, "VEYRA_MAX_STALE_BPS", DEFAULTS.maxStaleBps),
     shareLotMicros: DEFAULTS.shareLotMicros,
     orderType,
+    minVenueNotionalMicros: envUsd(env, "VEYRA_MIN_VENUE_ORDER_USD", DEFAULTS.minVenueNotionalMicros),
+    maxRelativeSpreadBps: envInt(env, "VEYRA_MAX_RELATIVE_SPREAD_BPS", DEFAULTS.maxRelativeSpreadBps),
   };
 }
 
