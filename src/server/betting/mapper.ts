@@ -74,8 +74,41 @@ function toSettlementDTO(row: PredictionBundle["chainSettlements"][number] | und
   };
 }
 
+/** Sale proceeds minus the cost of the shares sold, net of fill fees. Null when nothing has sold. */
+export function realizedTradePnlMicros(
+  executions: { side: string; fills: { sharesMicros: bigint; notionalMicros: bigint; feeMicros: bigint }[] }[],
+) {
+  let buyShares = 0n;
+  let buyNotional = 0n;
+  let buyFees = 0n;
+  let sellShares = 0n;
+  let sellNotional = 0n;
+  let sellFees = 0n;
+  for (const execution of executions) {
+    const sell = execution.side === "SELL";
+    for (const fill of execution.fills) {
+      if (sell) {
+        sellShares += fill.sharesMicros;
+        sellNotional += fill.notionalMicros;
+        sellFees += fill.feeMicros;
+      } else {
+        buyShares += fill.sharesMicros;
+        buyNotional += fill.notionalMicros;
+        buyFees += fill.feeMicros;
+      }
+    }
+  }
+  if (sellShares <= 0n || buyShares <= 0n) return null;
+  const sold = sellShares > buyShares ? buyShares : sellShares;
+  const cost = (buyNotional * sold) / buyShares;
+  const entryFees = (buyFees * sold) / buyShares;
+  return sellNotional - cost - entryFees - sellFees;
+}
+
 export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
-  const execution = bundle.position?.executions[0] ?? null;
+  const executions = bundle.position?.executions ?? [];
+  const execution = executions[0] ?? null;
+  const tradePnl = realizedTradePnlMicros(executions);
   const position: PositionDTO | null = bundle.position
     ? {
         id: bundle.position.id,
@@ -135,6 +168,7 @@ export function toPredictionDTO(bundle: PredictionBundle): PredictionDTO {
     errorMessage: bundle.errorMessage,
     position,
     execution: executionDto,
+    tradePnlUsd: tradePnl == null ? null : formatUsd(tradePnl),
     settlement: toSettlementDTO(bundle.chainSettlements?.[0]),
     score: null,
     marketResolution:

@@ -143,6 +143,11 @@ export type PredictionDTO = {
   errorMessage: string | null;
   position: PositionDTO | null;
   execution: ExecutionDTO | null;
+  /**
+   * Realized cash from sells against this position: sale proceeds minus the
+   * cost of the shares sold, net of fill fees. Null until something has sold.
+   */
+  tradePnlUsd: string | null;
   /** Set once the market has resolved (INVALID = voided). */
   marketResolution: { outcome: "YES" | "NO" | "INVALID"; resolvedAt: string } | null;
   /**

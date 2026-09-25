@@ -16,6 +16,14 @@ type Exit = { percent?: number; shares?: string };
 
 const usd = (value: number) => `$${value.toFixed(2)}`;
 
+function signedUsd(value: string | null) {
+  if (value == null) return null;
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return null;
+  const text = `$${Math.abs(amount).toFixed(2)}`;
+  return amount > 0 ? `+${text}` : amount < 0 ? `−${text}` : text;
+}
+
 function isOpen(prediction: PredictionDTO) {
   const position = prediction.position;
   return Boolean(position && OPEN_STATUSES.has(position.status) && Number(position.shares) > 0 && !prediction.marketResolution);
@@ -79,12 +87,13 @@ function PositionCard({ prediction, onChanged }: { prediction: PredictionDTO; on
       keys.current.delete(intent);
       const sold = result.history.deltaShares.replace("-", "");
       const left = Number(result.prediction.position?.shares ?? 0);
+      const pnl = signedUsd(result.prediction.tradePnlUsd);
       setMessage(
         result.history.status === "failed"
           ? `Sell failed: ${result.history.errorMessage ?? "not filled"}. Nothing changed.`
           : left > 0
-            ? `Sold ${sold} sh. ${left.toFixed(2)} sh still open. Proceeds are back in your balance.`
-            : `Closed. Sold ${sold} sh. Proceeds are back in your balance.`,
+            ? `Sold ${sold} sh. ${left.toFixed(2)} sh still open.${pnl ? ` Realized ${pnl}.` : ""}`
+            : `Closed. Sold ${sold} sh.${pnl ? ` Realized ${pnl}.` : " Proceeds are back in your balance."}`,
       );
       setCustom("");
       onChanged();
@@ -140,6 +149,7 @@ function PositionCard({ prediction, onChanged }: { prediction: PredictionDTO; on
       <p className="mt-2 font-mono text-[11px] text-[#65758b]">
         Confidence {Math.round(prediction.confidencePct)}% · stake {usd(Number(prediction.stakeUsd))}
         {position.status === "adjusting" ? " · a sell is in progress" : ""}
+        {prediction.tradePnlUsd != null ? ` · realized ${signedUsd(prediction.tradePnlUsd)}` : ""}
       </p>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -222,6 +232,13 @@ export function PositionsView() {
 
   const open = (predictions ?? []).filter(isOpen);
   const history = (predictions ?? []).filter((prediction) => !isOpen(prediction));
+  const realized = (predictions ?? []).reduce((sum, prediction) => {
+    const value = Number(prediction.tradePnlUsd);
+    return Number.isFinite(value) ? sum + value : sum;
+  }, 0);
+  const realizedLabel = predictions?.some((prediction) => prediction.tradePnlUsd != null)
+    ? `${realized > 0 ? "+" : realized < 0 ? "−" : ""}$${Math.abs(realized).toFixed(2)}`
+    : null;
 
   return (
     <div className="bg-[#f1f6ff]">
@@ -239,7 +256,15 @@ export function PositionsView() {
           <p className="mt-8 text-[15px] text-[#65758b]">Connect the wallet you bet with to see your positions.</p>
         ) : (
           <>
-            <p className="mt-2 font-mono text-[11px] text-[#657da0]">{shortenAddress(address, 6)}</p>
+            <p className="mt-2 font-mono text-[11px] text-[#657da0]">
+              {shortenAddress(address, 6)}
+              {realizedLabel ? (
+                <span className={realized >= 0 ? "text-[#1f7a4d]" : "text-[#ad4c62]"}>
+                  {" "}
+                  · realized {realizedLabel}
+                </span>
+              ) : null}
+            </p>
             {error ? (
               <p className="mt-8 rounded-[18px] border border-[#e0cccc] bg-[#ffeff0] px-5 py-4 font-mono text-[12px] text-[#ad4c62]">
                 {error}
@@ -272,6 +297,12 @@ export function PositionsView() {
                       </Link>
                       <span className="font-mono text-[11px] text-[#65758b]">
                         {prediction.outcome} · {usd(Number(prediction.stakeUsd))} · {historyStatus(prediction)}
+                        {prediction.tradePnlUsd != null ? (
+                          <span className={Number(prediction.tradePnlUsd) >= 0 ? "text-[#1f7a4d]" : "text-[#ad4c62]"}>
+                            {" "}
+                            · {signedUsd(prediction.tradePnlUsd)}
+                          </span>
+                        ) : null}
                       </span>
                     </li>
                   ))}

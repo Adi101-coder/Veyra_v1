@@ -18,6 +18,7 @@ function dto(partial: Partial<PredictionDTO> = {}): PredictionDTO {
     errorMessage: null,
     position: null,
     execution: null,
+    tradePnlUsd: null,
     marketResolution: null,
     score: null,
     settlement: null,
